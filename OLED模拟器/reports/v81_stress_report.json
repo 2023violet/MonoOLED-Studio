@@ -1,0 +1,52 @@
+{
+  "version": "8.1.0",
+  "frozen": {
+    "production_assets": 464,
+    "goldens": 14,
+    "golden_bytes_each": 512
+  },
+  "preferences_fuzz": {
+    "iterations": 1000
+  },
+  "appearance_matrix": {
+    "combinations": 432
+  },
+  "preference_transitions": {
+    "iterations": 10000,
+    "effect_counts": {
+      "language": 5005,
+      "theme": 9175,
+      "metrics": 9257
+    }
+  },
+  "popup_geometry_fuzz": {
+    "cases": 20000
+  },
+  "responsive_matrix": {
+    "cases": 120
+  },
+  "selection_stress": {
+    "iterations": 10000
+  },
+  "pixel_stress": {
+    "documents": 60,
+    "operations_total": 30000
+  },
+  "font_determinism": {
+    "glyphs": 12,
+    "sha256": "f32b0cdf9dd028df24a92531a616ee5987da3416990de19558cafc73b12776c1"
+  },
+  "automation_stress": {
+    "calls": 1000,
+    "final_revision": 200
+  },
+  "renderer_stress": {
+    "states": 14,
+    "cycles": 100,
+    "frames": 1400,
+    "bytes_each": 512,
+    "deterministic_states": 14,
+    "avg_ms": 2.629380610698198,
+    "p95_ms": 2.957416998469853
+  }
+}

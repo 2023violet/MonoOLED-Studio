@@ -1,0 +1,73 @@
+{
+  "asset_id": "FONT_CLIN_MODE_EN_5X7",
+  "version": "2.0-production-candidate",
+  "scope": "Clinical Standby/Running mode labels",
+  "cell": {
+    "w": 5,
+    "h": 7
+  },
+  "tracking_px": 1,
+  "advance_px": 6,
+  "case": "uppercase",
+  "logical_polarity": {
+    "1": "foreground/OLED_ON",
+    "0": "background"
+  },
+  "source_png_review_polarity": {
+    "black": "foreground",
+    "white": "background"
+  },
+  "storage": {
+    "layout": "column-major",
+    "bytes_per_glyph": 5,
+    "bit0": "top",
+    "bit6": "bottom",
+    "bit7": "unused"
+  },
+  "changed_from_v1": [
+    "C",
+    "G",
+    "I",
+    "Q",
+    "S",
+    "W"
+  ],
+  "mode_widths": {
+    "NORMAL": 35,
+    "HIGH": 23,
+    "TURBO": 29,
+    "PULSE": 29,
+    "RAMP": 23,
+    "ORTHO": 29,
+    "CHECK": 29
+  },
+  "clinical_layout": {
+    "mode_zone": {
+      "x": 88,
+      "y": 2,
+      "w": 36,
+      "h": 12
+    },
+    "mode_text_y": 4,
+    "battery": {
+      "x": 5,
+      "y": 2,
+      "w": 11,
+      "h": 28
+    },
+    "hero_digits": {
+      "digit_w": 13,
+      "digit_h": 27,
+      "x0": 45,
+      "x1": 60,
+      "y": 3,
+      "tracking": 2
+    },
+    "context_canvas": {
+      "x": 94,
+      "y": 19,
+      "w": 24,
+      "h": 12
+    }
+  }
+}

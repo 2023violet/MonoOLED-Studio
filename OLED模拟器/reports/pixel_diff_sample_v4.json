@@ -1,0 +1,11 @@
+{
+  "from": "normal_standby",
+  "to": "normal_running",
+  "changed_pixels": 76,
+  "bbox": [
+    96,
+    19,
+    116,
+    31
+  ]
+}

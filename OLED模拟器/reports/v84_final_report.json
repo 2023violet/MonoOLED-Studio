@@ -1,0 +1,15 @@
+{
+  "version": "8.4.0",
+  "automation_api": "1.0.0",
+  "method_count": 74,
+  "clinical": {
+    "states": 560,
+    "framebuffer_bytes": 512,
+    "blockers": 0
+  },
+  "graduation": {
+    "direct_project_flow": "PASS",
+    "localhost_json_rpc": "PASS",
+    "handoff": "PASS"
+  }
+}

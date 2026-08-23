@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "name": "Curing-Lite OLED",
+  "default_canvas": [
+    128,
+    32
+  ],
+  "active_screen": "main",
+  "asset_dirs": [
+    "Curing_Lite光固化机产品 - UI设计初稿",
+    "数字 - 字宽13字高27",
+    "数字 - 字宽12字高16",
+    "数字 - 字宽12字高28",
+    "数字 - 字宽5字高11",
+    "数字 - 字宽5字高7",
+    "数字 - 字宽6字高8",
+    "数字 - 字宽8字高16",
+    "数字 - 字宽8字高17",
+    "电池图标 - 字宽11字高28",
+    "电池图标 - 字宽32字高16",
+    "中文 - 字宽12字高12",
+    "assets"
+  ],
+  "screens": [
+    {
+      "id": "main",
+      "label": "Clinical UI",
+      "path": "OLED模拟器/scenes/main_scene.json"
+    }
+  ],
+  "design_rules": {
+    "required_elements": [
+      "battery",
+      "hero_digits",
+      "mode_label"
+    ],
+    "zones": {
+      "battery": {
+        "x": 0,
+        "y": 0,
+        "w": 20,
+        "h": 32
+      },
+      "mode_label": {
+        "x": 86,
+        "y": 0,
+        "w": 42,
+        "h": 16
+      }
+    }
+  }
+}

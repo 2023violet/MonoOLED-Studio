@@ -1,0 +1,573 @@
+{
+  "product": "MonoOLED Studio",
+  "api": "Automation API",
+  "api_version": "1.0.0",
+  "transport": "semantic service; localhost token-authenticated JSON-RPC adapter",
+  "methods": {
+    "asset.copy": {
+      "permission": "edit",
+      "summary": "Copy a project bitmap.",
+      "params": {
+        "path": "relative path",
+        "target": "relative path"
+      },
+      "transaction_supported": false
+    },
+    "asset.create": {
+      "permission": "edit",
+      "summary": "Create a blank project bitmap.",
+      "params": {
+        "path": "relative path",
+        "width": "int",
+        "height": "int",
+        "value": "0|1?"
+      },
+      "transaction_supported": false
+    },
+    "asset.delete": {
+      "permission": "edit",
+      "summary": "Delete a project bitmap.",
+      "params": {
+        "path": "relative path"
+      },
+      "transaction_supported": false
+    },
+    "asset.import": {
+      "permission": "edit",
+      "summary": "Import an external bitmap into the project.",
+      "params": {
+        "source": "path",
+        "target": "relative path"
+      },
+      "transaction_supported": false
+    },
+    "asset.rename": {
+      "permission": "edit",
+      "summary": "Rename a project bitmap.",
+      "params": {
+        "path": "relative path",
+        "target": "relative path"
+      },
+      "transaction_supported": false
+    },
+    "automation.capabilities": {
+      "permission": "observe",
+      "summary": "List Automation API 1.0 methods and contracts.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "automation.describe_method": {
+      "permission": "observe",
+      "summary": "Describe one Automation API method.",
+      "params": {
+        "method": "string"
+      },
+      "transaction_supported": false
+    },
+    "export.all": {
+      "permission": "edit",
+      "summary": "Export deterministic state matrix through the canonical Studio exporter.",
+      "params": {
+        "output_dir": "relative dir",
+        "integer_policy": "representative|boundaries|full"
+      },
+      "transaction_supported": false
+    },
+    "export.c_header": {
+      "permission": "edit",
+      "summary": "Export current framebuffer C header.",
+      "params": {
+        "path": "relative path",
+        "symbol": "string?"
+      },
+      "transaction_supported": false
+    },
+    "export.code_ai_handoff": {
+      "permission": "edit",
+      "summary": "Generate deterministic Code AI handoff from Studio truth.",
+      "params": {
+        "path": "relative zip path",
+        "integer_policy": "representative|boundaries|full"
+      },
+      "transaction_supported": false
+    },
+    "export.current": {
+      "permission": "edit",
+      "summary": "Export current state through the canonical Studio exporter.",
+      "params": {
+        "output_dir": "relative dir",
+        "state": "object?"
+      },
+      "transaction_supported": false
+    },
+    "export.font_pack": {
+      "permission": "edit",
+      "summary": "Create deterministic ZIP of a FontPack.",
+      "params": {
+        "font_id": "relative dir",
+        "path": "relative zip path"
+      },
+      "transaction_supported": false
+    },
+    "font.create_pack": {
+      "permission": "edit",
+      "summary": "Create FontPack.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "font.generate_glyphs": {
+      "permission": "edit",
+      "summary": "Rasterize characters into FontPack.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "font.get_glyph": {
+      "permission": "observe",
+      "summary": "Read one bitmap glyph.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "font.get_pack": {
+      "permission": "observe",
+      "summary": "Read FontPack metrics/characters.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "font.list": {
+      "permission": "observe",
+      "summary": "List FontPack assets.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "font.set_metrics": {
+      "permission": "edit",
+      "summary": "Update FontPack baseline/advance.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "font.update_glyph": {
+      "permission": "edit",
+      "summary": "Update one bitmap glyph.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "history.begin_transaction": {
+      "permission": "edit",
+      "summary": "Begin one undoable Agent scene transaction.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "history.commit": {
+      "permission": "edit",
+      "summary": "Commit Agent transaction as one Designer undo.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "history.rollback": {
+      "permission": "edit",
+      "summary": "Rollback Agent transaction.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "layout.align": {
+      "permission": "edit",
+      "summary": "Align selected elements to selection/primary/canvas.",
+      "params": {
+        "mode": "string",
+        "reference": "selection|primary|canvas"
+      },
+      "transaction_supported": true
+    },
+    "layout.distribute": {
+      "permission": "edit",
+      "summary": "Distribute selected elements.",
+      "params": {
+        "axis": "horizontal|vertical"
+      },
+      "transaction_supported": true
+    },
+    "layout.measure": {
+      "permission": "observe",
+      "summary": "Measure selected elements.",
+      "params": {
+        "ids": "string[]?"
+      },
+      "transaction_supported": false
+    },
+    "pixel.create": {
+      "permission": "edit",
+      "summary": "Create an in-memory blank PixelDocument bound to a project path.",
+      "params": {
+        "path": "relative path",
+        "width": "int",
+        "height": "int"
+      },
+      "transaction_supported": false
+    },
+    "pixel.erase": {
+      "permission": "edit",
+      "summary": "Erase pixels.",
+      "params": {
+        "document_id": "string",
+        "x": "int",
+        "y": "int"
+      },
+      "transaction_supported": false
+    },
+    "pixel.fill": {
+      "permission": "edit",
+      "summary": "Flood fill a PixelDocument.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "pixel.flip": {
+      "permission": "edit",
+      "summary": "Flip PixelDocument horizontally/vertically.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "pixel.get_document": {
+      "permission": "observe",
+      "summary": "Read a PixelDocument.",
+      "params": {
+        "document_id": "string"
+      },
+      "transaction_supported": false
+    },
+    "pixel.line": {
+      "permission": "edit",
+      "summary": "Draw a pixel-exact line.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "pixel.open": {
+      "permission": "observe",
+      "summary": "Open a project bitmap as a PixelDocument.",
+      "params": {
+        "path": "relative path"
+      },
+      "transaction_supported": false
+    },
+    "pixel.paint": {
+      "permission": "edit",
+      "summary": "Paint pixels.",
+      "params": {
+        "document_id": "string",
+        "x": "int",
+        "y": "int",
+        "value": "0|1"
+      },
+      "transaction_supported": false
+    },
+    "pixel.rect": {
+      "permission": "edit",
+      "summary": "Draw a pixel-exact rectangle.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "pixel.redo": {
+      "permission": "edit",
+      "summary": "Redo PixelDocument edit.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "pixel.resize_canvas": {
+      "permission": "edit",
+      "summary": "Resize PixelDocument canvas with anchor.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "pixel.rotate": {
+      "permission": "edit",
+      "summary": "Rotate PixelDocument by 0/90/180/270.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "pixel.save": {
+      "permission": "edit",
+      "summary": "Save PixelDocument to project PNG.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "pixel.undo": {
+      "permission": "edit",
+      "summary": "Undo PixelDocument edit.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "project.create_screen": {
+      "permission": "edit",
+      "summary": "Create a new project screen.",
+      "params": {
+        "screen_id": "string",
+        "label": "string?",
+        "open": "bool?"
+      },
+      "transaction_supported": false
+    },
+    "project.delete_screen": {
+      "permission": "edit",
+      "summary": "Delete a project screen while preserving at least one screen.",
+      "params": {
+        "screen_id": "string"
+      },
+      "transaction_supported": false
+    },
+    "project.duplicate_screen": {
+      "permission": "edit",
+      "summary": "Duplicate a project screen.",
+      "params": {
+        "screen_id": "string",
+        "new_id": "string",
+        "label": "string?"
+      },
+      "transaction_supported": false
+    },
+    "project.get": {
+      "permission": "observe",
+      "summary": "Observe the active project/scene identity.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "project.get_contract": {
+      "permission": "observe",
+      "summary": "Return project coordinate/framebuffer/schema contract.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "project.list_assets": {
+      "permission": "observe",
+      "summary": "List project-owned bitmap assets.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "project.list_screens": {
+      "permission": "observe",
+      "summary": "List screens in the active OLED project.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "project.open_screen": {
+      "permission": "edit",
+      "summary": "Switch the active project screen.",
+      "params": {
+        "screen_id": "string"
+      },
+      "transaction_supported": false
+    },
+    "project.rename_screen": {
+      "permission": "edit",
+      "summary": "Rename a project screen and its scene file.",
+      "params": {
+        "screen_id": "string",
+        "new_id": "string",
+        "label": "string?"
+      },
+      "transaction_supported": false
+    },
+    "project.save": {
+      "permission": "edit",
+      "summary": "Atomically save the active scene and project manifest.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "project.save_all": {
+      "permission": "edit",
+      "summary": "Save active scene, open pixel documents and project manifest.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "render.all_states": {
+      "permission": "observe",
+      "summary": "Render every state in a deterministic state matrix.",
+      "params": {
+        "integer_policy": "representative|boundaries|full"
+      },
+      "transaction_supported": false
+    },
+    "render.annotated_preview": {
+      "permission": "observe",
+      "summary": "Write enlarged preview with resolved element boxes/ids.",
+      "params": {
+        "path": "relative path",
+        "state": "object?",
+        "scale": "int?"
+      },
+      "transaction_supported": false
+    },
+    "render.current": {
+      "permission": "observe",
+      "summary": "Render one state to canonical framebuffer truth.",
+      "params": {
+        "state": "object?"
+      },
+      "transaction_supported": false
+    },
+    "render.framebuffer": {
+      "permission": "observe",
+      "summary": "Return VLSB framebuffer bytes/sha for one state.",
+      "params": {
+        "state": "object?"
+      },
+      "transaction_supported": false
+    },
+    "render.pixel_diff": {
+      "permission": "observe",
+      "summary": "Compare two rendered states.",
+      "params": {
+        "before_state": "object",
+        "after_state": "object"
+      },
+      "transaction_supported": false
+    },
+    "render.png": {
+      "permission": "observe",
+      "summary": "Return canonical PNG as base64.",
+      "params": {
+        "state": "object?"
+      },
+      "transaction_supported": false
+    },
+    "render.preview_file": {
+      "permission": "observe",
+      "summary": "Write canonical PNG preview under the project root.",
+      "params": {
+        "path": "relative path",
+        "state": "object?"
+      },
+      "transaction_supported": false
+    },
+    "render.resolved_elements": {
+      "permission": "observe",
+      "summary": "Return renderer-resolved element geometry.",
+      "params": {
+        "state": "object?"
+      },
+      "transaction_supported": false
+    },
+    "scene.create_element": {
+      "permission": "edit",
+      "summary": "Create a scene element.",
+      "params": {
+        "element": "object"
+      },
+      "transaction_supported": true
+    },
+    "scene.delete_elements": {
+      "permission": "edit",
+      "summary": "Delete scene elements.",
+      "params": {
+        "ids": "string[]"
+      },
+      "transaction_supported": true
+    },
+    "scene.get": {
+      "permission": "observe",
+      "summary": "Read the active scene.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "scene.get_schema": {
+      "permission": "observe",
+      "summary": "Describe supported scene element types and coordinate rules.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "scene.list_elements": {
+      "permission": "observe",
+      "summary": "List scene elements.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "scene.update_element": {
+      "permission": "edit",
+      "summary": "Update fields on one scene element.",
+      "params": {
+        "id": "string",
+        "changes": "object"
+      },
+      "transaction_supported": true
+    },
+    "selection.clear": {
+      "permission": "edit",
+      "summary": "Clear selection.",
+      "params": {},
+      "transaction_supported": true
+    },
+    "selection.get": {
+      "permission": "observe",
+      "summary": "Read selected ids and primary selection.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "selection.set": {
+      "permission": "edit",
+      "summary": "Replace selection.",
+      "params": {
+        "ids": "string[]",
+        "primary_id": "string?"
+      },
+      "transaction_supported": true
+    },
+    "selection.toggle": {
+      "permission": "edit",
+      "summary": "Toggle one element in selection.",
+      "params": {
+        "id": "string"
+      },
+      "transaction_supported": true
+    },
+    "session.events": {
+      "permission": "observe",
+      "summary": "Read semantic Agent event stream.",
+      "params": {
+        "since": "int?"
+      },
+      "transaction_supported": false
+    },
+    "state.enumerate": {
+      "permission": "observe",
+      "summary": "Enumerate a deterministic state matrix.",
+      "params": {
+        "integer_policy": "representative|boundaries|full",
+        "include_states": "bool?"
+      },
+      "transaction_supported": false
+    },
+    "state.get_schema": {
+      "permission": "observe",
+      "summary": "Return the active scene state schema.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "state.list": {
+      "permission": "observe",
+      "summary": "List state variables and their domains.",
+      "params": {},
+      "transaction_supported": false
+    },
+    "validate.all_states": {
+      "permission": "observe",
+      "summary": "Validate a deterministic state matrix.",
+      "params": {
+        "integer_policy": "representative|boundaries|full"
+      },
+      "transaction_supported": false
+    },
+    "validate.current": {
+      "permission": "observe",
+      "summary": "Validate one state.",
+      "params": {
+        "state": "object?"
+      },
+      "transaction_supported": false
+    }
+  },
+  "invariants": [
+    "Automation manipulates project/scene/pixel/font semantics, never GUI coordinates.",
+    "Canonical Renderer and Studio Exporter remain the pixel/export truth.",
+    "Revision guards prevent stale writes.",
+    "Scene/layout/selection transactions can commit or rollback as one Designer history operation.",
+    "Project, asset and pixel lifecycle operations are explicit and are not falsely advertised as scene-transaction rollback."
+  ]
+}

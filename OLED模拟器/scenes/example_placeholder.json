@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "product": "Curing_Lite 光固化机 128x32 OLED — Placeholder Example",
+  "canvas": {
+    "w": 128,
+    "h": 32,
+    "preview_scale": 6
+  },
+  "storage": {
+    "layout": "VLSB column-page (SSD1306)",
+    "bytes_per_frame": 512,
+    "polarity": "1 = lit"
+  },
+  "states": {
+    "mode": {
+      "type": "enum",
+      "values": [
+        "NORMAL",
+        "HIGH",
+        "TURBO",
+        "PULSE",
+        "RAMP",
+        "ORTHO",
+        "CHECK"
+      ],
+      "init": "NORMAL"
+    },
+    "phase": {
+      "type": "enum",
+      "values": [
+        "standby",
+        "running"
+      ],
+      "init": "standby"
+    },
+    "battery": {
+      "type": "int",
+      "min": 0,
+      "max": 4,
+      "init": 4
+    },
+    "seconds": {
+      "type": "int",
+      "min": 0,
+      "max": 999,
+      "init": 300
+    }
+  },
+  "elements": [
+    {
+      "id": "battery",
+      "type": "image_seq",
+      "dir": "电池图标 - 字宽11字高28/",
+      "pattern": "11-28电池图标{n}.png",
+      "bind": "battery",
+      "count": 5,
+      "x": 5,
+      "y": 2,
+      "w": 11,
+      "h": 28
+    },
+    {
+      "id": "hero_digits",
+      "type": "digits",
+      "dir": "数字 - 字宽13字高27/",
+      "pattern": "13-27数字{d}.png",
+      "digit_w": 13,
+      "digit_h": 27,
+      "tracking": 2,
+      "bind": "seconds",
+      "min_digits": 2,
+      "pad_char": "0",
+      "x": 45,
+      "y": 3
+    },
+    {
+      "id": "mode_label",
+      "type": "text",
+      "text": "{mode}",
+      "font_header": "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h",
+      "cell_w": 5,
+      "cell_h": 7,
+      "advance": 6,
+      "zone": {
+        "x": 88,
+        "y": 2,
+        "w": 36,
+        "h": 12
+      },
+      "align": "left",
+      "y": 4
+    },
+    {
+      "id": "mode_icon",
+      "type": "image",
+      "asset": "Curing_Lite光固化机产品 - UI设计初稿/{mode}.png",
+      "var_lower": true,
+      "x": 94,
+      "y": 19,
+      "w": 24,
+      "h": 12,
+      "visible_when": {
+        "phase": "standby"
+      }
+    },
+    {
+      "id": "running_icon",
+      "type": "image",
+      "asset": "Curing_Lite光固化机产品 - UI设计初稿/running.png",
+      "x": 94,
+      "y": 19,
+      "w": 24,
+      "h": 12,
+      "visible_when": {
+        "phase": "running"
+      }
+    },
+    {
+      "id": "future_asset_demo",
+      "type": "placeholder",
+      "x": 104,
+      "y": 12,
+      "w": 20,
+      "h": 8,
+      "label": "FUTURE"
+    }
+  ],
+  "timeline": [
+    {
+      "at": 0,
+      "set": {
+        "battery": 4,
+        "seconds": 300
+      }
+    },
+    {
+      "at": 5,
+      "set": {
+        "phase": "running"
+      }
+    },
+    {
+      "every": 1,
+      "when": {
+        "phase": "running"
+      },
+      "do": "seconds -= 1"
+    },
+    {
+      "at": 305,
+      "set": {
+        "phase": "standby"
+      }
+    }
+  ]
+}

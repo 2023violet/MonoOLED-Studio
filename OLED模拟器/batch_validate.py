@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import itertools
+from pathlib import Path
+
+from validate import Finding, validate_scene
+
+
+@dataclass(frozen=True)
+class MatrixValidationSummary:
+    cases: int
+    findings: int
+    blockers: int
+    by_case: tuple[tuple[str, tuple[Finding, ...]], ...]
+
+
+def _int_values(spec: dict, policy: str) -> list[int]:
+    lo=int(spec.get('min',0)); hi=int(spec.get('max',lo)); init=int(spec.get('init',lo))
+    if policy=='boundaries':
+        return sorted({lo, (lo + hi) // 2, init, hi})
+    if policy=='representative':
+        if hi-lo <= 12:
+            return list(range(lo, hi+1))
+        candidates={lo, min(hi,lo+1), init, hi}
+        # Decimal transition boundaries catch the OLED timing/number-format cases
+        # that matter most without exploding a 0..999 state into 1000 cases.
+        for value in (9,10,99,100,300,999):
+            if lo <= value <= hi:
+                candidates.add(value)
+        return sorted(candidates)
+    if policy=='full':
+        if hi-lo>2000: raise ValueError('full integer range too large')
+        return list(range(lo,hi+1))
+    raise ValueError(f'unsupported integer policy: {policy}')
+
+
+def build_state_matrix(scene: dict, *, integer_policy: str='boundaries') -> list[dict]:
+    names=[]; domains=[]
+    for name,spec in scene.get('states',{}).items():
+        names.append(name)
+        if spec.get('type')=='enum': domains.append(list(spec.get('values',[])))
+        elif spec.get('type')=='int': domains.append(_int_values(spec,integer_policy))
+        else: domains.append([spec.get('init')])
+    if not names: return [{}]
+    return [dict(zip(names,values)) for values in itertools.product(*domains)]
+
+
+def _case_name(state:dict,index:int)->str:
+    if not state:return f'case_{index:04d}'
+    return '__'.join(f'{k}-{v}' for k,v in state.items())
+
+
+def validate_matrix(scene:dict,matrix:list[dict])->MatrixValidationSummary:
+    rows=[]; total=0; blockers=0
+    for index,state in enumerate(matrix):
+        findings=tuple(validate_scene(scene,dict(state)))
+        total+=len(findings); blockers+=sum(1 for f in findings if f.severity in {'ERROR','BLOCKER'})
+        rows.append((_case_name(state,index),findings))
+    return MatrixValidationSummary(len(matrix),total,blockers,tuple(rows))
+
+
+def write_matrix_report(summary:MatrixValidationSummary,path:str|Path)->Path:
+    lines=['# Batch Validation Matrix','',f'- Cases: **{summary.cases}**',f'- Findings: **{summary.findings}**',f'- Blockers: **{summary.blockers}**','']
+    for name,findings in summary.by_case:
+        if findings:
+            lines.append(f'## {name}')
+            for f in findings: lines.append(f'- **{f.severity}/{f.code}**: {f.message}')
+            lines.append('')
+    if summary.findings==0: lines.append('PASS — all state combinations have zero findings.')
+    target=Path(path); target.parent.mkdir(parents=True,exist_ok=True); target.write_text('\n'.join(lines).rstrip()+'\n',encoding='utf-8'); return target

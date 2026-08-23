@@ -1,0 +1,143 @@
+{
+  "assets": [
+    {
+      "bytes": 211,
+      "height": 12,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "Curing_Lite光固化机产品 - UI设计初稿/check.png",
+      "sha256": "02f96f10204a8e735fb93cccd08da1544e3a87429a653c8c822394cebf8cb196",
+      "source_polarity": "black_on_white",
+      "width": 24
+    },
+    {
+      "bytes": 1641,
+      "kind": "file",
+      "path": "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h",
+      "sha256": "c8cd7ef042da7feabaa7f6570d32aba02b0c5f3dd6740b1ec6f221631e858af5"
+    },
+    {
+      "bytes": 158,
+      "height": 12,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "Curing_Lite光固化机产品 - UI设计初稿/high.png",
+      "sha256": "e283b1e1773bc9ea2c0110215cf7cd039883eeb1eae3a1112dd388fd28b61842",
+      "source_polarity": "black_on_white",
+      "width": 24
+    },
+    {
+      "bytes": 157,
+      "height": 12,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "Curing_Lite光固化机产品 - UI设计初稿/normal.png",
+      "sha256": "8354d29370a36ef61c9a2a9a974da63286c2e3d0fd5f1417af9412fcb9bd4148",
+      "source_polarity": "black_on_white",
+      "width": 24
+    },
+    {
+      "bytes": 209,
+      "height": 12,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "Curing_Lite光固化机产品 - UI设计初稿/ortho.png",
+      "sha256": "eb39e737ca21425b85630a8c8e8338f01b7d1cfd2c5e95747b6226443193235e",
+      "source_polarity": "black_on_white",
+      "width": 24
+    },
+    {
+      "bytes": 175,
+      "height": 12,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "Curing_Lite光固化机产品 - UI设计初稿/pulse.png",
+      "sha256": "65e84759391fc55a78e45c20c962a42e23407cee6ba890cbde8e4bffed108192",
+      "source_polarity": "black_on_white",
+      "width": 24
+    },
+    {
+      "bytes": 177,
+      "height": 12,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "Curing_Lite光固化机产品 - UI设计初稿/ramp.png",
+      "sha256": "bafeddf2705e0cb8976098a608c2a1b8e0909bfef836e4cf7127bcf31ee4841b",
+      "source_polarity": "black_on_white",
+      "width": 24
+    },
+    {
+      "bytes": 208,
+      "height": 12,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "Curing_Lite光固化机产品 - UI设计初稿/running.png",
+      "sha256": "f31340c54a1dc6fe164ef0767d41106b418d05984ec89a59a7df62893b1e6bbe",
+      "source_polarity": "black_on_white",
+      "width": 24
+    },
+    {
+      "bytes": 159,
+      "height": 12,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "Curing_Lite光固化机产品 - UI设计初稿/turbo.png",
+      "sha256": "62cc06f799eeb983fc6e06e4a61c57d946276f8bb564f55024fa18be3d6a7a1a",
+      "source_polarity": "black_on_white",
+      "width": 24
+    },
+    {
+      "bytes": 183,
+      "height": 27,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "数字 - 字宽13字高27/13-27数字0.png",
+      "sha256": "3a40216086bacd143efca9292700ab5d433f36a4a8744a308309ef33a7e3ba8d",
+      "source_polarity": "black_on_white",
+      "width": 13
+    },
+    {
+      "bytes": 166,
+      "height": 27,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "数字 - 字宽13字高27/13-27数字3.png",
+      "sha256": "3954e1b442be3e8acc41f1a680474f13f323d4330613f54cc4f0b004a649aade",
+      "source_polarity": "black_on_white",
+      "width": 13
+    },
+    {
+      "bytes": 194,
+      "height": 28,
+      "inverted_for_oled": true,
+      "kind": "bitmap",
+      "mode": "RGBA",
+      "normalized_semantics": "0=background, 1=OLED lit",
+      "path": "电池图标 - 字宽11字高28/11-28电池图标4.png",
+      "sha256": "fbb60f11791507c91216f921d76730de23500861c03712e4190485982359c95d",
+      "source_polarity": "black_on_white",
+      "width": 11
+    }
+  ],
+  "schema_version": 1
+}
