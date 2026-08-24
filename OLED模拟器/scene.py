@@ -79,7 +79,11 @@ def clamp_state(scene, state):
     for k, spec in scene['states'].items():
         v = state[k]
         if spec['type'] == 'int':
-            v = max(spec.get('min', 0), min(spec.get('max', 10 ** 9), int(v)))
+            if 'values' in spec:
+                if v not in spec.get('values', []):
+                    v = spec['init']
+            else:
+                v = max(spec.get('min', 0), min(spec.get('max', 10 ** 9), int(v)))
         else:
             if v not in spec['values']:
                 v = spec['init']

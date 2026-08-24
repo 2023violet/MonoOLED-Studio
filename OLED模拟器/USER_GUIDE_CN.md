@@ -112,8 +112,19 @@ Developer_Tools\RUN_MONOOLED_DIAGNOSTIC.bat
 面向普通用户发布时，应使用 `Developer_Tools\BUILD_WINDOWS_EXE.bat` 生成经过 Real-Qt 零-skip Gate 的 PyInstaller onedir 版本，而不是要求最终用户自行配置 Python。
 
 
-## V8.4 Code AI 完整项目设计
+## V8.4.1 Code AI 完整项目设计
 
-V8.4 的 Automation API 1.0 支持 Code AI 在不模拟鼠标坐标的情况下完成多 Screen 项目编排。建议 Agent 首先调用 `automation.capabilities`、`project.get_contract`、`scene.get_schema` 和 `state.get_schema`，随后再读取 Screen/Asset/Font。
+V8.4.1 的 Automation API 1.1 支持 Code AI 在不模拟鼠标坐标的情况下完成多 Screen 项目编排，并可通过 `state.validate_schema / state.set_schema / state.validate` 原子化建立产品状态模型。建议 Agent 首先调用 `automation.capabilities` 与 `automation.describe_method` 自发现参数，再读取 `project.get_contract`、`scene.get_schema`、`state.get_schema`、Screen/Asset/Font。
 
-完整设计完成后，应调用 `render.all_states` 与 `validate.all_states` 证明状态矩阵，再使用 `project.save_all` 与 Studio 自己的 `export.*` 完成交付。协议完整定义见 `AUTOMATION_API_V1.json` 与 `CODE_AI_AUTOMATION_API_V1.md`。
+状态模型修改前应先调用 `state.validate_schema`，使用 revision guard 和 transaction；完整设计完成后，应调用 `state.enumerate`、`render.all_states` 与 `validate.all_states` 证明仅合法状态进入矩阵，再使用 `project.save_all` 与 Studio 自己的 `export.*` 完成交付。协议完整定义见 `AUTOMATION_API_V1.json` 与 `CODE_AI_AUTOMATION_API_V1.md`。
+
+
+## V8.4.2 Code AI 数据安全与长任务
+
+Automation API 1.2 将“事务提交”和“磁盘保存”明确分离。Code AI 对 Scene 完成 transaction commit 后，如果内容尚未保存，`project.get.dirty` 必须保持为 `true`。此时直接调用 `project.open_screen` 会返回 `UNSAVED_CHANGES`，不会静默丢弃当前页面。需要切换时必须显式选择 `save_current=true` 或 `discard_current=true`。
+
+对于数千状态的 `render.all_states / validate.all_states / export.all / export.code_ai_handoff`，建议先调用 `state.count` 估算规模；只需要总体结果时使用 summary 选项；需要长时间执行时使用 `job.start`，再通过 `job.status / job.result / job.cancel` 管理进度与取消。
+
+# V8.4.3 Windows 发布验证说明
+
+V8.4.3 不增加 Designer/Automation 功能，重点修复 Windows 发布门禁。源码交付中的 `.bat/.cmd` 均为 CRLF；`BUILD_WINDOWS_EXE.bat` 不再把所有测试塞进一个 pytest 进程，而是使用 `RUN_WINDOWS_TEST_GROUPS.py` 分组执行 Host/Core，并在 100–300% DPI 下逐个隔离运行 `test_qt_*.py`。每组/每个 Qt 模块都有 timeout、JUnit 和日志；Real-Qt 仍要求 Windows 上 `0 failed / 0 skipped`。

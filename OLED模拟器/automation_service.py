@@ -10,11 +10,13 @@ import os
 from pathlib import Path
 import shutil
 from threading import RLock
+import time
 import zipfile
 
 from PIL import Image, ImageDraw
 
 from atomic_io import atomic_write_bytes, atomic_write_json
+from automation_jobs import AutomationJobCancelled, AutomationJobManager
 from assets import load_bitmap
 from batch_validate import build_state_matrix
 from c_export import write_c_header
@@ -27,12 +29,13 @@ from pixel_studio import PixelDocument
 from project_workspace import ProjectWorkspace, resolve_under_root
 from render import render_scene
 from scene import init_state, load_scene
+from state_schema import apply_state_schema, schema_from_scene, validate_state, validate_state_schema
 from selection_model import SelectionModel
 from selection_tools import align_to, distribute, measure, selection_metrics
 from validate import has_blockers, validate_scene
 
 
-AUTOMATION_API_VERSION = '1.0.0'
+AUTOMATION_API_VERSION = '1.2.0'
 
 
 class StaleRevisionError(RuntimeError):
@@ -43,7 +46,15 @@ class PermissionDeniedError(PermissionError):
     pass
 
 
+class UnsavedChangesError(RuntimeError):
+    pass
+
+
 class TransactionError(RuntimeError):
+    pass
+
+
+class JobCancelledError(RuntimeError):
     pass
 
 
@@ -56,27 +67,82 @@ class _Transaction:
     base_revision: int
 
 
-def _method(permission: str, summary: str, params: dict | None = None, *, transaction: bool = False) -> dict:
+
+def _param(type_name: str, *, required: bool, **extra) -> dict:
+    return {'type': type_name, 'required': bool(required), **extra}
+
+
+STATE_SCHEMA_PARAM = {
+    'type': 'object',
+    'required': True,
+    'properties': {
+        'variables': {
+            'type': 'object<string,state-variable>',
+            'required': True,
+            'variants': [
+                {
+                    'type': 'int',
+                    'fields': {
+                        'type': {'const': 'int'},
+                        'init': {'type': 'int', 'required': True},
+                        'values': {'type': 'int[]', 'required': False, 'meaning': 'explicit discrete domain; mutually exclusive with min/max'},
+                        'min': {'type': 'int', 'required': False},
+                        'max': {'type': 'int', 'required': False},
+                    },
+                },
+                {
+                    'type': 'enum',
+                    'fields': {
+                        'type': {'const': 'enum'},
+                        'init': {'type': 'json-scalar', 'required': True},
+                        'values': {'type': 'json-scalar[]', 'required': True},
+                    },
+                },
+            ],
+            'notes': ['default is accepted as an input alias for init; normalized output always uses init'],
+        },
+        'relations': {
+            'type': 'array',
+            'required': False,
+            'items': {
+                'type': 'object',
+                'properties': {
+                    'left': {'type': 'state-variable-name', 'required': True},
+                    'operator': {'type': 'string', 'required': True, 'enum': ['<', '<=', '==', '!=', '>=', '>']},
+                    'right': {'type': 'state-variable-name', 'required': True},
+                },
+            },
+        },
+    },
+}
+
+
+def _method(permission: str, summary: str, params: dict | None = None, *, transaction: bool = False, returns: dict | None = None) -> dict:
     return {
         'permission': permission,
         'summary': summary,
         'params': dict(params or {}),
+        'returns': dict(returns or {}),
         'transaction_supported': bool(transaction),
     }
 
 
 METHOD_SPECS = {
-    'automation.capabilities': _method('observe', 'List Automation API 1.0 methods and contracts.'),
+    'automation.capabilities': _method('observe', 'List Automation API 1.2 methods and contracts.'),
     'automation.describe_method': _method('observe', 'Describe one Automation API method.', {'method': 'string'}),
     'project.get': _method('observe', 'Observe the active project/scene identity.'),
     'project.get_contract': _method('observe', 'Return project coordinate/framebuffer/schema contract.'),
     'project.list_screens': _method('observe', 'List screens in the active OLED project.'),
     'project.list_assets': _method('observe', 'List project-owned bitmap assets.'),
-    'project.open_screen': _method('edit', 'Switch the active project screen.', {'screen_id': 'string'}),
-    'project.create_screen': _method('edit', 'Create a new project screen.', {'screen_id': 'string', 'label': 'string?', 'open': 'bool?'}),
-    'project.duplicate_screen': _method('edit', 'Duplicate a project screen.', {'screen_id': 'string', 'new_id': 'string', 'label': 'string?'}),
+    'project.open_screen': _method('edit', 'Switch the active project screen without silently discarding unsaved changes.', {
+        'screen_id': _param('string', required=True),
+        'save_current': _param('bool', required=False, default=False),
+        'discard_current': _param('bool', required=False, default=False),
+    }),
+    'project.create_screen': _method('edit', 'Create a new project screen.', {'screen_id': 'string', 'label': 'string?', 'open': 'bool?', 'save_current': 'bool?', 'discard_current': 'bool?'}),
+    'project.duplicate_screen': _method('edit', 'Duplicate a project screen.', {'screen_id': 'string', 'new_id': 'string', 'label': 'string?', 'open': 'bool?', 'save_current': 'bool?', 'discard_current': 'bool?'}),
     'project.rename_screen': _method('edit', 'Rename a project screen and its scene file.', {'screen_id': 'string', 'new_id': 'string', 'label': 'string?'}),
-    'project.delete_screen': _method('edit', 'Delete a project screen while preserving at least one screen.', {'screen_id': 'string'}),
+    'project.delete_screen': _method('edit', 'Delete a project screen while preserving at least one screen.', {'screen_id': 'string', 'save_current': 'bool?', 'discard_current': 'bool?'}),
     'project.save': _method('edit', 'Atomically save the active scene and project manifest.'),
     'project.save_all': _method('edit', 'Save active scene, open pixel documents and project manifest.'),
     'scene.get': _method('observe', 'Read the active scene.'),
@@ -94,7 +160,27 @@ METHOD_SPECS = {
     'layout.measure': _method('observe', 'Measure selected elements.', {'ids': 'string[]?'}),
     'state.get_schema': _method('observe', 'Return the active scene state schema.'),
     'state.list': _method('observe', 'List state variables and their domains.'),
-    'state.enumerate': _method('observe', 'Enumerate a deterministic state matrix.', {'integer_policy': 'representative|boundaries|full', 'include_states': 'bool?'}),
+    'state.validate_schema': _method(
+        'observe',
+        'Validate a proposed root-level state schema without mutating the project.',
+        {'schema': deepcopy(STATE_SCHEMA_PARAM)},
+        returns={'valid': 'bool', 'errors': 'validation-error[]', 'schema': 'normalized state-schema'},
+    ),
+    'state.set_schema': _method(
+        'edit',
+        'Atomically replace the active scene state schema after validation.',
+        {'schema': deepcopy(STATE_SCHEMA_PARAM)},
+        transaction=True,
+        returns={'schema': 'normalized state-schema', 'changed': 'bool'},
+    ),
+    'state.validate': _method(
+        'observe',
+        'Validate one concrete state against domains and relational constraints.',
+        {'state': _param('object', required=True)},
+        returns={'valid': 'bool', 'violations': 'state-violation[]'},
+    ),
+    'state.enumerate': _method('observe', 'Enumerate a deterministic legal state matrix.', {'integer_policy': 'representative|boundaries|full', 'include_states': 'bool?', 'summary_only': 'bool?', 'max_cases': 'int?', 'allow_large_matrix': 'bool?'}),
+    'state.count': _method('observe', 'Count legal state combinations before starting a long matrix operation.', {'integer_policy': 'representative|boundaries|full', 'max_cases': 'int?', 'allow_large_matrix': 'bool?'}),
     'render.current': _method('observe', 'Render one state to canonical framebuffer truth.', {'state': 'object?'}),
     'render.framebuffer': _method('observe', 'Return VLSB framebuffer bytes/sha for one state.', {'state': 'object?'}),
     'render.resolved_elements': _method('observe', 'Return renderer-resolved element geometry.', {'state': 'object?'}),
@@ -102,9 +188,9 @@ METHOD_SPECS = {
     'render.preview_file': _method('observe', 'Write canonical PNG preview under the project root.', {'path': 'relative path', 'state': 'object?'}),
     'render.annotated_preview': _method('observe', 'Write enlarged preview with resolved element boxes/ids.', {'path': 'relative path', 'state': 'object?', 'scale': 'int?'}),
     'render.pixel_diff': _method('observe', 'Compare two rendered states.', {'before_state': 'object', 'after_state': 'object'}),
-    'render.all_states': _method('observe', 'Render every state in a deterministic state matrix.', {'integer_policy': 'representative|boundaries|full'}),
+    'render.all_states': _method('observe', 'Render every state in a deterministic state matrix.', {'integer_policy': 'representative|boundaries|full', 'summary_only': 'bool?', 'include_frames': 'bool?', 'max_cases': 'int?', 'allow_large_matrix': 'bool?'}),
     'validate.current': _method('observe', 'Validate one state.', {'state': 'object?'}),
-    'validate.all_states': _method('observe', 'Validate a deterministic state matrix.', {'integer_policy': 'representative|boundaries|full'}),
+    'validate.all_states': _method('observe', 'Validate a deterministic state matrix.', {'integer_policy': 'representative|boundaries|full', 'summary_only': 'bool?', 'include_cases': 'bool?', 'max_cases': 'int?', 'allow_large_matrix': 'bool?'}),
     'asset.create': _method('edit', 'Create a blank project bitmap.', {'path': 'relative path', 'width': 'int', 'height': 'int', 'value': '0|1?'}),
     'asset.import': _method('edit', 'Import an external bitmap into the project.', {'source': 'path', 'target': 'relative path'}),
     'asset.copy': _method('edit', 'Copy a project bitmap.', {'path': 'relative path', 'target': 'relative path'}),
@@ -125,20 +211,70 @@ METHOD_SPECS = {
     'pixel.redo': _method('edit', 'Redo PixelDocument edit.'),
     'pixel.save': _method('edit', 'Save PixelDocument to project PNG.'),
     'font.list': _method('observe', 'List FontPack assets.'),
-    'font.create_pack': _method('edit', 'Create FontPack.'),
-    'font.get_pack': _method('observe', 'Read FontPack metrics/characters.'),
-    'font.generate_glyphs': _method('edit', 'Rasterize characters into FontPack.'),
-    'font.get_glyph': _method('observe', 'Read one bitmap glyph.'),
-    'font.update_glyph': _method('edit', 'Update one bitmap glyph.'),
-    'font.set_metrics': _method('edit', 'Update FontPack baseline/advance.'),
+    'font.create_pack': _method(
+        'edit', 'Create FontPack.',
+        {
+            'path': _param('relative path', required=True),
+            'name': _param('string', required=False),
+            'cell': _param('[width:int,height:int]', required=False),
+            'baseline': _param('int', required=False),
+            'advance': _param('int', required=False),
+        },
+        returns={'font_id': 'relative dir', 'name': 'string', 'cell': '[int,int]'},
+    ),
+    'font.get_pack': _method(
+        'observe', 'Read FontPack metrics/characters.',
+        {'font_id': _param('relative dir', required=True)},
+        returns={'font_id': 'relative dir', 'name': 'string', 'cell': '[int,int]', 'baseline': 'int', 'advance': 'int', 'characters': 'string[]'},
+    ),
+    'font.generate_glyphs': _method(
+        'edit', 'Rasterize characters into FontPack.',
+        {
+            'font_id': _param('relative dir', required=True),
+            'characters': _param('string', required=True),
+            'font_path': _param('path|null', required=False),
+            'font_size': _param('int', required=False, minimum=1, default=12),
+            'threshold': _param('int', required=False, minimum=0, maximum=255, default=128),
+            'offset': _param('[x:int,y:int]', required=False, default=[0, 0]),
+        },
+        returns={'font_id': 'relative dir', 'count': 'int'},
+    ),
+    'font.get_glyph': _method(
+        'observe', 'Read one bitmap glyph.',
+        {'font_id': _param('relative dir', required=True), 'char': _param('single character', required=True)},
+        returns={'font_id': 'relative dir', 'char': 'string', 'pixels': 'int[][]', 'metrics': 'object'},
+    ),
+    'font.update_glyph': _method(
+        'edit', 'Update one bitmap glyph.',
+        {
+            'font_id': _param('relative dir', required=True),
+            'char': _param('single character', required=True),
+            'pixels': _param('int[][]', required=True),
+            'metrics': _param('{bearing_x:int?,bearing_y:int?,advance:int?}', required=False),
+        },
+        returns={'font_id': 'relative dir', 'char': 'string'},
+    ),
+    'font.set_metrics': _method(
+        'edit', 'Update FontPack baseline/advance.',
+        {
+            'font_id': _param('relative dir', required=True),
+            'baseline': _param('int', required=False),
+            'advance': _param('int', required=False),
+        },
+        returns={'font_id': 'relative dir', 'baseline': 'int', 'advance': 'int'},
+    ),
     'export.current': _method('edit', 'Export current state through the canonical Studio exporter.', {'output_dir': 'relative dir', 'state': 'object?'}),
-    'export.all': _method('edit', 'Export deterministic state matrix through the canonical Studio exporter.', {'output_dir': 'relative dir', 'integer_policy': 'representative|boundaries|full'}),
+    'export.all': _method('edit', 'Export deterministic state matrix through the canonical Studio exporter.', {'output_dir': 'relative dir', 'integer_policy': 'representative|boundaries|full', 'summary_only': 'bool?', 'include_hashes': 'bool?', 'max_cases': 'int?', 'allow_large_matrix': 'bool?'}),
     'export.c_header': _method('edit', 'Export current framebuffer C header.', {'path': 'relative path', 'symbol': 'string?'}),
     'export.font_pack': _method('edit', 'Create deterministic ZIP of a FontPack.', {'font_id': 'relative dir', 'path': 'relative zip path'}),
-    'export.code_ai_handoff': _method('edit', 'Generate deterministic Code AI handoff from Studio truth.', {'path': 'relative zip path', 'integer_policy': 'representative|boundaries|full'}),
+    'export.code_ai_handoff': _method('edit', 'Generate deterministic Code AI handoff from Studio truth.', {'path': 'relative zip path', 'integer_policy': 'representative|boundaries|full', 'summary_only': 'bool?', 'max_cases': 'int?', 'allow_large_matrix': 'bool?'}),
     'history.begin_transaction': _method('edit', 'Begin one undoable Agent scene transaction.'),
-    'history.commit': _method('edit', 'Commit Agent transaction as one Designer undo.'),
-    'history.rollback': _method('edit', 'Rollback Agent transaction.'),
+    'history.commit': _method('edit', 'Commit Agent transaction as one Designer undo.', {'transaction': _param('string', required=True)}),
+    'history.rollback': _method('edit', 'Rollback Agent transaction.', {'transaction': _param('string', required=True)}),
+    'job.start': _method('edit', 'Start one server-owned long-running Automation operation.', {'operation': _param('string', required=True), 'arguments': _param('object', required=False)}),
+    'job.status': _method('observe', 'Read long-running Automation job progress.', {'job_id': _param('string', required=True)}),
+    'job.result': _method('observe', 'Read terminal long-running Automation job result.', {'job_id': _param('string', required=True)}),
+    'job.cancel': _method('edit', 'Request cooperative cancellation of a long-running Automation job.', {'job_id': _param('string', required=True)}),
     'session.events': _method('observe', 'Read semantic Agent event stream.', {'since': 'int?'}),
 }
 
@@ -147,8 +283,8 @@ class StudioAutomationService:
     """Semantic automation surface shared by Code AI, tests and transport adapters.
 
     The API intentionally manipulates project/scene/pixel/font concepts rather than
-    GUI coordinates.  Automation API 1.0 adds project orchestration, capability
-    discovery, state-matrix proof and Studio-owned export so an Agent can complete a
+    GUI coordinates.  Automation API 1.1 keeps the project orchestration of 1.0 and adds
+    atomic product-state authoring, relational legal-state proof and Studio-owned export so an Agent can complete a
     multi-screen OLED project without inventing a second source of truth.
     """
 
@@ -189,6 +325,8 @@ class StudioAutomationService:
         self.pixel_documents: dict[str, PixelDocument] = {}
         self.pixel_paths: dict[str, Path] = {}
         self._pixel_seq = 0
+        self._jobs = AutomationJobManager()
+        self._saved_scene_fingerprint = self._scene_fingerprint()
 
     @classmethod
     def for_scene(cls, path, *, permission='edit'):
@@ -247,6 +385,45 @@ class StudioAutomationService:
         if self.project is None:
             raise ValueError('current scene is not attached to an OLED project manifest')
         return self.project
+
+    @staticmethod
+    def _persistent_scene(scene: dict) -> dict:
+        return {k: deepcopy(v) for k, v in scene.items() if not str(k).startswith('_')}
+
+    def _scene_fingerprint(self, scene: dict | None = None) -> str:
+        payload = self._persistent_scene(self.scene if scene is None else scene)
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        return hashlib.sha256(raw).hexdigest()
+
+    def _is_scene_dirty(self) -> bool:
+        by_content = self._scene_fingerprint() != self._saved_scene_fingerprint
+        by_editor = bool(getattr(getattr(self.editor_session, 'document', None), 'dirty', False))
+        return bool(by_content or by_editor)
+
+    def _refresh_saved_baseline(self) -> None:
+        self._saved_scene_fingerprint = self._scene_fingerprint()
+        if self.editor_session is not None:
+            self.editor_session.document.dirty = False
+
+    def _handle_unsaved_policy(self, params: dict, *, target_screen: str) -> None:
+        save_current = bool(params.get('save_current', False))
+        discard_current = bool(params.get('discard_current', False))
+        if save_current and discard_current:
+            raise ValueError('save_current and discard_current are mutually exclusive')
+        if not self._is_scene_dirty():
+            return
+        if save_current:
+            self._save_current_scene()
+            if self.project is not None:
+                self.project.save()
+            return
+        if discard_current:
+            return
+        current = self.project.active_screen if self.project is not None else None
+        raise UnsavedChangesError(
+            f'UNSAVED_CHANGES: current screen {current!r} has unsaved changes; '
+            f'use save_current=true or discard_current=true before opening {target_screen!r}'
+        )
 
     def _check_revision(self, expected):
         if expected is not None and int(expected) != self.revision:
@@ -320,7 +497,7 @@ class StudioAutomationService:
             if tx is None:
                 raise TransactionError(tid)
             if self.editor_session is not None:
-                self.editor_session.record_external_batch(tx.scene.get('elements', []), label='agent_transaction')
+                self.editor_session.record_external_scene(tx.scene, label='agent_transaction')
             self.revision += 1
             self._notify('transaction.committed')
             return self._result()
@@ -396,6 +573,7 @@ class StudioAutomationService:
         self._tx.clear()
         if self.editor_session is not None:
             self.editor_session.reset_scene(self.scene)
+        self._refresh_saved_baseline()
         self.revision += 1
         self._notify(event, active_screen=screen_id)
         return self._result(active_screen=screen_id, scene_path=str(self.source_path), active_screen_changed=True, project_structure_changed=True)
@@ -405,8 +583,7 @@ class StudioAutomationService:
             raise ValueError('current scene has no writable source path')
         data = {k: deepcopy(v) for k, v in self.scene.items() if not str(k).startswith('_')}
         atomic_write_json(self.source_path, data)
-        if self.editor_session is not None:
-            self.editor_session.document.dirty = False
+        self._refresh_saved_baseline()
         return self.source_path
 
     @staticmethod
@@ -417,13 +594,154 @@ class StudioAutomationService:
         safe = ''.join(ch if ch.isalnum() or ch in '-_.' else '_' for ch in slug)
         return f'case_{index:04d}__{safe}'
 
-    def _state_matrix(self, params: dict) -> list[dict]:
+    def _state_matrix_for_scene(self, scene: dict, params: dict, *, default_limit: int = 5000) -> list[dict]:
         policy = str(params.get('integer_policy', 'representative'))
-        matrix = build_state_matrix(self.scene, integer_policy=policy)
-        limit = int(params.get('max_cases', 5000))
-        if len(matrix) > limit:
-            raise ValueError(f'state matrix has {len(matrix)} cases; max_cases={limit}')
+        matrix = build_state_matrix(scene, integer_policy=policy)
+        count = len(matrix)
+        if count > 100000 and not bool(params.get('allow_large_matrix', False)):
+            raise ValueError(
+                f'state matrix has {count} cases; set allow_large_matrix=true only after explicit review'
+            )
+        limit = int(params.get('max_cases', default_limit))
+        if count > limit:
+            raise ValueError(f'state matrix has {count} cases; max_cases={limit}')
         return matrix
+
+    def _state_matrix(self, params: dict) -> list[dict]:
+        return self._state_matrix_for_scene(self.scene, params)
+
+    @staticmethod
+    def _cancelled(cancel_event) -> bool:
+        return bool(cancel_event is not None and cancel_event.is_set())
+
+    def _render_all_states_payload(self, scene: dict, params: dict, *, progress=None, cancel_event=None) -> dict:
+        matrix = self._state_matrix_for_scene(scene, params)
+        include_frames = bool(params.get('include_frames', not bool(params.get('summary_only', False))))
+        frames = []
+        expected = None
+        started = time.perf_counter()
+        total = len(matrix)
+        for index, state in enumerate(matrix):
+            if self._cancelled(cancel_event):
+                raise AutomationJobCancelled('job cancellation requested')
+            result = render_scene(scene, dict(state))
+            raw = result.framebuffer.to_vlsb()
+            expected = len(raw) if expected is None else expected
+            if len(raw) != expected:
+                raise RuntimeError('framebuffer size changed across state matrix')
+            if include_frames:
+                frames.append({
+                    'name': self._case_name(index, state),
+                    'state': deepcopy(state),
+                    'sha256': hashlib.sha256(raw).hexdigest(),
+                    'lit_pixels': sum(sum(row) for row in result.framebuffer.to_rows()),
+                })
+            if callable(progress):
+                progress('render', index + 1, total)
+        payload = {
+            'cases': total,
+            'framebuffer_bytes': int(expected or (int(scene['canvas']['w']) * ((int(scene['canvas']['h']) + 7) // 8))),
+            'deterministic': True,
+            'elapsed_ms': int(round((time.perf_counter() - started) * 1000.0)),
+        }
+        if include_frames:
+            payload['frames'] = frames
+        return payload
+
+    def _validate_all_states_payload(self, scene: dict, params: dict, *, progress=None, cancel_event=None) -> dict:
+        matrix = self._state_matrix_for_scene(scene, params)
+        include_cases = bool(params.get('include_cases', not bool(params.get('summary_only', False))))
+        failures = []
+        total_findings = blockers = 0
+        started = time.perf_counter()
+        total = len(matrix)
+        for index, state in enumerate(matrix):
+            if self._cancelled(cancel_event):
+                raise AutomationJobCancelled('job cancellation requested')
+            findings = validate_scene(scene, dict(state))
+            total_findings += len(findings)
+            case_blockers = sum(1 for f in findings if f.severity in {'BLOCKER', 'ERROR'})
+            blockers += case_blockers
+            if include_cases and findings:
+                failures.append({
+                    'name': self._case_name(index, state),
+                    'state': deepcopy(state),
+                    'blockers': case_blockers,
+                    'findings': [
+                        {'severity': f.severity, 'code': f.code, 'message': f.message, 'element_id': f.element_id}
+                        for f in findings
+                    ],
+                })
+            if callable(progress):
+                progress('validation', index + 1, total)
+        payload = {
+            'cases': total,
+            'findings': total_findings,
+            'blockers': blockers,
+            'valid': blockers == 0,
+            'elapsed_ms': int(round((time.perf_counter() - started) * 1000.0)),
+        }
+        if include_cases:
+            payload['cases_with_findings'] = failures
+        return payload
+
+    def _export_all_payload(self, scene: dict, project_root: Path, params: dict, *, progress=None, cancel_event=None) -> dict:
+        output = resolve_under_root(project_root, params.get('output_dir', 'exports/agent_all'), label='export directory')
+        matrix = self._state_matrix_for_scene(scene, params)
+        states = {self._case_name(i, state): state for i, state in enumerate(matrix)}
+        started = time.perf_counter()
+        summary = export_scene(
+            scene,
+            output,
+            states,
+            progress=progress,
+            cancel=(cancel_event.is_set if cancel_event is not None else None),
+        )
+        payload = {
+            'output_dir': str(output),
+            'frame_count': summary.frame_count,
+            'elapsed_ms': int(round((time.perf_counter() - started) * 1000.0)),
+        }
+        if bool(params.get('include_hashes', not bool(params.get('summary_only', False)))):
+            payload['frame_hashes'] = summary.frame_hashes
+        return payload
+
+    def _handoff_payload(self, scene: dict, project_root: Path, params: dict, *, progress=None, cancel_event=None) -> dict:
+        target = resolve_under_root(project_root, params.get('path', 'exports/code_ai_handoff.zip'), label='Code AI handoff')
+        if target.suffix.lower() != '.zip':
+            raise ValueError('Code AI handoff must end in .zip')
+        matrix = self._state_matrix_for_scene(scene, params)
+        states = {self._case_name(i, state): state for i, state in enumerate(matrix)}
+        started = time.perf_counter()
+        summary = build_handoff_package(
+            scene,
+            target,
+            states=states,
+            progress=progress,
+            cancel=(cancel_event.is_set if cancel_event is not None else None),
+        )
+        return {
+            'path': str(target),
+            'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
+            'frame_count': summary.frame_count,
+            'elapsed_ms': int(round((time.perf_counter() - started) * 1000.0)),
+        }
+
+    def _run_long_job(self, operation: str, arguments: dict, snapshot: dict, progress, cancel_event) -> dict:
+        scene = deepcopy(snapshot['scene'])
+        project_root = Path(snapshot['project_root']).resolve()
+        revision = int(snapshot['revision'])
+        if operation == 'render.all_states':
+            payload = self._render_all_states_payload(scene, arguments, progress=progress, cancel_event=cancel_event)
+        elif operation == 'validate.all_states':
+            payload = self._validate_all_states_payload(scene, arguments, progress=progress, cancel_event=cancel_event)
+        elif operation == 'export.all':
+            payload = self._export_all_payload(scene, project_root, arguments, progress=progress, cancel_event=cancel_event)
+        elif operation == 'export.code_ai_handoff':
+            payload = self._handoff_payload(scene, project_root, arguments, progress=progress, cancel_event=cancel_event)
+        else:
+            raise ValueError(f'unsupported long-running operation: {operation}')
+        return self._json_safe({'ok': True, 'revision': revision, **payload})
 
     def _annotated_preview_bytes(self, result, *, scale: int = 6) -> bytes:
         scale = max(1, min(32, int(scale)))
@@ -510,7 +828,11 @@ class StudioAutomationService:
                     'bitmap_text': {'text': 'string', 'font_pack': 'project-relative FontPack', 'x': 'int', 'y': 'int'},
                 })
             if method in {'state.get_schema', 'state.list'}:
-                return self._result(states=deepcopy(self.scene.get('states', {})))
+                schema = schema_from_scene(self.scene)
+                return self._result(states=deepcopy(schema['variables']), relations=deepcopy(schema['relations']), schema=schema)
+            if method == 'state.validate_schema':
+                checked = validate_state_schema(params.get('schema'))
+                return self._result(**checked)
 
             # ---- Project orchestration ----
             if method == 'project.get':
@@ -521,7 +843,7 @@ class StudioAutomationService:
                     active_screen=self.project.active_screen if self.project else None,
                     scene_path=str(self.source_path) if self.source_path else None,
                     canvas=deepcopy(self.scene.get('canvas', {})),
-                    dirty=bool(getattr(self.editor_session, 'dirty', False) or getattr(getattr(self.editor_session, 'document', None), 'dirty', False)),
+                    dirty=self._is_scene_dirty(),
                 )
             if method == 'project.list_screens':
                 if self.project is not None:
@@ -547,19 +869,27 @@ class StudioAutomationService:
                             continue
                 return self._result(assets=sorted(set(assets)))
             if method == 'project.open_screen':
-                return self._open_project_screen(str(params['screen_id']))
+                target = str(params['screen_id'])
+                self._handle_unsaved_policy(params, target_screen=target)
+                return self._open_project_screen(target)
             if method == 'project.create_screen':
                 project = self._require_project()
+                wants_open = bool(params.get('open', False))
+                if wants_open:
+                    self._handle_unsaved_policy(params, target_screen=str(params['screen_id']))
                 ref = project.add_screen(str(params['screen_id']), label=params.get('label'), canvas=(int(self.scene['canvas']['w']), int(self.scene['canvas']['h'])))
-                if bool(params.get('open', False)):
+                if wants_open:
                     return self._open_project_screen(ref.id, event='project.create_screen')
                 self.revision += 1
                 self._notify('project.create_screen', screen_id=ref.id)
                 return self._result(screen_id=ref.id, label=ref.label, path=ref.path, active_screen=project.active_screen, project_structure_changed=True)
             if method == 'project.duplicate_screen':
                 project = self._require_project()
+                wants_open = bool(params.get('open', False))
+                if wants_open:
+                    self._handle_unsaved_policy(params, target_screen=str(params['new_id']))
                 ref = project.duplicate_screen(str(params['screen_id']), new_id=str(params['new_id']), label=params.get('label'))
-                if bool(params.get('open', False)):
+                if wants_open:
                     return self._open_project_screen(ref.id, event='project.duplicate_screen')
                 self.revision += 1
                 self._notify('project.duplicate_screen', screen_id=ref.id)
@@ -580,6 +910,8 @@ class StudioAutomationService:
                 project = self._require_project()
                 sid = str(params['screen_id'])
                 was_active = project.active_screen == sid
+                if was_active:
+                    self._handle_unsaved_policy(params, target_screen='<delete-current>')
                 project.remove_screen(sid)
                 if was_active:
                     result = self._open_project_screen(project.active_screen, event='project.delete_screen')
@@ -676,9 +1008,48 @@ class StudioAutomationService:
                 return self._result(measurement={'bounds': m.bounds, 'horizontal_gaps': m.horizontal_gaps, 'vertical_gaps': m.vertical_gaps, 'equal_horizontal_spacing': m.equal_horizontal_spacing, 'equal_vertical_spacing': m.equal_vertical_spacing})
 
             # ---- State / render / validation ----
+            if method == 'state.set_schema':
+                checked = validate_state_schema(params.get('schema'))
+                if not checked['valid']:
+                    raise ValueError('invalid state schema: ' + json.dumps(checked['errors'], ensure_ascii=False, sort_keys=True))
+                before_scene = deepcopy(self.scene)
+                normalized = checked['schema']
+                changed = schema_from_scene(self.scene) != normalized
+                if changed:
+                    apply_state_schema(self.scene, normalized)
+                    if self.editor_session is not None:
+                        self.editor_session.runtime.reset()
+                        self.editor_session.document.dirty = True
+                    if transaction is None:
+                        if self.editor_session is not None:
+                            self.editor_session.record_external_scene(before_scene, label='agent_state_set_schema')
+                        self.revision += 1
+                        self._notify(method)
+                return self._result(schema=schema_from_scene(self.scene), changed=changed)
+            if method == 'state.validate':
+                schema = schema_from_scene(self.scene)
+                violations = validate_state(schema, params.get('state'))
+                return self._result(valid=not violations, violations=violations)
             if method == 'state.enumerate':
                 matrix = self._state_matrix(params)
-                return self._result(cases=len(matrix), integer_policy=str(params.get('integer_policy', 'representative')), states=matrix if bool(params.get('include_states', True)) else None)
+                include_states = bool(params.get('include_states', not bool(params.get('summary_only', False))))
+                payload = {
+                    'cases': len(matrix),
+                    'integer_policy': str(params.get('integer_policy', 'representative')),
+                    'warning': 'LARGE_STATE_MATRIX' if len(matrix) > 10000 else None,
+                }
+                if include_states:
+                    payload['states'] = matrix
+                return self._result(**payload)
+            if method == 'state.count':
+                count_params = dict(params)
+                count_params.setdefault('max_cases', 100000)
+                matrix = self._state_matrix_for_scene(self.scene, count_params, default_limit=100000)
+                return self._result(
+                    cases=len(matrix),
+                    integer_policy=str(params.get('integer_policy', 'representative')),
+                    warning='LARGE_STATE_MATRIX' if len(matrix) > 10000 else None,
+                )
             if method in {'render.current', 'render.framebuffer', 'render.resolved_elements', 'render.png'}:
                 state, result, raw = self._render(params.get('state'))
                 frame = {'width': result.framebuffer.width, 'height': result.framebuffer.height, 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(), 'vlsb_hex': raw.hex()}
@@ -712,33 +1083,14 @@ class StudioAutomationService:
                 diff = diff_framebuffers(before.framebuffer, after.framebuffer)
                 return self._result(before_state=before_state, after_state=after_state, changed_pixels=diff.changed_pixels, percent=diff.percent, bbox=diff.bbox)
             if method == 'render.all_states':
-                matrix = self._state_matrix(params)
-                frames = []
-                expected = None
-                for index, state in enumerate(matrix):
-                    _, result, raw = self._render(state)
-                    expected = len(raw) if expected is None else expected
-                    if len(raw) != expected:
-                        raise RuntimeError('framebuffer size changed across state matrix')
-                    frames.append({'name': self._case_name(index, state), 'state': state, 'sha256': hashlib.sha256(raw).hexdigest(), 'lit_pixels': sum(sum(row) for row in result.framebuffer.to_rows())})
-                return self._result(cases=len(matrix), framebuffer_bytes=int(expected or (int(self.scene['canvas']['w']) * ((int(self.scene['canvas']['h']) + 7) // 8))), frames=frames)
+                return self._result(**self._render_all_states_payload(self.scene, params))
             if method == 'validate.current':
                 state = dict(params.get('state') or init_state(self.scene))
                 findings = validate_scene(self.scene, state)
                 rows = [{'severity': f.severity, 'code': f.code, 'message': f.message, 'element_id': f.element_id} for f in findings]
                 return self._result(findings=rows, blockers=sum(1 for f in findings if f.severity in {'BLOCKER', 'ERROR'}), valid=not has_blockers(findings))
             if method == 'validate.all_states':
-                matrix = self._state_matrix(params)
-                failures = []
-                total_findings = blockers = 0
-                for index, state in enumerate(matrix):
-                    findings = validate_scene(self.scene, state)
-                    total_findings += len(findings)
-                    case_blockers = sum(1 for f in findings if f.severity in {'BLOCKER', 'ERROR'})
-                    blockers += case_blockers
-                    if findings:
-                        failures.append({'name': self._case_name(index, state), 'state': state, 'blockers': case_blockers, 'findings': [{'severity': f.severity, 'code': f.code, 'message': f.message, 'element_id': f.element_id} for f in findings]})
-                return self._result(cases=len(matrix), findings=total_findings, blockers=blockers, valid=blockers == 0, cases_with_findings=failures)
+                return self._result(**self._validate_all_states_payload(self.scene, params))
 
             # ---- Asset / pixel lifecycle ----
             if method == 'asset.create':
@@ -888,11 +1240,7 @@ class StudioAutomationService:
                 summary = export_scene(self.scene, output, {'current': state})
                 return self._result(output_dir=str(output), frame_count=summary.frame_count, frame_hashes=summary.frame_hashes)
             if method == 'export.all':
-                output = resolve_under_root(self.project_root, params.get('output_dir', 'exports/agent_all'), label='export directory')
-                matrix = self._state_matrix(params)
-                states = {self._case_name(i, state): state for i, state in enumerate(matrix)}
-                summary = export_scene(self.scene, output, states)
-                return self._result(output_dir=str(output), frame_count=summary.frame_count, frame_hashes=summary.frame_hashes)
+                return self._result(**self._export_all_payload(self.scene, self.project_root, params))
             if method == 'export.c_header':
                 target = resolve_under_root(self.project_root, params.get('path', 'exports/current.h'), label='C header')
                 _, result, _ = self._render(params.get('state'))
@@ -907,13 +1255,30 @@ class StudioAutomationService:
                 self._deterministic_zip(root, target)
                 return self._result(path=str(target), sha256=hashlib.sha256(target.read_bytes()).hexdigest())
             if method == 'export.code_ai_handoff':
-                target = resolve_under_root(self.project_root, params.get('path', 'exports/code_ai_handoff.zip'), label='Code AI handoff')
-                if target.suffix.lower() != '.zip':
-                    raise ValueError('Code AI handoff must end in .zip')
-                matrix = self._state_matrix(params)
-                states = {self._case_name(i, state): state for i, state in enumerate(matrix)}
-                summary = build_handoff_package(self.scene, target, states=states)
-                return self._result(path=str(target), sha256=hashlib.sha256(target.read_bytes()).hexdigest(), frame_count=summary.frame_count)
+                return self._result(**self._handoff_payload(self.scene, self.project_root, params))
+
+            # ---- Long-running server-owned jobs ----
+            if method == 'job.start':
+                operation = str(params['operation'])
+                allowed = {'render.all_states', 'validate.all_states', 'export.all', 'export.code_ai_handoff'}
+                if operation not in allowed:
+                    raise ValueError(f'unsupported long-running operation: {operation}')
+                if self.permission == 'observe' and operation.startswith('export.'):
+                    raise PermissionDeniedError(operation)
+                arguments = dict(params.get('arguments') or {})
+                snapshot = {
+                    'scene': deepcopy(self.scene),
+                    'project_root': str(self.project_root),
+                    'revision': self.revision,
+                }
+                jid = self._jobs.start(operation, arguments, snapshot, self._run_long_job)
+                return self._result(job_id=jid, operation=operation, state='queued')
+            if method == 'job.status':
+                return self._result(**self._jobs.status(str(params['job_id'])))
+            if method == 'job.result':
+                return self._result(**self._jobs.result(str(params['job_id'])))
+            if method == 'job.cancel':
+                return self._result(**self._jobs.cancel(str(params['job_id'])))
 
             if method == 'session.events':
                 return self._result(events=deepcopy(self.events[int(params.get('since', 0)):]))

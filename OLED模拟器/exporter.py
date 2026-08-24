@@ -165,7 +165,7 @@ def _validation_markdown(all_findings: dict[str, tuple[Finding, ...]]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def export_scene(scene: dict, output_dir: str | Path, states: Mapping[str, dict]) -> ExportSummary:
+def export_scene(scene: dict, output_dir: str | Path, states: Mapping[str, dict], *, progress=None, cancel=None) -> ExportSummary:
     output_dir = Path(output_dir)
     reference_dir = output_dir / "reference"
     golden_dir = output_dir / "golden"
@@ -173,9 +173,15 @@ def export_scene(scene: dict, output_dir: str | Path, states: Mapping[str, dict]
     golden_dir.mkdir(parents=True, exist_ok=True)
 
     all_findings: dict[str, tuple[Finding, ...]] = {}
-    for name, state in states.items():
+    state_items = list(states.items())
+    total_steps = max(1, len(state_items) * 2)
+    for index, (name, state) in enumerate(state_items):
+        if callable(cancel) and cancel():
+            raise RuntimeError('operation cancelled')
         findings = tuple(validate_scene(scene, dict(state)))
         all_findings[name] = findings
+        if callable(progress):
+            progress('export.validation', index + 1, total_steps)
     if any(has_blockers(list(fs)) for fs in all_findings.values()):
         report = _validation_markdown(all_findings)
         (output_dir / "validation_report.md").write_text(report, encoding="utf-8")
@@ -188,7 +194,9 @@ def export_scene(scene: dict, output_dir: str | Path, states: Mapping[str, dict]
     width = int(scene['canvas']['w']); height = int(scene['canvas']['h'])
     expected_bytes = width * (height // 8)
 
-    for name in sorted(states):
+    for render_index, name in enumerate(sorted(states)):
+        if callable(cancel) and cancel():
+            raise RuntimeError('operation cancelled')
         state = dict(states[name])
         result = render_scene(scene, state)
         raw = result.framebuffer.to_vlsb()
@@ -209,6 +217,8 @@ def export_scene(scene: dict, output_dir: str | Path, states: Mapping[str, dict]
             "lit_pixels": sum(sum(row) for row in result.framebuffer.to_rows()),
             "elements": [_visible_element_contract(item, project_root) for item in result.resolved_elements],
         }
+        if callable(progress):
+            progress('export.render', len(state_items) + render_index + 1, total_steps)
 
     scene_input = {k: v for k, v in scene.items() if not str(k).startswith("_")}
     contract = {

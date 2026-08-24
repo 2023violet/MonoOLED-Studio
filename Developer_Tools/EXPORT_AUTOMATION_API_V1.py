@@ -20,7 +20,8 @@ def export_contract(target: Path | None=None) -> Path:
             'Automation manipulates project/scene/pixel/font semantics, never GUI coordinates.',
             'Canonical Renderer and Studio Exporter remain the pixel/export truth.',
             'Revision guards prevent stale writes.',
-            'Scene/layout/selection transactions can commit or rollback as one Designer history operation.',
+            'Scene/layout/selection/state-schema transactions can commit or rollback as one Designer history operation.',
+            'State schema supports explicit discrete domains and constrained state-variable relations without script evaluation.',
             'Project, asset and pixel lifecycle operations are explicit and are not falsely advertised as scene-transaction rollback.',
         ],
     }

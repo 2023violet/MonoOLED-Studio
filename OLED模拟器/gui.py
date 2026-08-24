@@ -48,7 +48,7 @@ from automation_service import StudioAutomationService
 from diagnostics import configure_diagnostics, get_logger
 
 APP_TITLE = 'MonoOLED Studio'
-APP_VERSION = '8.4.0'
+APP_VERSION = '8.4.3'
 ZOOM_LEVELS = (1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24)
 RUN_SPEEDS = {'1×': 1000, '2×': 500, '5×': 200, '10×': 100}
 CANVAS_PRESETS = {'96×16': (96, 16), '128×32': (128, 32), '128×64': (128, 64), '256×64': (256, 64)}
@@ -1108,7 +1108,7 @@ if PYSIDE_AVAILABLE:
                 return
             result=response['result']
             if result.get('active_screen_changed'):
-                # Automation API 1.0 switches the existing scene/session object in
+                # Automation API 1.x switches the existing scene/session object in
                 # place.  Rebind only UI projections; do not create a second Agent
                 # service or a second source of project truth.
                 self.autosave = AutoSaveManager(self.scene, keep=int(self.preferences.get('autosave.snapshots', 10)))

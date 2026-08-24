@@ -36,23 +36,46 @@ def _deterministic_zip(source: Path, target: Path) -> None:
             zf.writestr(info, path.read_bytes())
 
 
-def build_handoff_package(scene: dict, output_zip: str | Path, *, states: dict[str, dict]) -> ExportSummary:
+def build_handoff_package(scene: dict, output_zip: str | Path, *, states: dict[str, dict], progress=None, cancel=None) -> ExportSummary:
     output_zip = Path(output_zip)
     with tempfile.TemporaryDirectory(prefix='oled_handoff_') as td:
         root = Path(td)
-        summary = export_scene(scene, root, states)
+        def _check_cancel():
+            return bool(callable(cancel) and cancel())
+
+        def _export_progress(stage, completed, total):
+            if callable(progress):
+                ratio = 0.0 if total <= 0 else completed / total
+                progress('handoff.' + str(stage), int(round(ratio * 650)), 1000)
+
+        if _check_cancel():
+            raise RuntimeError('operation cancelled')
+        summary = export_scene(scene, root, states, progress=_export_progress, cancel=cancel)
+        if callable(progress): progress('handoff.matrix', 650, 1000)
         matrix = build_state_matrix(scene, integer_policy='boundaries')
-        matrix_summary = validate_matrix(scene, matrix)
+
+        def _matrix_progress(stage, completed, total):
+            if callable(progress):
+                ratio = 0.0 if total <= 0 else completed / total
+                progress('handoff.' + str(stage), 650 + int(round(ratio * 150)), 1000)
+
+        matrix_summary = validate_matrix(scene, matrix, progress=_matrix_progress, cancel=cancel)
         write_matrix_report(matrix_summary, root / 'batch_validation.md')
 
         # Human overview + firmware-friendly frame arrays are generated from the
         # same canonical renderer output used for Golden BIN.
+        if _check_cancel(): raise RuntimeError('operation cancelled')
+        if callable(progress): progress('handoff.overview', 810, 1000)
         reference_paths=[root/'reference'/f'{name}.png' for name in states]
         if reference_paths:
             build_thumbnail_wall(reference_paths, root/'thumbnail_wall.png', columns=min(4, max(1, len(reference_paths))), scale=4)
         c_dir=root/'c_headers'; c_dir.mkdir(parents=True, exist_ok=True)
-        for name,state in states.items():
+        state_items=list(states.items())
+        for index,(name,state) in enumerate(state_items):
+            if _check_cancel(): raise RuntimeError('operation cancelled')
             write_c_header(render_scene(scene, dict(state)).framebuffer, c_dir/f'{name}.h', name=f'oled_{name}')
+            if callable(progress):
+                progress('handoff.c_headers', 820 + int(round(((index + 1) / max(1, len(state_items))) * 100)), 1000)
 
         rule_findings=check_design_rules(scene, scene.get('_design_rules') or {})
         rule_lines=['# Design Rule Check','',f'- Findings: **{len(rule_findings)}**','']
@@ -63,6 +86,8 @@ def build_handoff_package(scene: dict, output_zip: str | Path, *, states: dict[s
             rule_lines.append('PASS — no configured design-rule findings.')
         (root/'design_rules.md').write_text('\n'.join(rule_lines).rstrip()+'\n',encoding='utf-8')
 
+        if _check_cancel(): raise RuntimeError('operation cancelled')
+        if callable(progress): progress('handoff.assets', 930, 1000)
         project_root = scene_root(scene)
         asset_dirs = list(scene.get('_asset_dirs') or (['assets'] if (project_root / 'assets').exists() else []))
         if asset_dirs:
@@ -85,5 +110,8 @@ def build_handoff_package(scene: dict, output_zip: str | Path, *, states: dict[s
             '6. `c_headers/*.h` — optional VLSB asset/frame arrays generated from Golden truth.\n\n'
             'Do not infer coordinates from screenshots when contract JSON is available.\n',
             encoding='utf-8')
+        if _check_cancel(): raise RuntimeError('operation cancelled')
+        if callable(progress): progress('handoff.package', 980, 1000)
         _deterministic_zip(root, output_zip)
+        if callable(progress): progress('handoff.completed', 1000, 1000)
         return summary

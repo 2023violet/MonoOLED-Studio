@@ -5,6 +5,7 @@ import itertools
 from pathlib import Path
 
 from validate import Finding, validate_scene
+from state_schema import schema_from_scene, validate_state
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,11 @@ class MatrixValidationSummary:
 
 
 def _int_values(spec: dict, policy: str) -> list[int]:
+    if 'values' in spec:
+        values = list(spec.get('values', []))
+        if not values:
+            return []
+        return values
     lo=int(spec.get('min',0)); hi=int(spec.get('max',lo)); init=int(spec.get('init',lo))
     if policy=='boundaries':
         return sorted({lo, (lo + hi) // 2, init, hi})
@@ -43,7 +49,13 @@ def build_state_matrix(scene: dict, *, integer_policy: str='boundaries') -> list
         elif spec.get('type')=='int': domains.append(_int_values(spec,integer_policy))
         else: domains.append([spec.get('init')])
     if not names: return [{}]
-    return [dict(zip(names,values)) for values in itertools.product(*domains)]
+    schema = schema_from_scene(scene)
+    matrix=[]
+    for values in itertools.product(*domains):
+        state=dict(zip(names,values))
+        if not validate_state(schema,state):
+            matrix.append(state)
+    return matrix
 
 
 def _case_name(state:dict,index:int)->str:
@@ -51,12 +63,15 @@ def _case_name(state:dict,index:int)->str:
     return '__'.join(f'{k}-{v}' for k,v in state.items())
 
 
-def validate_matrix(scene:dict,matrix:list[dict])->MatrixValidationSummary:
+def validate_matrix(scene:dict,matrix:list[dict],*,progress=None,cancel=None)->MatrixValidationSummary:
     rows=[]; total=0; blockers=0
+    count=len(matrix)
     for index,state in enumerate(matrix):
+        if callable(cancel) and cancel(): raise RuntimeError('operation cancelled')
         findings=tuple(validate_scene(scene,dict(state)))
         total+=len(findings); blockers+=sum(1 for f in findings if f.severity in {'ERROR','BLOCKER'})
         rows.append((_case_name(state,index),findings))
+        if callable(progress): progress('validation',index+1,count)
     return MatrixValidationSummary(len(matrix),total,blockers,tuple(rows))
 
 

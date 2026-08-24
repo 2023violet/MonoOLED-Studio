@@ -1,5 +1,38 @@
 # Changelog
 
+## 8.4.3 — 2026-08-24
+
+### Windows Release & Real-Qt GA Closure
+
+- Enforced CRLF delivery for every `.bat` / `.cmd` source-package script and added a Git EOL contract.
+- Replaced the monolithic Windows pytest invocation with bounded source groups and isolated per-module Real-Qt processes with explicit timeouts, logs and JUnit evidence.
+- Added repository-root pytest import isolation through `pytest.ini`, so selected Automation tests no longer depend on `cd OLED模拟器`.
+- Added Windows release-text, bounded-runner and V8.4.3 release gates without changing Automation API 1.2, Renderer semantics, Golden frames or frozen clinical assets.
+
+## 8.4.2 — 2026-08-24
+
+### Automation Reliability & GA Closure
+
+- Fixed the real ORTHO graduation data-loss path: transaction commit no longer implies persistence and dirty state stays true until save.
+- Made `project.open_screen` fail closed on unsaved Scene changes, with explicit `save_current` / `discard_current` policies and stable `UNSAVED_CHANGES` JSON-RPC error.
+- Added required transaction parameter contracts for `history.commit` / `history.rollback`.
+- Unified bridge handshake and machine-contract version discovery under Automation API 1.2.0.
+- Added `state.count`, summary-oriented matrix responses, and bounded server-owned `job.start/status/result/cancel` for long render/validate/export/handoff work.
+- Added V8.4.2 1,000-iteration cross-screen data-safety graduation and Windows release-gate integration.
+- Preserved Renderer/VLSB semantics, 464 frozen product assets and 14 Clinical Golden frames.
+
+## 8.4.1 — 2026-08-23
+
+### Automation State Model Closure
+
+- Upgraded Automation API to 1.1.0 while preserving all 1.0 project/scene/pixel/font/export methods.
+- Added atomic `state.validate_schema`, `state.set_schema`, and `state.validate`.
+- Added explicit discrete integer domains and simple state-to-state relational constraints.
+- State enumeration/render-all/validate-all now exclude illegal relational combinations deterministically.
+- State-schema transactions support rollback and one Designer undo after commit.
+- Font automation methods now publish real required/optional parameter contracts from the production method registry.
+- Added V8.4.1 graduation/release gates without changing Renderer/Golden/product assets.
+
 ## 8.4.0 — 2026-08-23
 
 ### Final Project & Code AI Closure

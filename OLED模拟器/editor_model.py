@@ -47,6 +47,13 @@ class _BatchCommand:
     after: tuple[dict, ...]
 
 
+@dataclass(frozen=True)
+class _SceneCommand:
+    label: str
+    before: dict
+    after: dict
+
+
 class EditorSession:
     """GUI-independent authoring session for the OLED UI editor.
 
@@ -61,8 +68,8 @@ class EditorSession:
         self.document = SceneDocument(scene, logger=logger)
         self.runtime = SceneRuntime(scene, logger=logger)
         self.resources = RenderResources()
-        self._undo: list[_EditCommand | _ElementCommand | _BatchCommand] = []
-        self._redo: list[_EditCommand | _ElementCommand | _BatchCommand] = []
+        self._undo: list[_EditCommand | _ElementCommand | _BatchCommand | _SceneCommand] = []
+        self._redo: list[_EditCommand | _ElementCommand | _BatchCommand | _SceneCommand] = []
         self._coalesce_open = False
         self.max_history = max(1, int(max_history))
 
@@ -331,6 +338,15 @@ class EditorSession:
         self.scene['elements'] = [deepcopy(item) for item in snapshot]
         self.document.dirty = True
 
+    def _restore_scene(self, snapshot: dict) -> None:
+        self.scene.clear()
+        self.scene.update(deepcopy(snapshot))
+        self.document.scene = self.scene
+        self.runtime.scene = self.scene
+        self.runtime.reset()
+        self.resources = RenderResources()
+        self.document.dirty = True
+
     def undo(self) -> bool:
         self.end_coalesced_edit()
         if not self._undo:
@@ -342,6 +358,9 @@ class EditorSession:
         elif isinstance(command, _ElementCommand):
             self._restore_element(command, command.before)
             payload = {'element_snapshot': command.before}
+        elif isinstance(command, _SceneCommand):
+            self._restore_scene(command.before)
+            payload = {'scene_snapshot': command.label}
         else:
             self._restore_batch(command.before)
             payload = {'batch': command.label}
@@ -362,6 +381,9 @@ class EditorSession:
         elif isinstance(command, _ElementCommand):
             self._restore_element(command, command.after)
             payload = {'element_snapshot': command.after}
+        elif isinstance(command, _SceneCommand):
+            self._restore_scene(command.after)
+            payload = {'scene_snapshot': command.label}
         else:
             self._restore_batch(command.after)
             payload = {'batch': command.label}
@@ -381,6 +403,25 @@ class EditorSession:
         if before==after:return False
         self._push_undo(_BatchCommand(str(label),before,after)); self._redo.clear(); self.document.dirty=True; self._coalesce_open=False
         if self.logger is not None:self.logger.log('HISTORY_PUSH',batch=str(label),source='external')
+        return True
+
+    def record_external_scene(self, before_scene: dict, *, label: str = 'external_scene_transaction') -> bool:
+        """Record a root-level scene mutation as one Designer undo step.
+
+        This is intentionally reserved for Automation operations that mutate
+        scene-owned contracts such as the state schema. The scene dict identity
+        remains stable so Qt/editor references do not drift across undo/redo.
+        """
+        before = deepcopy(dict(before_scene))
+        after = deepcopy(dict(self.scene))
+        if before == after:
+            return False
+        self._push_undo(_SceneCommand(str(label), before, after))
+        self._redo.clear()
+        self.document.dirty = True
+        self._coalesce_open = False
+        if self.logger is not None:
+            self.logger.log('HISTORY_PUSH', batch=str(label), source='external_scene')
         return True
 
     def add_elements(self, elements: list[dict], *, label: str = 'add_elements') -> list[str]:

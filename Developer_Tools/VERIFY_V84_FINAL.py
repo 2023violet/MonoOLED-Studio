@@ -37,7 +37,7 @@ def _rpc_line(sock, payload):
 
 def main()->int:
     report={'version':'8.4.0','automation_api':AUTOMATION_API_VERSION}
-    assert AUTOMATION_API_VERSION=='1.0.0'
+    assert AUTOMATION_API_VERSION.startswith('1.')
     contract=json.loads((SIM/'AUTOMATION_API_V1.json').read_text(encoding='utf-8'))
     assert set(contract['methods'])==set(METHOD_SPECS)
     report['method_count']=len(METHOD_SPECS)
@@ -57,7 +57,7 @@ def main()->int:
         project=create_project(root/'agent_project',name='Automation Graduation',canvas=(32,16))
         svc=_svc(project)
         caps=svc.call('automation.capabilities',{})
-        assert caps['api_version']=='1.0.0'
+        assert caps['api_version'].startswith('1.')
         # Complete project lifecycle.
         svc.call('project.create_screen',{'screen_id':'agent','label':'Agent','open':True})
         icon=svc.call('pixel.create',{'path':'assets/agent_icon.png','width':8,'height':8})
@@ -82,7 +82,7 @@ def main()->int:
                 assert 'error' in bad
             with socket.create_connection(('127.0.0.1',server.server_address[1]),timeout=5) as sock:
                 ok=_rpc_line(sock,{'jsonrpc':'2.0','id':2,'method':'automation.capabilities','params':{},'token':'v84-token'})
-                assert ok['result']['api_version']=='1.0.0'
+                assert ok['result']['api_version'].startswith('1.')
                 got=_rpc_line(sock,{'jsonrpc':'2.0','id':3,'method':'project.get','params':{},'token':'v84-token'})
                 assert got['result']['active_screen']=='agent'
         finally:

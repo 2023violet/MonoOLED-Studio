@@ -1,6 +1,6 @@
 from __future__ import annotations
 import argparse, json, secrets, socketserver, sys
-from automation_service import PermissionDeniedError, StaleRevisionError, StudioAutomationService, TransactionError
+from automation_service import AUTOMATION_API_VERSION, PermissionDeniedError, StaleRevisionError, StudioAutomationService, TransactionError, UnsavedChangesError
 
 
 def dispatch_json_rpc(service, request: dict) -> dict:
@@ -17,6 +17,7 @@ def dispatch_json_rpc(service, request: dict) -> dict:
     except PermissionDeniedError as exc: return {'jsonrpc':'2.0','id':rid,'error':{'code':'PERMISSION_DENIED','message':str(exc)}}
     except StaleRevisionError as exc: return {'jsonrpc':'2.0','id':rid,'error':{'code':'STALE_REVISION','message':str(exc)}}
     except TransactionError as exc: return {'jsonrpc':'2.0','id':rid,'error':{'code':'TRANSACTION_ERROR','message':str(exc)}}
+    except UnsavedChangesError as exc: return {'jsonrpc':'2.0','id':rid,'error':{'code':'UNSAVED_CHANGES','message':str(exc)}}
     except KeyError as exc: return {'jsonrpc':'2.0','id':rid,'error':{'code':'METHOD_OR_FIELD_NOT_FOUND','message':str(exc)}}
     except Exception as exc: return {'jsonrpc':'2.0','id':rid,'error':{'code':'INVALID_REQUEST','message':str(exc)}}
 
@@ -41,7 +42,7 @@ class LocalAgentBridgeServer(socketserver.ThreadingTCPServer):
 def main(argv=None):
     from project_workspace import ProjectWorkspace
     from scene import load_scene
-    ap=argparse.ArgumentParser(description='MonoOLED Studio Automation API 1.0 bridge')
+    ap=argparse.ArgumentParser(description=f'MonoOLED Studio Automation API {AUTOMATION_API_VERSION} bridge')
     source=ap.add_mutually_exclusive_group(required=True)
     source.add_argument('--scene')
     source.add_argument('--project')
@@ -56,6 +57,6 @@ def main(argv=None):
     else:
         svc=StudioAutomationService.for_scene(args.scene,permission=args.permission)
     server=LocalAgentBridgeServer(lambda req:dispatch_json_rpc(svc,req),port=args.port)
-    print(json.dumps({'host':'127.0.0.1','port':server.server_address[1],'token':server.session_token,'permission':args.permission,'automation_api':'1.0.0'}),flush=True)
+    print(json.dumps({'host':'127.0.0.1','port':server.server_address[1],'token':server.session_token,'permission':args.permission,'automation_api':AUTOMATION_API_VERSION}),flush=True)
     server.serve_forever()
 if __name__=='__main__':main()
