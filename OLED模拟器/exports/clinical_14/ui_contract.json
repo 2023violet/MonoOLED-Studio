@@ -1,0 +1,1529 @@
+{
+  "coordinate_contract": {
+    "bounds": "[x, x+w) × [y, y+h)",
+    "integer_coordinates": true,
+    "origin": "top-left",
+    "x_direction": "right",
+    "y_direction": "down"
+  },
+  "framebuffer_contract": {
+    "bit": "1 << (y % 8)",
+    "byte_offset": "(y // 8) * width + x",
+    "bytes": 512,
+    "height": 32,
+    "layout": "VLSB page-major",
+    "polarity": "1 = lit",
+    "width": 128
+  },
+  "frames": {
+    "check_running": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 29,
+          "resize_policy": "native_only",
+          "text": "CHECK",
+          "type": "text",
+          "visible": true,
+          "w": 29,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "mode_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/running.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "running_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/check_running.bin",
+      "golden_sha256": "6a1e9ed8556b4a5c05bc21a05a7c7a426faa5f1c35bad9ffaed0e97c1e79440b",
+      "lit_pixels": 699,
+      "reference": "reference/check_running.png",
+      "state": {
+        "battery": 4,
+        "mode": "CHECK",
+        "phase": "running",
+        "seconds": 300
+      }
+    },
+    "check_standby": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 29,
+          "resize_policy": "native_only",
+          "text": "CHECK",
+          "type": "text",
+          "visible": true,
+          "w": 29,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/check.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "mode_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "running_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/check_standby.bin",
+      "golden_sha256": "cd678033957468c460bd1c221293a97514d7c76eb062e1780b2d9fe5cf9e9264",
+      "lit_pixels": 687,
+      "reference": "reference/check_standby.png",
+      "state": {
+        "battery": 4,
+        "mode": "CHECK",
+        "phase": "standby",
+        "seconds": 300
+      }
+    },
+    "high_running": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 23,
+          "resize_policy": "native_only",
+          "text": "HIGH",
+          "type": "text",
+          "visible": true,
+          "w": 23,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "mode_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/running.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "running_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/high_running.bin",
+      "golden_sha256": "d5ec096a3e540f71290d427c61896bda4eb1b563d53f2bd720e31995c272d649",
+      "lit_pixels": 686,
+      "reference": "reference/high_running.png",
+      "state": {
+        "battery": 4,
+        "mode": "HIGH",
+        "phase": "running",
+        "seconds": 300
+      }
+    },
+    "high_standby": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 23,
+          "resize_policy": "native_only",
+          "text": "HIGH",
+          "type": "text",
+          "visible": true,
+          "w": 23,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/high.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "mode_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "running_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/high_standby.bin",
+      "golden_sha256": "25b872f076619def7ee30e788d4eeac8f0af91ba53ae41ca97e7f01117d6d043",
+      "lit_pixels": 656,
+      "reference": "reference/high_standby.png",
+      "state": {
+        "battery": 4,
+        "mode": "HIGH",
+        "phase": "standby",
+        "seconds": 300
+      }
+    },
+    "normal_running": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 35,
+          "resize_policy": "native_only",
+          "text": "NORMAL",
+          "type": "text",
+          "visible": true,
+          "w": 35,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "mode_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/running.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "running_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/normal_running.bin",
+      "golden_sha256": "de165c3952ccf40bda06cabab9e2eca5edf96465bcc59274831dc4d06f8aeb02",
+      "lit_pixels": 722,
+      "reference": "reference/normal_running.png",
+      "state": {
+        "battery": 4,
+        "mode": "NORMAL",
+        "phase": "running",
+        "seconds": 300
+      }
+    },
+    "normal_standby": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 35,
+          "resize_policy": "native_only",
+          "text": "NORMAL",
+          "type": "text",
+          "visible": true,
+          "w": 35,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/normal.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "mode_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "running_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/normal_standby.bin",
+      "golden_sha256": "737f147eac9c89faf8c339360afd3cc895be9bc4db4519a792fce5e477836b59",
+      "lit_pixels": 686,
+      "reference": "reference/normal_standby.png",
+      "state": {
+        "battery": 4,
+        "mode": "NORMAL",
+        "phase": "standby",
+        "seconds": 300
+      }
+    },
+    "ortho_running": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 29,
+          "resize_policy": "native_only",
+          "text": "ORTHO",
+          "type": "text",
+          "visible": true,
+          "w": 29,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "mode_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/running.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "running_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/ortho_running.bin",
+      "golden_sha256": "e6b22640adb6de81712eb10c55f10e14785b0ef7f7968672172f6f73d7b47f79",
+      "lit_pixels": 702,
+      "reference": "reference/ortho_running.png",
+      "state": {
+        "battery": 4,
+        "mode": "ORTHO",
+        "phase": "running",
+        "seconds": 300
+      }
+    },
+    "ortho_standby": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 29,
+          "resize_policy": "native_only",
+          "text": "ORTHO",
+          "type": "text",
+          "visible": true,
+          "w": 29,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/ortho.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "mode_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "running_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/ortho_standby.bin",
+      "golden_sha256": "96a73634f1771a139767725aa270a3aa40febb26c4249b2e31f525f83dc76b5d",
+      "lit_pixels": 682,
+      "reference": "reference/ortho_standby.png",
+      "state": {
+        "battery": 4,
+        "mode": "ORTHO",
+        "phase": "standby",
+        "seconds": 300
+      }
+    },
+    "pulse_running": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 29,
+          "resize_policy": "native_only",
+          "text": "PULSE",
+          "type": "text",
+          "visible": true,
+          "w": 29,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "mode_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/running.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "running_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/pulse_running.bin",
+      "golden_sha256": "bab886efd7a802d8a2eebe026adbf3aa11fc8414f0001924e0bdf7c71ccba20b",
+      "lit_pixels": 698,
+      "reference": "reference/pulse_running.png",
+      "state": {
+        "battery": 4,
+        "mode": "PULSE",
+        "phase": "running",
+        "seconds": 300
+      }
+    },
+    "pulse_standby": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 29,
+          "resize_policy": "native_only",
+          "text": "PULSE",
+          "type": "text",
+          "visible": true,
+          "w": 29,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/pulse.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "mode_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "running_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/pulse_standby.bin",
+      "golden_sha256": "671c49afa5710cd5bf01d98ceb45c86f80c69775f539b7b129fc36d80a7d3483",
+      "lit_pixels": 678,
+      "reference": "reference/pulse_standby.png",
+      "state": {
+        "battery": 4,
+        "mode": "PULSE",
+        "phase": "standby",
+        "seconds": 300
+      }
+    },
+    "ramp_running": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 23,
+          "resize_policy": "native_only",
+          "text": "RAMP",
+          "type": "text",
+          "visible": true,
+          "w": 23,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "mode_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/running.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "running_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/ramp_running.bin",
+      "golden_sha256": "3156269fa844abc4255396f3243b972fe7e3c5d789121e6d6c65cf2067eb4141",
+      "lit_pixels": 693,
+      "reference": "reference/ramp_running.png",
+      "state": {
+        "battery": 4,
+        "mode": "RAMP",
+        "phase": "running",
+        "seconds": 300
+      }
+    },
+    "ramp_standby": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 23,
+          "resize_policy": "native_only",
+          "text": "RAMP",
+          "type": "text",
+          "visible": true,
+          "w": 23,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/ramp.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "mode_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "running_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/ramp_standby.bin",
+      "golden_sha256": "c19eaa6dbd202942d7013ac30100b12dc9a8fe8345ef6e297d32d974cfbdda7d",
+      "lit_pixels": 643,
+      "reference": "reference/ramp_standby.png",
+      "state": {
+        "battery": 4,
+        "mode": "RAMP",
+        "phase": "standby",
+        "seconds": 300
+      }
+    },
+    "turbo_running": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 29,
+          "resize_policy": "native_only",
+          "text": "TURBO",
+          "type": "text",
+          "visible": true,
+          "w": 29,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "mode_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/running.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "running_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/turbo_running.bin",
+      "golden_sha256": "a133702bd6d49f1bbb8337d12fb989e1ca3e25aff41bb4ead1eb5035fd3a202b",
+      "lit_pixels": 704,
+      "reference": "reference/turbo_running.png",
+      "state": {
+        "battery": 4,
+        "mode": "TURBO",
+        "phase": "running",
+        "seconds": 300
+      }
+    },
+    "turbo_standby": {
+      "elements": [
+        {
+          "assets": [
+            "电池图标 - 字宽11字高28/11-28电池图标4.png"
+          ],
+          "bind": "battery",
+          "blend": "or",
+          "h": 28,
+          "id": "battery",
+          "native_h": 28,
+          "native_w": 11,
+          "resize_policy": "native_only",
+          "type": "image_seq",
+          "value": 4,
+          "visible": true,
+          "w": 11,
+          "x": 5,
+          "y": 2
+        },
+        {
+          "assets": [
+            "数字 - 字宽13字高27/13-27数字3.png",
+            "数字 - 字宽13字高27/13-27数字0.png",
+            "数字 - 字宽13字高27/13-27数字0.png"
+          ],
+          "bind": "seconds",
+          "blend": "or",
+          "h": 27,
+          "id": "hero_digits",
+          "native_h": 27,
+          "native_w": 43,
+          "resize_policy": "native_only",
+          "text": "300",
+          "type": "digits",
+          "visible": true,
+          "w": 43,
+          "x": 45,
+          "y": 3
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h"
+          ],
+          "blend": "or",
+          "h": 7,
+          "id": "mode_label",
+          "native_h": 7,
+          "native_w": 29,
+          "resize_policy": "native_only",
+          "text": "TURBO",
+          "type": "text",
+          "visible": true,
+          "w": 29,
+          "x": 88,
+          "y": 4
+        },
+        {
+          "assets": [
+            "Curing_Lite光固化机产品 - UI设计初稿/turbo.png"
+          ],
+          "blend": "or",
+          "h": 12,
+          "id": "mode_icon",
+          "native_h": 12,
+          "native_w": 24,
+          "resize_policy": "native_only",
+          "type": "image",
+          "visible": true,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        },
+        {
+          "assets": [],
+          "h": 12,
+          "id": "running_icon",
+          "type": "image",
+          "visible": false,
+          "w": 24,
+          "x": 94,
+          "y": 19
+        }
+      ],
+      "golden": "golden/turbo_standby.bin",
+      "golden_sha256": "20134251636c276f874246ecff8f93e80b94e7b3c2c6a1c6705d7effce9b035e",
+      "lit_pixels": 680,
+      "reference": "reference/turbo_standby.png",
+      "state": {
+        "battery": 4,
+        "mode": "TURBO",
+        "phase": "standby",
+        "seconds": 300
+      }
+    }
+  },
+  "product": "Curing_Lite 光固化机 128x32 OLED",
+  "scene": {
+    "canvas": {
+      "h": 32,
+      "preview_scale": 6,
+      "w": 128
+    },
+    "elements": [
+      {
+        "bind": "battery",
+        "count": 5,
+        "dir": "电池图标 - 字宽11字高28/",
+        "h": 28,
+        "id": "battery",
+        "pattern": "11-28电池图标{n}.png",
+        "type": "image_seq",
+        "w": 11,
+        "x": 5,
+        "y": 2
+      },
+      {
+        "bind": "seconds",
+        "digit_h": 27,
+        "digit_w": 13,
+        "dir": "数字 - 字宽13字高27/",
+        "id": "hero_digits",
+        "min_digits": 2,
+        "pad_char": "0",
+        "pattern": "13-27数字{d}.png",
+        "tracking": 2,
+        "type": "digits",
+        "x": 45,
+        "y": 3
+      },
+      {
+        "advance": 6,
+        "align": "left",
+        "cell_h": 7,
+        "cell_w": 5,
+        "font_header": "Curing_Lite光固化机产品 - UI设计初稿/english_5x7_v2/cl_font_mode_en_5x7_v2.h",
+        "id": "mode_label",
+        "text": "{mode}",
+        "type": "text",
+        "y": 4,
+        "zone": {
+          "h": 12,
+          "w": 36,
+          "x": 88,
+          "y": 2
+        }
+      },
+      {
+        "asset": "Curing_Lite光固化机产品 - UI设计初稿/{mode}.png",
+        "h": 12,
+        "id": "mode_icon",
+        "type": "image",
+        "var_lower": true,
+        "visible_when": {
+          "phase": "standby"
+        },
+        "w": 24,
+        "x": 94,
+        "y": 19
+      },
+      {
+        "asset": "Curing_Lite光固化机产品 - UI设计初稿/running.png",
+        "h": 12,
+        "id": "running_icon",
+        "type": "image",
+        "visible_when": {
+          "phase": "running"
+        },
+        "w": 24,
+        "x": 94,
+        "y": 19
+      }
+    ],
+    "product": "Curing_Lite 光固化机 128x32 OLED",
+    "schema_version": 1,
+    "states": {
+      "battery": {
+        "init": 4,
+        "max": 4,
+        "min": 0,
+        "type": "int"
+      },
+      "mode": {
+        "init": "NORMAL",
+        "type": "enum",
+        "values": [
+          "NORMAL",
+          "HIGH",
+          "TURBO",
+          "PULSE",
+          "RAMP",
+          "ORTHO",
+          "CHECK"
+        ]
+      },
+      "phase": {
+        "init": "standby",
+        "type": "enum",
+        "values": [
+          "standby",
+          "running"
+        ]
+      },
+      "seconds": {
+        "init": 300,
+        "max": 999,
+        "min": 0,
+        "type": "int"
+      }
+    },
+    "storage": {
+      "bytes_per_frame": 512,
+      "layout": "VLSB column-page (SSD1306)",
+      "polarity": "1 = lit"
+    },
+    "timeline": [
+      {
+        "at": 0,
+        "set": {
+          "battery": 4,
+          "seconds": 300
+        }
+      },
+      {
+        "at": 5,
+        "set": {
+          "phase": "running"
+        }
+      },
+      {
+        "do": "seconds -= 1",
+        "every": 1,
+        "when": {
+          "phase": "running"
+        }
+      },
+      {
+        "at": 305,
+        "set": {
+          "phase": "standby"
+        }
+      }
+    ],
+    "zones": [
+      {
+        "h": 32,
+        "id": "battery",
+        "w": 22,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "h": 32,
+        "id": "hero",
+        "w": 62,
+        "x": 24,
+        "y": 0
+      },
+      {
+        "h": 16,
+        "id": "mode",
+        "w": 40,
+        "x": 88,
+        "y": 0
+      },
+      {
+        "h": 16,
+        "id": "context",
+        "w": 40,
+        "x": 88,
+        "y": 16
+      }
+    ]
+  },
+  "schema_version": 1
+}

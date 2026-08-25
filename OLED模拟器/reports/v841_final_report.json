@@ -1,0 +1,24 @@
+{
+  "version": "8.4.1",
+  "automation_api": "1.2.0",
+  "method_count": 82,
+  "clinical_baseline": {
+    "states": 560,
+    "framebuffer_bytes": 512,
+    "blockers": 0
+  },
+  "state_model": {
+    "legal_cases": 8,
+    "discrete_total_cycles": [
+      3,
+      5
+    ],
+    "relation": "current_cycle <= total_cycles",
+    "revision_guard": "PASS",
+    "transaction_rollback": "PASS",
+    "designer_undo": "PASS",
+    "save_reopen": "PASS",
+    "localhost_json_rpc": "PASS",
+    "font_contract_discovery": "PASS"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "version": "7.1.0",
+  "frozen": {
+    "production_assets": 464,
+    "goldens": 14,
+    "golden_bytes_each": 512
+  },
+  "preferences_fuzz": {
+    "iterations": 1000
+  },
+  "pixel_stress": {
+    "documents": 60,
+    "operations_per_document": 500,
+    "operations_total": 30000
+  },
+  "renderer_stress": {
+    "states": 14,
+    "cycles": 100,
+    "frames": 1400,
+    "bytes_each": 512,
+    "deterministic_states": 14,
+    "avg_ms": 2.6432947892781806,
+    "p95_ms": 2.9590700005428516
+  }
+}

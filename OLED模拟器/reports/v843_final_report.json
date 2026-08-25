@@ -1,0 +1,9 @@
+{
+  "version": "8.4.3",
+  "automation_api": "1.2.0",
+  "method_count": 82,
+  "windows_command_text": "PASS",
+  "root_pytest_import": "PASS",
+  "bounded_source_runner": "PASS",
+  "isolated_real_qt_runner": "PRESENT / native Windows execution required"
+}

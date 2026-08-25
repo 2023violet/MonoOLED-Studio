@@ -1,0 +1,54 @@
+{
+  "version": "8.3.0",
+  "frozen": {
+    "production_assets": 464,
+    "goldens": 14,
+    "golden_bytes_each": 512
+  },
+  "duplicate_method_gate": {
+    "duplicates": 0
+  },
+  "interactive_hot_path": {
+    "elements": 5,
+    "render": {
+      "iterations": 200,
+      "avg_ms": 0.55438126,
+      "p95_ms": 0.629436,
+      "max_ms": 1.265932
+    },
+    "geometry": {
+      "iterations": 2000,
+      "avg_ms": 0.049149803,
+      "p95_ms": 0.05378,
+      "max_ms": 1.294875
+    },
+    "smart_guides": {
+      "iterations": 1000,
+      "avg_ms": 0.116494026,
+      "p95_ms": 0.146207,
+      "max_ms": 0.384171
+    },
+    "cache": {
+      "bitmap_hits": 5076,
+      "bitmap_misses": 4,
+      "font_hits": 209,
+      "font_misses": 1,
+      "fontpack_hits": 0,
+      "fontpack_misses": 0
+    }
+  },
+  "twenty_object_guides": {
+    "iterations": 2000,
+    "avg_ms": 0.0608748855,
+    "p95_ms": 0.063635,
+    "max_ms": 1.015259
+  },
+  "batch_history_gate": {
+    "coalesced_moves": 100,
+    "undo_commands": 1
+  },
+  "launcher_contract": {
+    "startup_validation": true,
+    "runtime_bootstrap": true
+  }
+}
