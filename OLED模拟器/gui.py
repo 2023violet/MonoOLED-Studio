@@ -61,7 +61,7 @@ try:
     from PySide6.QtCore import QEvent, QFileSystemWatcher, QPoint, QRect, QSettings, QSignalBlocker, Qt, QTimer
     from PySide6.QtGui import QAction, QColor, QCloseEvent, QIcon, QImage, QKeySequence, QPixmap, QShortcut
     from PySide6.QtWidgets import (
-        QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QFormLayout,
+        QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QFormLayout,
         QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
         QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSpinBox,
         QSizePolicy, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget, QAbstractItemView,
@@ -273,14 +273,22 @@ if PYSIDE_AVAILABLE:
             titles=QVBoxLayout(); titles.setSpacing(0); self.hero_title=QLabel(); self.hero_title.setObjectName('PanelTitle'); self.hero_subtitle=QLabel(); self.hero_subtitle.setObjectName('Muted'); titles.addWidget(self.hero_title); titles.addWidget(self.hero_subtitle); header_row.addLayout(titles)
             header_row.addStretch(1)
             self.pixel_status=StatusPill(); header_row.addWidget(self.pixel_status)
-            self.header_design=QPushButton('Design'); self.header_design.setObjectName('PrimaryButton'); self.header_design.clicked.connect(lambda:self.set_workspace_mode(WorkspaceMode.DESIGN)); self.header_design.setEnabled(False)
-            self.header_pixel=QPushButton(); self.header_pixel.setObjectName('SecondaryButton'); self.header_pixel.clicked.connect(self.open_pixel_studio)
-            self.header_review=QPushButton('Review'); self.header_review.setObjectName('SecondaryButton'); self.header_review.clicked.connect(lambda:self.set_workspace_mode(WorkspaceMode.REVIEW))
+            # V9 UI Hierarchy: Workspace modes use exclusive button group (checkable) for clear active state
+            self.workspace_group = QButtonGroup(self)
+            self.workspace_group.setExclusive(True)
+            self.header_design=QPushButton('Design'); self.header_design.setObjectName('WorkspaceButton'); self.header_design.setCheckable(True); self.header_design.setChecked(True)
+            self.header_pixel=QPushButton(); self.header_pixel.setObjectName('WorkspaceButton'); self.header_pixel.setCheckable(True)
+            self.header_review=QPushButton('Review'); self.header_review.setObjectName('WorkspaceButton'); self.header_review.setCheckable(True)
+            self.workspace_group.addButton(self.header_design, 0)
+            self.workspace_group.addButton(self.header_pixel, 1)
+            self.workspace_group.addButton(self.header_review, 2)
+            self.workspace_group.buttonClicked.connect(self._workspace_button_clicked)
             header_row.addWidget(self.header_design); header_row.addWidget(self.header_pixel); header_row.addWidget(self.header_review)
+            # V9 UI Hierarchy: Save is primary CTA, delivery actions are secondary
             self.header_project=QPushButton(); self.header_project.setObjectName('SecondaryButton'); self.header_project.clicked.connect(self.open_project_dialog)
-            self.header_save=QPushButton(); self.header_save.setObjectName('SecondaryButton'); self.header_save.clicked.connect(self.route_save)
+            self.header_save=QPushButton(); self.header_save.setObjectName('PrimaryButton'); self.header_save.clicked.connect(self.route_save)
             self.header_validate=QPushButton(); self.header_validate.setObjectName('SecondaryButton'); self.header_validate.clicked.connect(self.batch_validate)
-            self.header_handoff=QPushButton(); self.header_handoff.setObjectName('PrimaryButton'); self.header_handoff.clicked.connect(self.export_handoff)
+            self.header_handoff=QPushButton(); self.header_handoff.setObjectName('SecondaryButton'); self.header_handoff.clicked.connect(self.export_handoff)
             self.header_diagnostics=QToolButton(); self.header_diagnostics.setObjectName('GhostButton'); self.header_diagnostics.clicked.connect(self.toggle_diagnostics)
             self.header_settings=QToolButton(); self.header_settings.setObjectName('GhostButton'); self.header_settings.setText('⚙'); self.header_settings.clicked.connect(self.open_preferences); self.header_settings.setToolTip('Preferences (Ctrl+,)')
             self.header_agent=QToolButton(); self.header_agent.setObjectName('GhostButton'); self.header_agent.setText('AI'); self.header_agent.setToolTip('Code AI Agent Bridge'); self.header_agent.clicked.connect(self.toggle_agent_bridge)
@@ -482,15 +490,29 @@ if PYSIDE_AVAILABLE:
 
         def set_workspace_mode(self, mode):
             self.workspace_mode=WorkspaceMode(mode)
+            # V9: Update button group to reflect mode (sync from menu/shortcut/API)
+            mode_to_button = {WorkspaceMode.DESIGN: 0, WorkspaceMode.PIXEL: 1, WorkspaceMode.REVIEW: 2}
+            button_id = mode_to_button.get(mode, 0)
+            button = self.workspace_group.button(button_id)
+            if button and not button.isChecked():
+                button.setChecked(True)
             review=self.workspace_mode==WorkspaceMode.REVIEW
-            self.header_design.setEnabled(review); self.header_review.setEnabled(not review)
-            set_button_role(self.header_design, 'SecondaryButton' if review else 'PrimaryButton'); set_button_role(self.header_review, 'PrimaryButton' if review else 'SecondaryButton')
             for widget in (self.add_button,self.assign_button,self.delete_button,self.context_pixel,self.context_duplicate,self.context_lock,self.lock_check,self.hidden_check): widget.setEnabled(not review)
             for spin in self.geom_spins.values(): spin.setEnabled(not review)
             self.align_card.setVisible(not review)
             if review:
                 self._diagnostics_open=True; self.diagnostics_tabs.setCurrentIndex(1)
             self._layout_bucket=None; self._responsive_tick(); self.refresh_all(keep_selection=True)
+
+        def _workspace_button_clicked(self, button):
+            """Handle workspace button group clicks (V9 exclusive button group)."""
+            button_id = self.workspace_group.id(button)
+            if button_id == 0:
+                self.set_workspace_mode(WorkspaceMode.DESIGN)
+            elif button_id == 1:
+                self.open_pixel_studio()
+            elif button_id == 2:
+                self.set_workspace_mode(WorkspaceMode.REVIEW)
 
         def show_performance_report(self):
             drag=self.profiler.summary('drag_preview'); full=self.profiler.summary('full_refresh')

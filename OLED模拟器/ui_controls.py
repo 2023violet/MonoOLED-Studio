@@ -132,6 +132,8 @@ if PYSIDE_AVAILABLE:
         used a translucent Qt.Popup with a transparent list viewport, which
         allowed the owner UI to bleed through on Windows.  Rounded corners are
         enforced with a window mask instead of depending on stylesheet alpha.
+
+        V9: Uses systematic 8px panel radius (matches StudioSelectPopup QSS).
         """
         def __init__(self, owner, parent=None):
             super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint)
@@ -151,7 +153,8 @@ if PYSIDE_AVAILABLE:
             if self.width() <= 0 or self.height() <= 0:
                 return
             path = QPainterPath()
-            path.addRoundedRect(0.0, 0.0, float(self.width()), float(self.height()), 10.0, 10.0)
+            # V9 systematic scale: panel surfaces use 8px radius
+            path.addRoundedRect(0.0, 0.0, float(self.width()), float(self.height()), 8.0, 8.0)
             self.setMask(QRegion(path.toFillPolygon().toPolygon()))
 
         def resizeEvent(self, event):  # noqa: N802

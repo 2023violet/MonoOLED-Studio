@@ -110,6 +110,7 @@ class StatusPill(QLabel):
         status=self._status if self._status in {'neutral','accent','success','warning','error'} else 'neutral'
         bg=t[f'status.{status}.background']
         fg=t[f'status.{status}.foreground']
+        # StatusPill uses 10px radius - distinctly rounded pill shape (V9 systematic scale)
         self.setStyleSheet(
             f'QLabel {{ background:{bg}; color:{fg}; border-radius:10px; '
             'padding:4px 10px; font-weight:600; }'

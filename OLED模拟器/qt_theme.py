@@ -34,10 +34,6 @@ COLORS = {
 METRICS = {
     'grid': 8,
     'gap': 20,
-    'radius_large': 24,
-    'radius_medium': 20,
-    'radius_small': 16,
-    'radius_inner': 12,
     'padding_large': 20,
     'padding_medium': 14,
     'padding_small': 10,
@@ -98,6 +94,16 @@ _PALETTE_QSS_NAMES = {
 
 
 def _stylesheet_from_tokens(c: dict[str, str], d: dict[str, int]) -> str:
+    # Systematic border-radius scale (V9 professional editor refinement):
+    # - Panel surfaces (8px): primary containment, popups, lists
+    # - Controls (6px): buttons, inputs, tabs, list items - unified hierarchy
+    # - Pills (10px): StatusPill - deliberately rounded badges
+    # - Menus (5px): ephemeral transient surfaces
+    r_panel = d.get('radius_panel', 8)
+    r_control = d.get('radius_control', 6)
+    r_pill = d.get('radius_pill', 10)
+    r_menu = d.get('radius_menu', 5)
+
     return f'''
 QMainWindow, QWidget#AppRoot {{
     background: {c['app.background']}; color: {c['text.primary']};
@@ -106,7 +112,7 @@ QMainWindow, QWidget#AppRoot {{
 }}
 QWidget {{ color: {c['text.primary']}; }}
 QFrame#BentoCard, QFrame#BentoMediumCard, QFrame#BentoSmallCard {{
-    background: {c['surface.panel']}; border: 1px solid {c['border.subtle']}; border-radius: 10px;
+    background: {c['surface.panel']}; border: 1px solid {c['border.subtle']}; border-radius: {r_pill}px;
 }}
 QLabel#CardTitle {{ color: {c['text.primary']}; font-size: {d['font_heading']}px; font-weight: 600; }}
 QLabel#CardSubtitle, QLabel#Muted, QLabel#PanelSubtitle {{ color: {c['text.muted']}; font-size: {d['font_small']}px; }}
@@ -115,7 +121,7 @@ QLabel#SectionEyebrow, QLabel#InspectorSection {{ color: {c['text.muted']}; font
 QLabel#PanelTitle {{ color: {c['text.primary']}; font-size: {d['font_body']}px; font-weight: 700; }}
 
 QPushButton {{
-    min-height: {d['control']}px; padding: 0 {d['pad']}px; border-radius: 7px;
+    min-height: {d['control']}px; padding: 0 {d['pad']}px; border-radius: {r_control}px;
     border: 1px solid {c['border.subtle']}; background: {c['surface.toolbar']};
     color: {c['text.primary']}; font-weight: 600;
 }}
@@ -129,16 +135,28 @@ QPushButton#PrimaryButton[hoverVisible="true"] {{ background: {c['accent.hover']
 QPushButton#SecondaryButton {{ background: {c['surface.toolbar']}; border-color: {c['border.subtle']}; }}
 QPushButton#SecondaryButton[hoverVisible="true"] {{ background: {c['surface.hover']}; }}
 QPushButton#DangerButton {{ color: {c['status.error']}; }}
+QPushButton#WorkspaceButton {{
+    min-height: {d['control']}px; padding: 0 {d['pad']}px; border-radius: {r_control}px;
+    border: 1px solid {c['border.subtle']}; background: {c['surface.toolbar']};
+    color: {c['text.primary']}; font-weight: 600;
+}}
+QPushButton#WorkspaceButton[hoverVisible="true"] {{ background: {c['surface.hover']}; border-color: {c['border.normal']}; }}
+QPushButton#WorkspaceButton:checked {{ background: {c['surface.selected']}; color: {c['accent.primary']}; border-color: {c['accent.primary']}; }}
+QPushButton#WorkspaceButton:checked[hoverVisible="true"] {{ background: {c['accent.soft']}; }}
+QPushButton#WorkspaceButton[pressedVisible="true"] {{ background: {c['surface.pressed']}; }}
+QPushButton#WorkspaceButton[keyboardFocusVisible="true"]:focus {{ border: 1px solid {c['border.focus']}; }}
+QPushButton#WorkspaceButton:disabled {{ color: {c['text.disabled']}; background: {c['surface.toolbar']}; border-color: {c['border.subtle']}; }}
+
 
 QToolButton#GhostButton {{
     min-height: {d['control']}px; padding: 0 {d['pad']}px; border: 1px solid transparent;
-    border-radius: 7px; background: transparent; color: {c['text.secondary']};
+    border-radius: {r_control}px; background: transparent; color: {c['text.secondary']};
 }}
 QToolButton#GhostButton[hoverVisible="true"] {{ background: {c['surface.hover']}; color: {c['text.primary']}; }}
 QToolButton#GhostButton[keyboardFocusVisible="true"]:focus {{ border: 1px solid {c['border.focus']}; }}
 QToolButton#ToolRailButton {{
     min-width: 38px; min-height: 38px; max-width: 38px;
-    border: 1px solid transparent; border-radius: 7px; background: transparent;
+    border: 1px solid transparent; border-radius: {r_control}px; background: transparent;
     color: {c['text.secondary']}; font-weight: 700;
 }}
 QToolButton#ToolRailButton[hoverVisible="true"] {{ background: {c['surface.hover']}; color: {c['text.primary']}; }}
@@ -151,38 +169,38 @@ QToolButton#ToolRailButton:disabled {{ color: {c['text.disabled']}; background: 
 QWidget#StudioSelect {{ background: transparent; }}
 QPushButton#StudioSelectButton {{
     min-height: {d['control']}px; padding: 0 30px 0 10px; text-align: left;
-    border-radius: 8px; border: 1px solid {c['border.subtle']}; background: {c['surface.toolbar']};
+    border-radius: {r_control}px; border: 1px solid {c['border.subtle']}; background: {c['surface.toolbar']};
     color: {c['text.primary']}; font-weight: 500;
 }}
 QPushButton#StudioSelectButton[popupOpen="true"] {{ background: {c['surface.selected']}; border-color: {c['border.focus']}; }}
 QPushButton#StudioSelectButton[hoverVisible="true"] {{ background: {c['surface.hover']}; border-color: {c['border.normal']}; }}
 QLabel#StudioSelectChevron {{ color: {c['text.muted']}; background: transparent; }}
-QFrame#StudioSelectPopup {{ background: {c['surface.panel']}; border: 1px solid {c['border.normal']}; border-radius: 10px; }}
+QFrame#StudioSelectPopup {{ background: {c['surface.panel']}; border: 1px solid {c['border.normal']}; border-radius: {r_panel}px; }}
 QListWidget#StudioSelectList {{ background: {c['surface.panel']}; border: none; padding: 0; outline: none; }}
 QListWidget#StudioSelectList QWidget {{ background: {c['surface.panel']}; }}
-QListWidget#StudioSelectList::item {{ min-height: {d['row']}px; padding: 2px 9px; border-radius: 7px; }}
+QListWidget#StudioSelectList::item {{ min-height: {d['row']}px; padding: 2px 9px; border-radius: {r_control}px; }}
 QListWidget#StudioSelectList::item:hover {{ background: {c['surface.hover']}; }}
 QListWidget#StudioSelectList::item:selected {{ background: {c['surface.selected']}; color: {c['accent.primary']}; }}
-QSpinBox#StudioNumericInput {{ padding: 0 10px; border-radius: 8px; }}
+QSpinBox#StudioNumericInput {{ padding: 0 10px; border-radius: {r_control}px; }}
 QPushButton#StudioSegment {{ border-radius: 0px; margin: 0px; }}
 QPushButton#StudioSegment:checked {{ background: {c['surface.selected']}; color: {c['accent.primary']}; border-color: {c['border.normal']}; }}
 
 QLineEdit, QSpinBox, QComboBox {{
     min-height: {d['control']}px; background: {c['surface.toolbar']}; border: 1px solid {c['border.subtle']};
-    border-radius: 7px; padding: 0 8px; color: {c['text.primary']}; selection-background-color: {c['accent.primary']};
+    border-radius: {r_control}px; padding: 0 8px; color: {c['text.primary']}; selection-background-color: {c['accent.primary']};
 }}
 /* Focus changes color only; width stays 1px so geometry never jumps. */
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{ border: 1px solid {c['border.focus']}; background: {c['surface.panel']}; }}
 QListWidget, QListView, QPlainTextEdit {{
-    background: {c['surface.toolbar']}; border: 1px solid {c['border.subtle']}; border-radius: 8px;
+    background: {c['surface.toolbar']}; border: 1px solid {c['border.subtle']}; border-radius: {r_panel}px;
     padding: 4px; color: {c['text.primary']};
 }}
-QListWidget::item {{ min-height: {d['row']}px; padding: 2px 7px; border-radius: 6px; }}
+QListWidget::item {{ min-height: {d['row']}px; padding: 2px 7px; border-radius: {r_control}px; }}
 QListWidget::item:hover {{ background: {c['surface.hover']}; }}
 QListWidget::item:selected {{ background: {c['surface.selected']}; color: {c['accent.primary']}; }}
 QCheckBox {{ spacing: 7px; color: {c['text.secondary']}; }}
 QTabWidget::pane {{ border: none; background: transparent; }}
-QTabBar::tab {{ min-height: 28px; padding: 5px 10px; margin-right: 2px; border-radius: 6px; color: {c['text.secondary']}; }}
+QTabBar::tab {{ min-height: 28px; padding: 5px 10px; margin-right: 2px; border-radius: {r_control}px; color: {c['text.secondary']}; }}
 QTabBar::tab:hover {{ background: {c['surface.hover']}; }}
 QTabBar::tab:selected {{ background: {c['surface.selected']}; color: {c['accent.primary']}; font-weight: 600; }}
 QSplitter::handle {{ background: transparent; width: 8px; height: 8px; }}
@@ -195,17 +213,17 @@ QStackedWidget#PreferencesStack, QScrollArea#PreferencesScroll, QWidget#Preferen
 
 QScrollArea {{ border: none; background: transparent; }}
 QScrollBar:vertical {{ width: 10px; background: transparent; margin: 2px; }}
-QScrollBar::handle:vertical {{ background: {c['border.normal']}; min-height: 28px; border-radius: 5px; }}
+QScrollBar::handle:vertical {{ background: {c['border.normal']}; min-height: 28px; border-radius: {r_menu}px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QMenuBar {{ background: {c['app.background']}; color: {c['text.primary']}; }}
-QMenuBar::item:selected {{ background: {c['surface.hover']}; border-radius: 5px; }}
+QMenuBar::item:selected {{ background: {c['surface.hover']}; border-radius: {r_menu}px; }}
 QMenu {{ background: {c['surface.panel']}; color: {c['text.primary']}; border: 1px solid {c['border.subtle']}; padding: 5px; }}
-QMenu::item {{ padding: 7px 24px 7px 12px; border-radius: 5px; }}
+QMenu::item {{ padding: 7px 24px 7px 12px; border-radius: {r_menu}px; }}
 QMenu::item:selected {{ background: {c['surface.selected']}; color: {c['accent.primary']}; }}
 QStatusBar {{ background: {c['app.background']}; color: {c['text.secondary']}; }}
 
-QFrame#ProfessionalPanel {{ background: {c['surface.panel']}; border: 1px solid {c['border.subtle']}; border-radius: 8px; }}
-QFrame#CanvasWorkspace {{ background: {c['surface.canvas']}; border: 1px solid {c['border.normal']}; border-radius: 8px; }}
+QFrame#ProfessionalPanel {{ background: {c['surface.panel']}; border: 1px solid {c['border.subtle']}; border-radius: {r_panel}px; }}
+QFrame#CanvasWorkspace {{ background: {c['surface.canvas']}; border: 1px solid {c['border.normal']}; border-radius: {r_panel}px; }}
 QWidget#InspectorRoot, QWidget#WorkspaceRail {{ background: {c['surface.toolbar']}; }}
 QWidget#ToolRail {{ background: {c['surface.toolbar']}; border-right: 1px solid {c['border.subtle']}; }}
 QFrame#SectionDivider {{ background: {c['border.subtle']}; min-height: 1px; max-height: 1px; border: none; }}
