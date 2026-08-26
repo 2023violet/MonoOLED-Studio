@@ -5,7 +5,7 @@
     128,
     32
   ],
-  "active_screen": "main",
+  "active_screen": "123",
   "asset_dirs": [
     "Curing_Lite光固化机产品 - UI设计初稿",
     "数字 - 字宽13字高27",
@@ -26,6 +26,11 @@
       "id": "main",
       "label": "Clinical UI",
       "path": "OLED模拟器/scenes/main_scene.json"
+    },
+    {
+      "id": "123",
+      "label": "123",
+      "path": "scenes/123.json"
     }
   ],
   "design_rules": {

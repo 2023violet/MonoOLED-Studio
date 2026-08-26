@@ -21,7 +21,7 @@ def test_windows_build_script_builds_and_smoke_checks_exe():
     assert '--smoke-ms' in script
     assert '--layout-smoke' in script
     assert '--interaction-smoke' in script
-    assert 'Get-FileHash' in script
+    assert 'BUILD_DELIVERY_V844.py --sha256-only "%ZIP%" || exit /b 2' in script
 
 
 def test_pyinstaller_spec_is_onedir_and_bundles_required_data():

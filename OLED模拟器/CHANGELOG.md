@@ -1,5 +1,23 @@
 # Changelog
 
+## 8.4.4 — 2026-08-24
+
+### Windows Real-Qt GA Final Closure
+
+- Removed real Inspector horizontal overflow while preserving complete Chinese and English control labels and intentional vertical scrolling.
+- Made layout validation scroll-aware and made smoke checks wait for a stable geometry signature instead of relying on a no-op timer.
+- Fixed the malformed `StatusPill` local stylesheet and added a zero-warning Real-Qt regression.
+- Made Windows group-runner console mirroring safe on CP936 while preserving the original UTF-8 log.
+- Made the Windows runner select the native QPA by default, avoiding offscreen-font geometry artifacts while preserving explicit QPA overrides.
+- Replaced theme-only full-tree stylesheet repolish with pixel-equivalent semantic `QPalette` updates; the original 120 ms p95 transition budget remains unchanged.
+- Made keyboard focus styling honor Qt Tab/Backtab focus reasons deterministically at scaled DPI.
+- Removed unused asset resolution from explicit Editor geometry queries and redundant path canonicalization from the Renderer resource hot path, while retaining byte-level SHA-256 invalidation on every render.
+- Made identical persistent asset-cache saves no-ops, preventing packaged layout smoke from repeatedly retriggering the asset-directory watcher without changing cache contents or invalidation semantics.
+- Removed physical-cursor position from the exact hover/leave raster test while retaining a real Qt event path, a changed-hover assertion and byte-identical post-Leave pixels.
+- Replaced the fail-open PowerShell runtime checksum command with pinned-Python SHA-256 generation, ASCII sidecar read-back verification and batch error propagation.
+- Kept the V8.3 performance limits unchanged; three post-change repetitions passed the original 6.00/0.50/2.00 ms p95 gates.
+- Kept Automation API 1.2.0 / 82 methods, Renderer/VLSB, schemas, 464 frozen assets and 14 Golden frames unchanged.
+
 ## 8.4.3 — 2026-08-24
 
 ### Windows Release & Real-Qt GA Closure

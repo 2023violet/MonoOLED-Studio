@@ -105,10 +105,13 @@ class AssetLibrary:
                 'entry': asdict(entry),
             }
         try:
+            serialized = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+            if self._cache_path.exists() and self._cache_path.read_bytes() == serialized:
+                return
             self._cache_path.parent.mkdir(parents=True, exist_ok=True)
             temp = self._cache_path.with_name(self._cache_path.name + '.tmp')
-            with temp.open('w', encoding='utf-8', newline='\n') as fp:
-                json.dump(payload, fp, ensure_ascii=False, separators=(',', ':'))
+            with temp.open('wb') as fp:
+                fp.write(serialized)
                 fp.flush(); os.fsync(fp.fileno())
             os.replace(temp, self._cache_path)
         except OSError:

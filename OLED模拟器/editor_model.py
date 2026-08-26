@@ -160,6 +160,15 @@ class EditorSession:
     def geometry(self, element_id: str) -> Geometry:
         element = self.document.element(element_id)
         zone = element.get('zone') if isinstance(element.get('zone'), dict) else None
+        if zone is None and all(key in element for key in ('x', 'y', 'w', 'h')):
+            native_locked = (
+                element.get('type') == 'image'
+                and element.get('resize_policy', 'native_only') == 'native_only'
+            )
+            return Geometry(
+                int(element['x']), int(element['y']), int(element['w']), int(element['h']),
+                {'x': True, 'y': True, 'w': not native_locked, 'h': not native_locked},
+            )
         resolved = self._resolved_item(element_id)
 
         if zone is not None and all(k in zone for k in ('x', 'y', 'w', 'h')):

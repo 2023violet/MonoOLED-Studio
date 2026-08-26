@@ -10,6 +10,11 @@ def test_v4_gui_uses_project_assets_autosave_diff_and_handoff_services():
         assert token in GUI
 
 
+def test_phase2_gui_batch_exports_use_schema_matrix_without_clinical_preset():
+    assert 'build_export_states' in GUI
+    assert 'clinical_states' not in GUI
+
+
 def test_v4_geometry_editor_is_two_by_two_not_four_columns():
     assert 'geom_grid.addWidget(label, 0, index)' not in GUI
     assert 'index // 2' in GUI and 'index % 2' in GUI

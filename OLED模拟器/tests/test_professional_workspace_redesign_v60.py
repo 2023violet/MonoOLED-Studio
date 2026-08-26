@@ -108,3 +108,20 @@ def test_interaction_benchmark_reports_render_and_validation_costs():
     assert result.render.avg_ms > 0
     assert result.validation.avg_ms > 0
     assert result.full_pipeline.avg_ms >= result.render.avg_ms
+
+
+def test_explicit_geometry_does_not_resolve_an_unused_bitmap(monkeypatch):
+    from editor_model import EditorSession
+    from gui import _load_source
+
+    _project, scene = _load_source('main_scene')
+    session = EditorSession(scene)
+    monkeypatch.setattr(
+        session.resources,
+        'bitmap',
+        lambda _path: (_ for _ in ()).throw(AssertionError('unused bitmap resolution')),
+    )
+
+    geometry = session.geometry('battery')
+
+    assert (geometry.x, geometry.y, geometry.w, geometry.h) == (5, 2, 11, 28)

@@ -21,7 +21,7 @@ def test_translator_switches_language_without_changing_key_contract():
 
     t.set_language('en_US')
     assert t('panel.properties') == 'Properties'
-    assert t('action.export_all') == 'Export 14 States'
+    assert t('action.export_all') == 'Export State Matrix'
 
 
 def test_translator_formats_named_values_and_rejects_unknown_language():

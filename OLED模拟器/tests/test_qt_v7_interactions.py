@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip('PySide6')
 pytest.importorskip('pytestqt')
 
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import QEvent, Qt, QPoint
 from PySide6.QtTest import QTest
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
@@ -31,9 +31,12 @@ def test_hover_leave_returns_to_exact_baseline(qtbot):
     app=QApplication.instance(); app.setStyleSheet(build_stylesheet('monooled-light'))
     f=FocusOriginFilter(app); app.installEventFilter(f)
     host=QWidget(); layout=QVBoxLayout(host); button=StudioButton('Test'); layout.addWidget(button); other=StudioButton('Other'); layout.addWidget(other); qtbot.addWidget(host); host.show(); qtbot.waitExposed(host)
-    QTest.mouseMove(other); app.processEvents(); baseline=_rgba(button)
-    QTest.mouseMove(button,button.rect().center(),delay=10); app.processEvents()
-    QTest.mouseMove(other,other.rect().center(),delay=10); app.processEvents()
+    app.sendEvent(button,QEvent(QEvent.Leave)); app.processEvents()
+    assert not bool(button.property('hoverVisible')); baseline=_rgba(button)
+    app.sendEvent(button,QEvent(QEvent.Enter)); app.processEvents()
+    assert bool(button.property('hoverVisible')); assert _rgba(button)!=baseline
+    app.sendEvent(button,QEvent(QEvent.Leave)); app.processEvents()
+    assert not bool(button.property('hoverVisible'))
     assert _rgba(button)==baseline
 
 

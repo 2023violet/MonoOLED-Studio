@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 
 from gui import OLEDDesignerWindow
 from font_pack import create_font_pack
+from scene import scene_root
 from theme_system import THEME_NAMES
 from ui_controls import PopupManager,StudioSelect
 
@@ -23,7 +24,13 @@ THEME_MODES={
 
 
 def _open_embedded_surfaces(window,tmp_path):
-    image=next(e for e in window.scene['elements'] if e.get('type')=='image' and e.get('asset'))
+    image=next(
+        e for e in window.scene['elements']
+        if e.get('type')=='image'
+        and e.get('asset')
+        and '{' not in str(e.get('asset'))
+        and (scene_root(window.scene)/str(e.get('asset'))).is_file()
+    )
     window._set_selection([str(image['id'])],source='matrix',primary=str(image['id']))
     window.open_pixel_studio()
     pixel=window.editor_tabs.currentWidget()
@@ -44,7 +51,19 @@ def test_v81_five_surface_theme_language_density_ui_scale_matrix(qtbot,tmp_path,
     for theme,lang,density,scale in itertools.product(THEME_NAMES,LANGS,DENSITIES,UI_SCALES):
         w.preferences.set('language',lang,save=False);w.preferences.set('appearance.color_theme',theme,save=False);w.preferences.set('appearance.theme_mode',THEME_MODES[theme],save=False);w.preferences.set('appearance.density',density,save=False);w.preferences.set('appearance.ui_scale',scale,save=False)
         w.apply_preferences();QApplication.processEvents();count+=1
-        assert w.layout_violations()==[],(theme,lang,density,scale,w.layout_violations())
+        violations=w.layout_violations()
+        assert violations==[],(
+            theme,lang,density,scale,violations,
+            {
+                'splitter':w.workspace_splitter.sizes(),
+                'tabs':w.inspector_tabs.width(),
+                'viewport':w.inspector_page.viewport().width(),
+                'content':w.inspector_inner.width(),
+                'content_hint':w.inspector_inner.sizeHint().width(),
+                'properties_hint':w.properties_card.sizeHint().width(),
+                'alignment_hint':w.align_card.sizeHint().width(),
+            },
+        )
         assert pixel.layout_violations()==[],(theme,lang,density,scale,pixel.layout_violations())
         assert font.layout_violations()==[],(theme,lang,density,scale,font.layout_violations())
         assert prefs.layout_violations()==[],(theme,lang,density,scale,prefs.layout_violations())

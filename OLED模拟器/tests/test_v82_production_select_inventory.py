@@ -10,10 +10,12 @@ def test_all_production_select_factories_route_to_studio_select():
     pixel=(SIM/'pixel_studio_qt.py').read_text(encoding='utf-8')
     assert 'QComboBox = StudioSelect' in gui
     assert 'QComboBox = StudioSelect' in prefs
-    assert len(re.findall(r'QComboBox\(\)',gui))==7
+    # State Preview editors are created dynamically from the active Schema;
+    # only the six static production selects remain in the GUI source.
+    assert len(re.findall(r'QComboBox\(\)',gui))==6
     assert len(re.findall(r'QComboBox\(\)',prefs))==10
     assert len(re.findall(r'StudioSelect\(\)',pixel))==3
-    assert 7+10+3==20
+    assert 6+10+3==19
 
 
 def test_v82_select_foundation_has_explicit_state_and_opaque_surface_contract():

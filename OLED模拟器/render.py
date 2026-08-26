@@ -19,17 +19,17 @@ class RenderResult:
 
 
 def _asset_path(template: str, state: dict, scene: dict, *, lower: bool = False) -> Path:
-    return resolve(subst(template, state, lower=lower), scene=scene).resolve()
+    return resolve(subst(template, state, lower=lower), scene=scene)
 
 
 def _remember_asset(asset: BitmapAsset, cache: dict[str, BitmapAsset]) -> BitmapAsset:
-    cache[str(asset.path.resolve())] = asset
+    cache[str(asset.path)] = asset
     return asset
 
 
 def _render_image(fb: FrameBuffer, element: dict, state: dict, cache: dict[str, BitmapAsset], scene: dict, resources: RenderResources) -> dict:
     path = _asset_path(element["asset"], state, scene, lower=bool(element.get("var_lower")))
-    asset = _remember_asset(resources.bitmap(path), cache)
+    asset = _remember_asset(resources._bitmap_resolved(path), cache)
     x, y = int(element["x"]), int(element["y"])
     fb.or_mask(asset.pixels, x, y)
     return {
@@ -48,7 +48,7 @@ def _render_image_seq(fb: FrameBuffer, element: dict, state: dict, cache: dict[s
     value = int(state[name])
     filename = element["pattern"].replace("{n}", str(value))
     path = (resolve(element["dir"], scene=scene) / filename).resolve()
-    asset = _remember_asset(resources.bitmap(path), cache)
+    asset = _remember_asset(resources._bitmap_resolved(path), cache)
     x, y = int(element["x"]), int(element["y"])
     fb.or_mask(asset.pixels, x, y)
     return {
@@ -77,7 +77,7 @@ def _render_digits(fb: FrameBuffer, element: dict, state: dict, cache: dict[str,
     for index, ch in enumerate(raw):
         filename = element["pattern"].replace("{d}", ch)
         path = (resolve(element["dir"], scene=scene) / filename).resolve()
-        asset = _remember_asset(resources.bitmap(path), cache)
+        asset = _remember_asset(resources._bitmap_resolved(path), cache)
         paths.append(asset.path.as_posix())
         fb.or_mask(asset.pixels, x0 + index * (digit_w + tracking), y)
     width = 0 if not raw else len(raw) * digit_w + (len(raw) - 1) * tracking
@@ -105,8 +105,8 @@ def _render_placeholder(element: dict) -> dict:
 
 def _render_text(fb: FrameBuffer, element: dict, state: dict, used_files: set[Path], scene: dict, resources: RenderResources) -> dict:
     text = subst(element["text"], state).upper()
-    header = resolve(element["font_header"], scene=scene).resolve()
-    font = resources.mode_font(header)
+    header = resolve(element["font_header"], scene=scene)
+    font = resources._mode_font_resolved(header)
     used_files.add(header)
     cell_w = int(element.get("cell_w", 5))
     cell_h = int(element.get("cell_h", 7))
@@ -188,7 +188,7 @@ def render_scene(scene: dict, state: dict, *, resources: RenderResources | None 
             raise ValueError(f"unsupported element type: {kind}")
         resolved.append(item)
 
-    used_files.update(asset.path.resolve() for asset in asset_cache.values())
+    used_files.update(asset.path for asset in asset_cache.values())
     return RenderResult(
         framebuffer=fb,
         resolved_elements=tuple(resolved),

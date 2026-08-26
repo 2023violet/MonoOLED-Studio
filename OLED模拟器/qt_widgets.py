@@ -112,6 +112,5 @@ class StatusPill(QLabel):
         fg=t[f'status.{status}.foreground']
         self.setStyleSheet(
             f'QLabel {{ background:{bg}; color:{fg}; border-radius:10px; '
-            'padding:4px 10px; font-weight:600; }}'
+            'padding:4px 10px; font-weight:600; }'
         )
-

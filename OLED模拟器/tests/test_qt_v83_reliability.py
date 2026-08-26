@@ -16,10 +16,12 @@ SIM=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(SIM))
 
 
-def test_real_main_window_constructs_and_initial_font_scan_is_populated(qtbot):
+def test_real_main_window_constructs_and_initial_font_scan_matches_package(qtbot):
     from gui import OLEDDesignerWindow
+    from scene import scene_root
     w=OLEDDesignerWindow('main_scene','zh_CN'); qtbot.addWidget(w); w.show(); QApplication.processEvents()
-    assert w.font_list.count()>0
+    expected=sum(1 for _ in scene_root(w.scene).rglob('fontpack.json'))
+    assert w.font_list.count()==expected
     w.session.document.dirty=False; w.close(); QApplication.processEvents()
 
 

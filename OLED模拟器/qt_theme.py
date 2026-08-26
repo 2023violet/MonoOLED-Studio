@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from PySide6.QtGui import QColor, QPalette
+
 from theme_system import get_theme
 from ui_metrics import build_ui_metrics
 
@@ -50,9 +52,52 @@ _DENSITY = {
 }
 
 
-def build_stylesheet(theme_name: str = 'monooled-light', density: str = 'comfortable', ui_scale: float = 1.0) -> str:
-    c = get_theme(theme_name)
-    d = build_ui_metrics(density, ui_scale)
+SEMANTIC_PALETTE_ROLES = {
+    'app.background': QPalette.Window,
+    'surface.panel': QPalette.Base,
+    'surface.canvas': QPalette.AlternateBase,
+    'surface.toolbar': QPalette.Button,
+    'surface.hover': QPalette.Light,
+    'surface.pressed': QPalette.Midlight,
+    'surface.selected': QPalette.ToolTipBase,
+    'text.primary': QPalette.WindowText,
+    'text.secondary': QPalette.Text,
+    'text.muted': QPalette.PlaceholderText,
+    'text.disabled': QPalette.ButtonText,
+    'border.normal': QPalette.Dark,
+    'border.subtle': QPalette.Mid,
+    'border.focus': QPalette.Link,
+    'accent.primary': QPalette.Highlight,
+    'accent.hover': QPalette.LinkVisited,
+    'accent.soft': QPalette.Shadow,
+    'accent.on_primary': QPalette.HighlightedText,
+    'status.error': QPalette.ToolTipText,
+}
+
+_PALETTE_QSS_NAMES = {
+    'app.background': 'window',
+    'surface.panel': 'base',
+    'surface.canvas': 'alternate-base',
+    'surface.toolbar': 'button',
+    'surface.hover': 'light',
+    'surface.pressed': 'midlight',
+    'surface.selected': 'tool-tip-base',
+    'text.primary': 'window-text',
+    'text.secondary': 'text',
+    'text.muted': 'placeholder-text',
+    'text.disabled': 'button-text',
+    'border.normal': 'dark',
+    'border.subtle': 'mid',
+    'border.focus': 'link',
+    'accent.primary': 'highlight',
+    'accent.hover': 'link-visited',
+    'accent.soft': 'shadow',
+    'accent.on_primary': 'highlighted-text',
+    'status.error': 'tool-tip-text',
+}
+
+
+def _stylesheet_from_tokens(c: dict[str, str], d: dict[str, int]) -> str:
     return f'''
 QMainWindow, QWidget#AppRoot {{
     background: {c['app.background']}; color: {c['text.primary']};
@@ -166,3 +211,20 @@ QWidget#ToolRail {{ background: {c['surface.toolbar']}; border-right: 1px solid 
 QFrame#SectionDivider {{ background: {c['border.subtle']}; min-height: 1px; max-height: 1px; border: none; }}
 QToolTip {{ background: {c['text.primary']}; color: {c['app.background']}; border: none; padding: 6px; }}
 '''.strip()
+
+
+def build_stylesheet(theme_name: str = 'monooled-light', density: str = 'comfortable', ui_scale: float = 1.0) -> str:
+    return _stylesheet_from_tokens(get_theme(theme_name), build_ui_metrics(density, ui_scale))
+
+
+def build_theme_palette(theme_name: str = 'monooled-light') -> QPalette:
+    theme = get_theme(theme_name)
+    palette = QPalette()
+    for token, role in SEMANTIC_PALETTE_ROLES.items():
+        palette.setColor(role, QColor(theme[token]))
+    return palette
+
+
+def build_adaptive_stylesheet(density: str = 'comfortable', ui_scale: float = 1.0) -> str:
+    tokens = {token: f'palette({name})' for token, name in _PALETTE_QSS_NAMES.items()}
+    return _stylesheet_from_tokens(tokens, build_ui_metrics(density, ui_scale))

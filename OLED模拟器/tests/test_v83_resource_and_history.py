@@ -43,6 +43,25 @@ def test_editor_session_reuses_resources_across_renders():
     assert session.resources.stats.bitmap_misses+session.resources.stats.font_misses==misses
 
 
+def test_render_hot_path_detects_same_stat_bitmap_content_change(tmp_path):
+    from editor_model import EditorSession
+
+    bitmap=tmp_path/'asset.bmp';_bmp(bitmap,(1,1));stat=bitmap.stat()
+    scene={
+        '_path':str(tmp_path/'scene.json'),'_root':str(tmp_path),
+        'canvas':{'w':8,'h':8},'states':{},'timeline':[],
+        'elements':[{'id':'asset','type':'image','asset':'asset.bmp','x':0,'y':0,'w':8,'h':8}],
+    }
+    session=EditorSession(scene);before=session.render().framebuffer.to_vlsb()
+    _bmp(bitmap,(2,2));assert bitmap.stat().st_size==stat.st_size
+    os.utime(bitmap,ns=(stat.st_atime_ns,stat.st_mtime_ns))
+
+    after=session.render().framebuffer.to_vlsb()
+
+    assert after!=before
+    assert session.resources.stats.bitmap_misses==2
+
+
 def _scene(tmp_path):
     p=tmp_path/'scene.json'
     scene={'_path':str(p),'_root':str(tmp_path),'canvas':{'w':128,'h':32},'states':{},'timeline':[],'elements':[

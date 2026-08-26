@@ -18,12 +18,12 @@ from PIL import Image, ImageDraw
 from atomic_io import atomic_write_bytes, atomic_write_json
 from automation_jobs import AutomationJobCancelled, AutomationJobManager
 from assets import load_bitmap
-from batch_validate import build_state_matrix
 from c_export import write_c_header
 from editor_model import EditorSession
 from exporter import export_scene
 from font_pack import FontPack, GlyphMetrics, create_font_pack, rasterize_characters
 from handoff import build_handoff_package
+from export_matrix import build_export_states, case_name
 from pixel_diff import diff_framebuffers
 from pixel_studio import PixelDocument
 from project_workspace import ProjectWorkspace, resolve_under_root
@@ -588,24 +588,17 @@ class StudioAutomationService:
 
     @staticmethod
     def _case_name(index: int, state: dict) -> str:
-        if not state:
-            return 'case_0000'
-        slug = '__'.join(f'{k}-{v}' for k, v in state.items())
-        safe = ''.join(ch if ch.isalnum() or ch in '-_.' else '_' for ch in slug)
-        return f'case_{index:04d}__{safe}'
+        return case_name(index, state)
 
     def _state_matrix_for_scene(self, scene: dict, params: dict, *, default_limit: int = 5000) -> list[dict]:
         policy = str(params.get('integer_policy', 'representative'))
-        matrix = build_state_matrix(scene, integer_policy=policy)
-        count = len(matrix)
-        if count > 100000 and not bool(params.get('allow_large_matrix', False)):
-            raise ValueError(
-                f'state matrix has {count} cases; set allow_large_matrix=true only after explicit review'
-            )
-        limit = int(params.get('max_cases', default_limit))
-        if count > limit:
-            raise ValueError(f'state matrix has {count} cases; max_cases={limit}')
-        return matrix
+        states = build_export_states(
+            scene,
+            integer_policy=policy,
+            max_cases=int(params.get('max_cases', default_limit)),
+            allow_large_matrix=bool(params.get('allow_large_matrix', False)),
+        )
+        return list(states.values())
 
     def _state_matrix(self, params: dict) -> list[dict]:
         return self._state_matrix_for_scene(self.scene, params)
@@ -717,6 +710,7 @@ class StudioAutomationService:
             scene,
             target,
             states=states,
+            integer_policy=str(params.get('integer_policy', 'representative')),
             progress=progress,
             cancel=(cancel_event.is_set if cancel_event is not None else None),
         )

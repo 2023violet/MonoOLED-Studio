@@ -32,11 +32,12 @@ def _send_drag(widget, start, end):
 @pytest.fixture
 def window(qtbot):
     w = OLEDDesignerWindow('main_scene', 'zh_CN')
-    qtbot.addWidget(w)
+    qtbot.addWidget(
+        w,
+        before_close_func=lambda widget: setattr(widget.session.document, 'dirty', False),
+    )
     w.resize(1440, 900); w.show(); qtbot.wait(80)
     yield w
-    w.session.document.dirty = False
-    w.close()
 
 
 def test_real_mouse_drag_updates_scene_and_undo(window, qtbot):

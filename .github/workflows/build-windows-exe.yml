@@ -1,0 +1,42 @@
+name: Build Windows MonoOLED Studio
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: 'x64'
+
+      # BUILD_WINDOWS_EXE.bat is the single Windows GA gate.
+      # V8.4.3 first verifies CRLF source-package text, then RUN_WINDOWS_TEST_GROUPS.py
+      # runs bounded non-Qt source groups and one isolated test_qt_*.py module/process
+      # at each QT_SCALE_FACTOR: 1.0/1.25/1.5/1.75/2.0/2.25/2.5/3.0.
+      # Every Real-Qt module emits JUnit + log evidence and VERIFY_JUNIT_NO_SKIPS.py
+      # rejects any skip. Mandatory historical suites include
+      # test_qt_real_interactions_v51.py, test_qt_v80_unified_workspace.py,
+      # test_qt_v82_studio_select_state_machine.py,
+      # test_qt_v82_preferences_theme_surface.py, test_qt_v83_reliability.py,
+      # and test_qt_v84_project_automation.py.
+      # The builder also runs VERIFY_V82_STRESS.py, VERIFY_V83_STRESS.py,
+      # VERIFY_V84_FINAL.py, VERIFY_V841_FINAL.py, VERIFY_V842_FINAL.py and
+      # VERIFY_V843_FINAL.py before PyInstaller standalone packaging.
+      # Standalone gates include --startup-smoke, --smoke-ms 900, --layout-smoke,
+      # --interaction-smoke and --soak-smoke.
+      - name: Build and verify Windows GA candidate
+        shell: cmd
+        run: Developer_Tools\BUILD_WINDOWS_EXE.bat
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MonoOLEDStudio-Windows-x64
+          path: |
+            release/MonoOLEDStudio_v*_Windows_x64.zip
+            release/MonoOLEDStudio_v*_Windows_x64.zip.sha256
+            OLED模拟器/reports/windows_ga/*.xml
+            OLED模拟器/reports/windows_ga/*.log

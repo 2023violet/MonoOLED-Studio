@@ -7,13 +7,13 @@ import sys
 import time
 
 from asset_library import AssetLibrary
-from batch_validate import build_state_matrix, validate_matrix, write_matrix_report
+from batch_validate import validate_matrix, write_matrix_report
 from c_export import write_c_header
 from design_rules import check_design_rules
 from evidence import frame_evidence
 from exporter import ExportBlockedError, export_scene
 from handoff import build_handoff_package
-from presets import clinical_states
+from export_matrix import build_export_states, select_export_states
 from project_workspace import ProjectWorkspace
 from render import render_scene
 from runtime import SceneRuntime
@@ -43,24 +43,6 @@ def _state_from_args(scene: dict, args) -> dict:
     return state
 
 
-def _named_states(scene: dict, tokens: list[str], seconds=None, battery=None) -> dict[str, dict]:
-    if {'mode', 'phase'} <= set(scene.get('states', {})):
-        available = clinical_states(scene, seconds=seconds, battery=battery)
-    else:
-        available = {'current': _state_from_args(scene, argparse.Namespace(mode=None, phase=None, seconds=seconds, battery=battery))}
-    if not tokens or tokens == ['all']:
-        return available
-    result = {}
-    for token in tokens:
-        name = token.strip().lower()
-        if not name:
-            continue
-        if name not in available:
-            raise ValueError(f"unknown state {name!r}; expected one of: {', '.join(sorted(available))}")
-        result[name] = dict(available[name])
-    return result
-
-
 def _print_findings(findings) -> None:
     for finding in findings:
         suffix = f' [{finding.element_id}]' if finding.element_id else ''
@@ -80,10 +62,16 @@ def cmd_validate(args) -> int:
 def cmd_export(args) -> int:
     _project, scene = _load_for_args(args)
     tokens = [t for t in args.states.split(',') if t.strip()] if args.states else ['all']
-    states = _named_states(scene, tokens, seconds=args.seconds, battery=args.battery)
     try:
+        states = select_export_states(
+            scene,
+            tokens,
+            integer_policy=args.integer_policy,
+            max_cases=args.max_cases,
+            allow_large_matrix=args.allow_large_matrix,
+        )
         summary = export_scene(scene, Path(args.output), states)
-    except ExportBlockedError as exc:
+    except (ExportBlockedError, ValueError) as exc:
         print(f'FAIL: {exc}', file=sys.stderr)
         return 2
     print(f'PASS: exported {summary.frame_count} frame(s) to {summary.output_dir}')
@@ -127,7 +115,12 @@ def cmd_simulate(args) -> int:
 
 def cmd_batch_validate(args) -> int:
     _project, scene = _load_for_args(args)
-    matrix = build_state_matrix(scene, integer_policy=args.integer_policy)
+    matrix = list(build_export_states(
+        scene,
+        integer_policy=args.integer_policy,
+        max_cases=args.max_cases,
+        allow_large_matrix=args.allow_large_matrix,
+    ).values())
     summary = validate_matrix(scene, matrix)
     target = write_matrix_report(summary, args.output)
     rules = check_design_rules(scene, scene.get('_design_rules') or {})
@@ -145,10 +138,21 @@ def cmd_batch_validate(args) -> int:
 def cmd_handoff(args) -> int:
     _project, scene = _load_for_args(args)
     tokens = [t for t in args.states.split(',') if t.strip()] if args.states else ['all']
-    states = _named_states(scene, tokens, seconds=args.seconds, battery=args.battery)
     try:
-        summary = build_handoff_package(scene, args.output, states=states)
-    except ExportBlockedError as exc:
+        states = select_export_states(
+            scene,
+            tokens,
+            integer_policy=args.integer_policy,
+            max_cases=args.max_cases,
+            allow_large_matrix=args.allow_large_matrix,
+        )
+        summary = build_handoff_package(
+            scene,
+            args.output,
+            states=states,
+            integer_policy=args.integer_policy,
+        )
+    except (ExportBlockedError, ValueError) as exc:
         print(f'FAIL: {exc}', file=sys.stderr)
         return 2
     print(f'PASS: handoff {summary.frame_count} frame(s) -> {args.output}')
@@ -192,6 +196,13 @@ def _add_state(parser) -> None:
     parser.add_argument('--battery', type=int)
 
 
+def _add_matrix(parser) -> None:
+    parser.add_argument('--states', default='all')
+    parser.add_argument('--integer-policy', choices=('representative', 'boundaries', 'full'), default='representative')
+    parser.add_argument('--max-cases', type=int, default=5000)
+    parser.add_argument('--allow-large-matrix', action='store_true')
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='MonoOLED Studio canonical CLI')
     sub = parser.add_subparsers(dest='command', required=True)
@@ -201,8 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     export = sub.add_parser('export', help='export one or more states')
     _add_source(export)
-    export.add_argument('--states', default='all')
-    export.add_argument('--seconds', type=int); export.add_argument('--battery', type=int)
+    _add_matrix(export)
     export.add_argument('--output', default=str(Path(__file__).resolve().parent / 'exports' / 'latest'))
     export.set_defaults(func=cmd_export)
 
@@ -216,12 +226,14 @@ def build_parser() -> argparse.ArgumentParser:
     batch = sub.add_parser('batch-validate', help='validate a state combination matrix')
     _add_source(batch)
     batch.add_argument('--integer-policy', choices=('boundaries', 'full'), default='boundaries')
+    batch.add_argument('--max-cases', type=int, default=5000)
+    batch.add_argument('--allow-large-matrix', action='store_true')
     batch.add_argument('--output', default=str(Path(__file__).resolve().parent / 'reports' / 'batch_validation.md'))
     batch.set_defaults(func=cmd_batch_validate)
 
     handoff = sub.add_parser('handoff', help='build deterministic Code AI handoff ZIP')
     _add_source(handoff)
-    handoff.add_argument('--states', default='all'); handoff.add_argument('--seconds', type=int); handoff.add_argument('--battery', type=int)
+    _add_matrix(handoff)
     handoff.add_argument('--output', default=str(Path(__file__).resolve().parent / 'exports' / 'OLED_Code_AI_Handoff.zip'))
     handoff.set_defaults(func=cmd_handoff)
 

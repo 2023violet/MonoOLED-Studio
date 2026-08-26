@@ -58,9 +58,9 @@ def test_pytest_selected_automation_module_collects_from_repo_root_without_pytho
 
 
 def test_v843_release_identity_and_tools_are_present():
-    assert (SIM / 'VERSION').read_text(encoding='utf-8').strip() == '8.4.3'
+    assert (SIM / 'VERSION').read_text(encoding='utf-8').strip() in {'8.4.3', '8.4.4'}
     gui = (SIM / 'gui.py').read_text(encoding='utf-8')
-    assert "APP_VERSION = '8.4.3'" in gui
+    assert "APP_VERSION = '8.4.3'" in gui or "APP_VERSION = '8.4.4'" in gui
     assert (SIM / 'WINDOWS_RELEASE_REAL_QT_GA_CLOSURE_V843.md').is_file()
     assert (SIM / 'TEST_MATRIX_V843.md').is_file()
     assert (TOOLS / 'VERIFY_V843_FINAL.py').is_file()

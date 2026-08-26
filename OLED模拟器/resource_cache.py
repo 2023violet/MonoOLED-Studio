@@ -38,8 +38,8 @@ class RenderResources:
     def _digest(raw: bytes) -> str:
         return sha256(raw).hexdigest()
 
-    def bitmap(self, path: str | Path) -> BitmapAsset:
-        p = Path(path).resolve(); raw = p.read_bytes(); digest = self._digest(raw)
+    def _bitmap_resolved(self, path: Path) -> BitmapAsset:
+        p = Path(path); raw = p.read_bytes(); digest = self._digest(raw)
         cached = self._bitmaps.get(p)
         if cached and cached[0] == digest:
             self.stats.bitmap_hits += 1
@@ -48,8 +48,11 @@ class RenderResources:
         self._bitmaps[p] = (digest, asset); self.stats.bitmap_misses += 1
         return asset
 
-    def mode_font(self, path: str | Path):
-        p = Path(path).resolve(); raw = p.read_bytes(); digest = self._digest(raw)
+    def bitmap(self, path: str | Path) -> BitmapAsset:
+        return self._bitmap_resolved(Path(path).resolve())
+
+    def _mode_font_resolved(self, path: Path):
+        p = Path(path); raw = p.read_bytes(); digest = self._digest(raw)
         cached = self._fonts.get(p)
         if cached and cached[0] == digest:
             self.stats.font_hits += 1
@@ -59,6 +62,9 @@ class RenderResources:
         font = load_mode_font(p)
         self._fonts[p] = (digest, font); self.stats.font_misses += 1
         return font
+
+    def mode_font(self, path: str | Path):
+        return self._mode_font_resolved(Path(path).resolve())
 
     def font_pack(self, root: str | Path) -> FontPack:
         root = Path(root).resolve(); manifest = root / 'fontpack.json'

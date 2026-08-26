@@ -1,6 +1,6 @@
 {
   "product": "MonoOLED Studio",
-  "version": "8.4.3",
+  "version": "8.4.4",
   "delivery_date": "2026-08-24",
   "architecture": {
     "machine_truth": "Project Workspace + Scene JSON",
@@ -147,7 +147,13 @@
     "package_entries_candidate_v843": 765,
     "managed_files_candidate_v843": 764,
     "v842_paths_missing_v843": 0,
-    "v843_paths_added": 10
+    "v843_paths_added": 10,
+    "v844_windows_real_qt": "Inspector horizontal overflow, scroll-aware clipping semantics, deterministic layout settlement, StatusPill QSS parsing, CP936-safe runner output, native Windows QPA, incremental semantic-palette theming and deterministic Tab-focus origin handling.",
+    "v844_performance": "Explicit zone-free Editor geometry avoids unused asset resolution; Renderer resources reuse canonical paths while retaining per-render byte reads and SHA-256 invalidation; identical persistent asset-cache payloads are not replaced again. Original V8.3 p95 limits remain 6.00/0.50/2.00 ms.",
+    "v844_native_source_matrix": "104 isolated Real-Qt module/DPI processes / 1,048 tests / 0 failed / 0 errors / 0 skipped / 0 timeout after Renderer optimization; formal sealed-ZIP Builder repetition remains the GA owner.",
+    "v844_release_gate": "Developer_Tools/VERIFY_V844_FINAL.py; final GA requires the original Windows builder from the formal sealed ZIP fresh extraction.",
+    "v843_paths_missing_v844": 0,
+    "v844_paths_added": 6
   },
   "capabilities": {
     "designer": [
@@ -261,7 +267,9 @@
     "v842_release_gate": "Developer_Tools/VERIFY_V842_FINAL.py plus Windows zero-skip Real-Qt builder before standalone GA.",
     "v842_host_core": "300 passed / 13 PySide6 skips / 0 failed on Linux packaging host.",
     "v842_graduation": "Automation API 1.2 exposes 82 methods; 1,000 cross-screen data-safety iterations / 0 silent loss; summary/job/contract/version gates PASS.",
-    "v843_windows_release": "CRLF-safe Windows source package, bounded per-process pytest groups, isolated Real-Qt module timeouts/logs/JUnit, repository-root test import isolation."
+    "v843_windows_release": "CRLF-safe Windows source package, bounded per-process pytest groups, isolated Real-Qt module timeouts/logs/JUnit, repository-root test import isolation.",
+    "v844_windows_real_qt": "Scroll-safe Inspector layout, stable smoke settlement, parse-clean StatusPill QSS, CP936-safe console mirroring, native Windows QPA, pixel-equivalent semantic-palette theming and deterministic Tab-focus origin handling.",
+    "v844_performance": "Contract-preserving Editor geometry, Renderer hot-path and idempotent asset-cache persistence under unchanged V8.3 performance gates."
   },
   "branding": {
     "name": "MonoOLED Studio",
@@ -269,8 +277,8 @@
     "icon": "OLED模拟器/branding/monooled_studio.ico",
     "windows_launcher_icon_embedded": true
   },
-  "release_name": "Windows Release & Real-Qt GA Closure",
-  "name": "MonoOLED Studio 8.4.3",
+  "release_name": "Windows Real-Qt GA Final Closure",
+  "name": "MonoOLED Studio 8.4.4",
   "automation_api": {
     "version": "1.2.0",
     "contract": "OLED模拟器/AUTOMATION_API_V1.json",

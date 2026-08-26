@@ -36,7 +36,15 @@ def _deterministic_zip(source: Path, target: Path) -> None:
             zf.writestr(info, path.read_bytes())
 
 
-def build_handoff_package(scene: dict, output_zip: str | Path, *, states: dict[str, dict], progress=None, cancel=None) -> ExportSummary:
+def build_handoff_package(
+    scene: dict,
+    output_zip: str | Path,
+    *,
+    states: dict[str, dict],
+    integer_policy: str = 'boundaries',
+    progress=None,
+    cancel=None,
+) -> ExportSummary:
     output_zip = Path(output_zip)
     with tempfile.TemporaryDirectory(prefix='oled_handoff_') as td:
         root = Path(td)
@@ -52,7 +60,7 @@ def build_handoff_package(scene: dict, output_zip: str | Path, *, states: dict[s
             raise RuntimeError('operation cancelled')
         summary = export_scene(scene, root, states, progress=_export_progress, cancel=cancel)
         if callable(progress): progress('handoff.matrix', 650, 1000)
-        matrix = build_state_matrix(scene, integer_policy='boundaries')
+        matrix = build_state_matrix(scene, integer_policy=integer_policy)
 
         def _matrix_progress(stage, completed, total):
             if callable(progress):

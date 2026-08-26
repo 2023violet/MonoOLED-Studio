@@ -12,16 +12,18 @@ from framebuffer import FrameBuffer
 from render import RenderResult
 from gui import OLEDDesignerWindow
 from qt_canvas import OLEDCanvas
+from scene import scene_root
 from ui_controls import StudioSelect, StudioPopover
 from font_lab_qt import FontLabEditor
 from font_pack import create_font_pack
 
 
-def test_studio_select_uses_frameless_translucent_owned_popover(qtbot):
+def test_studio_select_uses_frameless_opaque_owned_popover(qtbot):
     combo=StudioSelect();qtbot.addWidget(combo);combo.addItem('96×16',(96,16));combo.addItem('128×32',(128,32));combo.resize(220,34);combo.show()
     QTest.mouseClick(combo.button,Qt.LeftButton)
     assert isinstance(combo.popup,StudioPopover)
-    assert combo.popup.testAttribute(Qt.WA_TranslucentBackground)
+    assert not combo.popup.testAttribute(Qt.WA_TranslucentBackground)
+    assert combo.popup.autoFillBackground()
     assert bool(combo.popup.windowFlags() & Qt.FramelessWindowHint)
     assert combo.popup.isVisible()
     QTest.keyClick(combo.list,Qt.Key_Escape);combo.popup.hide()
@@ -29,7 +31,13 @@ def test_studio_select_uses_frameless_translucent_owned_popover(qtbot):
 
 def test_designer_opens_pixel_asset_as_workspace_tab_not_second_window(qtbot):
     window=OLEDDesignerWindow('main_scene');qtbot.addWidget(window);window.show();qtbot.wait(20)
-    image=next(e for e in window.scene['elements'] if e.get('type')=='image' and e.get('asset'))
+    image=next(
+        e for e in window.scene['elements']
+        if e.get('type')=='image'
+        and e.get('asset')
+        and '{' not in str(e.get('asset'))
+        and (scene_root(window.scene)/str(e.get('asset'))).is_file()
+    )
     window._set_selection([str(image['id'])],source='api',primary=str(image['id']))
     before=window.editor_tabs.count();window.open_pixel_studio();qtbot.wait(20)
     assert window.editor_tabs.count()==before+1

@@ -17,6 +17,7 @@ from c_export import write_c_header
 from component_templates import TemplateLibrary
 from design_rules import check_design_rules
 from batch_validate import build_state_matrix, validate_matrix, write_matrix_report
+from export_matrix import build_export_states
 from editor_model import EditorSession
 from evidence import frame_evidence
 from exporter import ExportBlockedError, export_scene
@@ -25,7 +26,6 @@ from i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, Translator
 from pixel_diff import diff_framebuffers
 from scene_diff import diff_scenes
 from thumbnail_wall import build_thumbnail_wall
-from presets import clinical_states
 from project_workspace import ProjectWorkspace, create_project
 from responsive_layout import plan_layout, header_policy
 from professional_workspace import workspace_plan, WorkspaceMode
@@ -34,7 +34,7 @@ from workspace_host import EditorRegistry, CallbackEditor
 from performance_profiler import PerformanceProfiler
 from selection_tools import align, align_to, distribute, measure, selection_metrics, snap_positions, smart_guides
 from canvas_geometry import fit_integer_zoom
-from qt_theme import COLORS, METRICS, build_stylesheet
+from qt_theme import COLORS, METRICS, build_adaptive_stylesheet, build_theme_palette
 from scene import ROOT, load_scene, scene_root
 from session_log import SessionLogger
 from validate import has_blockers
@@ -44,11 +44,13 @@ from preference_delta import PreferenceDelta
 from system_theme import SystemThemeProvider
 from commands import CommandRegistry, ShortcutConflictError
 from theme_system import resolve_theme_name
+from state_schema import schema_from_scene
+from state_preview import build_state_editor_specs, coerce_editor_value
 from automation_service import StudioAutomationService
 from diagnostics import configure_diagnostics, get_logger
 
 APP_TITLE = 'MonoOLED Studio'
-APP_VERSION = '8.4.3'
+APP_VERSION = '8.4.4'
 ZOOM_LEVELS = (1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24)
 RUN_SPEEDS = {'1×': 1000, '2×': 500, '5×': 200, '10×': 100}
 CANVAS_PRESETS = {'96×16': (96, 16), '128×32': (128, 32), '128×64': (128, 64), '256×64': (256, 64)}
@@ -62,7 +64,7 @@ try:
         QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QFormLayout,
         QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
         QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSpinBox,
-        QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget, QAbstractItemView,
+        QSizePolicy, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget, QAbstractItemView,
     )
     from qt_canvas import OLEDCanvas
     from qt_widgets import ProfessionalPanel, StatusPill
@@ -93,6 +95,14 @@ def _log_dir(scene: dict) -> Path:
         base = Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'MonoOLEDStudio' / 'logs'
         base.mkdir(parents=True, exist_ok=True)
         return base
+
+
+def _apply_application_theme(app, theme: str, density: str, ui_scale: float) -> None:
+    app.setPalette(build_theme_palette(theme))
+    signature = f'{density}:{ui_scale}'
+    if app.property('monooledAdaptiveStyleSignature') != signature:
+        app.setStyleSheet(build_adaptive_stylesheet(density, ui_scale=ui_scale))
+        app.setProperty('monooledAdaptiveStyleSignature', signature)
 
 
 
@@ -310,29 +320,34 @@ if PYSIDE_AVAILABLE:
             # RIGHT — contextual inspector. Low-frequency state/canvas controls live
             # behind a separate State tab instead of permanently consuming height.
             self.inspector_tabs=QTabWidget(); self.inspector_tabs.setMinimumWidth(260)
-            self.inspector_page=QScrollArea(); self.inspector_page.setWidgetResizable(True); self.inspector_page.setObjectName('InspectorRoot')
-            inspector_inner=QWidget(); inspector_inner.setObjectName('InspectorRoot'); self.inspector_layout=QVBoxLayout(inspector_inner); self.inspector_layout.setContentsMargins(4,4,4,4); self.inspector_layout.setSpacing(6)
-            self.properties_card=ProfessionalPanel(); form=QFormLayout(); form.setVerticalSpacing(6); form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+            self.inspector_page=QScrollArea(); self.inspector_page.setWidgetResizable(True); self.inspector_page.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff); self.inspector_page.setObjectName('InspectorRoot')
+            self.inspector_inner=QWidget(); self.inspector_inner.setObjectName('InspectorRoot'); self.inspector_inner.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred); self.inspector_layout=QVBoxLayout(self.inspector_inner); self.inspector_layout.setContentsMargins(4,4,4,4); self.inspector_layout.setSpacing(6)
+            self.properties_card=ProfessionalPanel(); form=QFormLayout(); form.setVerticalSpacing(6); form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow); form.setRowWrapPolicy(QFormLayout.WrapLongRows)
             self.id_edit=QLineEdit(); self.id_edit.setReadOnly(True); self.type_edit=QLineEdit(); self.type_edit.setReadOnly(True); self.resource_edit=QLineEdit(); self.resource_edit.setReadOnly(True); self.prop_id_label=QLabel(); self.prop_type_label=QLabel(); self.prop_asset_label=QLabel(); form.addRow(self.prop_id_label,self.id_edit); form.addRow(self.prop_type_label,self.type_edit)
             geom_widget=QWidget(); geom_grid=QGridLayout(geom_widget); geom_grid.setContentsMargins(0,0,0,0); geom_grid.setHorizontalSpacing(6); geom_grid.setVerticalSpacing(4); self.geom_spins={}
             for index,key in enumerate(('x','y','w','h')):
-                row=index // 2; col=(index % 2) * 2; label=QLabel(key.upper()); label.setObjectName('Muted'); spin=QSpinBox(); spin.setRange(-8192 if key in ('x','y') else 1,8192); spin.valueChanged.connect(lambda value,field=key:self._apply_geometry_live(field,value)); spin.editingFinished.connect(self._finish_geometry_edit); self.geom_spins[key]=spin; geom_grid.addWidget(label,row,col); geom_grid.addWidget(spin,row,col+1)
+                row=index // 2; col=(index % 2) * 2; label=QLabel(key.upper()); label.setObjectName('Muted'); spin=QSpinBox(); spin.setMinimumWidth(56); spin.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed); spin.setRange(-8192 if key in ('x','y') else 1,8192); spin.valueChanged.connect(lambda value,field=key:self._apply_geometry_live(field,value)); spin.editingFinished.connect(self._finish_geometry_edit); self.geom_spins[key]=spin; geom_grid.addWidget(label,row,col); geom_grid.addWidget(spin,row,col+1)
             form.addRow(geom_widget); form.addRow(self.prop_asset_label,self.resource_edit); self.properties_card.body.addLayout(form)
             flags=QHBoxLayout(); self.lock_check=QCheckBox(); self.lock_check.toggled.connect(self._lock_changed); self.hidden_check=QCheckBox(); self.hidden_check.toggled.connect(self._hidden_changed); flags.addWidget(self.lock_check); flags.addWidget(self.hidden_check); flags.addStretch(1); self.properties_card.body.addLayout(flags); self.inspector_layout.addWidget(self.properties_card)
 
-            self.align_card=ProfessionalPanel(); self.align_reference_combo=QComboBox(); self.align_reference_combo.addItem(self.tr('align.selection_bounds'),'selection'); self.align_reference_combo.addItem(self.tr('align.primary'),'primary'); self.align_reference_combo.addItem(self.tr('align.canvas'),'canvas'); self.align_card.body.addWidget(self.align_reference_combo); ag=QGridLayout(); ag.setSpacing(4); self.align_buttons={}
+            self.align_card=ProfessionalPanel(); self.align_reference_combo=QComboBox(); self.align_reference_combo.addItem(self.tr('align.selection_bounds'),'selection'); self.align_reference_combo.addItem(self.tr('align.primary'),'primary'); self.align_reference_combo.addItem(self.tr('align.canvas'),'canvas'); self.align_card.body.addWidget(self.align_reference_combo); ag=QGridLayout(); ag.setSpacing(4); self.align_grid=ag; self.align_buttons={}
             for idx,(key,mode) in enumerate([('left','left'),('center_h','hcenter'),('right','right'),('top','top'),('center_v','vcenter'),('bottom','bottom')]):
-                b=QPushButton(); b.clicked.connect(lambda _=False,m=mode:self.align_selected(m)); self.align_buttons[key]=b; ag.addWidget(b,idx//3,idx%3)
-            self.distribute_h=QPushButton(); self.distribute_h.clicked.connect(lambda:self.distribute_selected('horizontal')); self.distribute_v=QPushButton(); self.distribute_v.clicked.connect(lambda:self.distribute_selected('vertical')); ag.addWidget(self.distribute_h,2,0); ag.addWidget(self.distribute_v,2,1); self.snap_button=QPushButton(); self.snap_button.clicked.connect(self.snap_selected); ag.addWidget(self.snap_button,2,2); self.align_card.body.addLayout(ag); self.measure_label=QLabel(); self.measure_label.setObjectName('Muted'); self.measure_label.setWordWrap(True); self.align_card.body.addWidget(self.measure_label); self.inspector_layout.addWidget(self.align_card); self.inspector_layout.addStretch(1)
-            self.inspector_page.setWidget(inspector_inner); self.inspector_tabs.addTab(self.inspector_page,'')
+                b=QPushButton(); b.clicked.connect(lambda _=False,m=mode:self.align_selected(m)); self.align_buttons[key]=b
+            self.distribute_h=QPushButton(); self.distribute_h.clicked.connect(lambda:self.distribute_selected('horizontal')); self.distribute_v=QPushButton(); self.distribute_v.clicked.connect(lambda:self.distribute_selected('vertical')); self.snap_button=QPushButton(); self.snap_button.clicked.connect(self.snap_selected); self._layout_alignment_actions(False); self.align_card.body.addLayout(ag); self.measure_label=QLabel(); self.measure_label.setObjectName('Muted'); self.measure_label.setWordWrap(True); self.align_card.body.addWidget(self.measure_label); self.inspector_layout.addWidget(self.align_card); self.inspector_layout.addStretch(1)
+            self.inspector_page.setWidget(self.inspector_inner); self.inspector_tabs.addTab(self.inspector_page,'')
 
-            self.state_page=QScrollArea(); self.state_page.setWidgetResizable(True); state_inner=QWidget(); state_inner.setObjectName('InspectorRoot'); self.state_layout=QVBoxLayout(state_inner); self.state_layout.setContentsMargins(4,4,4,4); self.state_layout.setSpacing(6)
-            self.canvas_config_panel=ProfessionalPanel(); self.canvas_config_card=self.canvas_config_panel; cf=QFormLayout(); cf.setVerticalSpacing(6); self.canvas_preset_combo=QComboBox(); self.canvas_preset_combo.addItems([*CANVAS_PRESETS.keys(),'Custom']); self.canvas_preset_combo.currentTextChanged.connect(self._canvas_preset_changed); self.canvas_width_spin=QSpinBox(); self.canvas_width_spin.setRange(16,4096); self.canvas_height_spin=QSpinBox(); self.canvas_height_spin.setRange(8,2048); self.canvas_height_spin.setSingleStep(8); self.canvas_apply_button=QPushButton(); self.canvas_apply_button.clicked.connect(self.apply_canvas_size); self.canvas_size_labels={'preset':QLabel(),'width':QLabel(),'height':QLabel()}; cf.addRow(self.canvas_size_labels['preset'],self.canvas_preset_combo); cf.addRow(self.canvas_size_labels['width'],self.canvas_width_spin); cf.addRow(self.canvas_size_labels['height'],self.canvas_height_spin); self.canvas_config_panel.body.addLayout(cf); self.canvas_config_panel.body.addWidget(self.canvas_apply_button); self.state_layout.addWidget(self.canvas_config_panel)
-            self.runtime_panel=ProfessionalPanel(); self.runtime_card=self.runtime_panel; rf=QFormLayout(); rf.setVerticalSpacing(6); self.mode_combo=QComboBox(); self.phase_combo=QComboBox(); self.battery_spin=QSpinBox(); self.seconds_spin=QSpinBox(); self.speed_combo=QComboBox(); self.speed_combo.addItems(RUN_SPEEDS); self.runtime_labels={k:QLabel() for k in ('mode','phase','battery','seconds','speed')}
-            for key,w in [('mode',self.mode_combo),('phase',self.phase_combo),('battery',self.battery_spin),('seconds',self.seconds_spin),('speed',self.speed_combo)]: rf.addRow(self.runtime_labels[key],w)
-            self.runtime_panel.body.addLayout(rf); rr=QHBoxLayout(); rr.setSpacing(4); self.play_button=QPushButton(); self.play_button.setObjectName('PrimaryButton'); self.play_button.clicked.connect(self.toggle_play); self.step_button=QPushButton(); self.step_button.clicked.connect(self.step_runtime); self.reset_button=QPushButton(); self.reset_button.clicked.connect(self.reset_runtime); rr.addWidget(self.play_button); rr.addWidget(self.step_button); rr.addWidget(self.reset_button); self.runtime_panel.body.addLayout(rr); self.elapsed_label=QLabel(); self.elapsed_label.setObjectName('Muted'); self.runtime_panel.body.addWidget(self.elapsed_label); self.state_layout.addWidget(self.runtime_panel); self.state_layout.addStretch(1)
-            self.mode_combo.currentTextChanged.connect(lambda value:self._state_changed('mode',value)); self.phase_combo.currentIndexChanged.connect(self._phase_changed); self.battery_spin.valueChanged.connect(lambda value:self._state_changed('battery',value)); self.seconds_spin.valueChanged.connect(lambda value:self._state_changed('seconds',value)); self.speed_combo.currentTextChanged.connect(self._speed_changed)
-            self.state_page.setWidget(state_inner); self.inspector_tabs.addTab(self.state_page,'')
+            self.state_page=QScrollArea(); self.state_page.setWidgetResizable(True); self.state_page.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff); self.state_inner=QWidget(); self.state_inner.setObjectName('InspectorRoot'); self.state_inner.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred); self.state_layout=QVBoxLayout(self.state_inner); self.state_layout.setContentsMargins(4,4,4,4); self.state_layout.setSpacing(6)
+            self.canvas_config_panel=ProfessionalPanel(); self.canvas_config_card=self.canvas_config_panel; cf=QFormLayout(); cf.setVerticalSpacing(6); cf.setRowWrapPolicy(QFormLayout.WrapLongRows); self.canvas_preset_combo=QComboBox(); self.canvas_preset_combo.addItems([*CANVAS_PRESETS.keys(),'Custom']); self.canvas_preset_combo.currentTextChanged.connect(self._canvas_preset_changed); self.canvas_width_spin=QSpinBox(); self.canvas_width_spin.setRange(16,4096); self.canvas_height_spin=QSpinBox(); self.canvas_height_spin.setRange(8,2048); self.canvas_height_spin.setSingleStep(8); self.canvas_apply_button=QPushButton(); self.canvas_apply_button.clicked.connect(self.apply_canvas_size); self.canvas_size_labels={'preset':QLabel(),'width':QLabel(),'height':QLabel()}; cf.addRow(self.canvas_size_labels['preset'],self.canvas_preset_combo); cf.addRow(self.canvas_size_labels['width'],self.canvas_width_spin); cf.addRow(self.canvas_size_labels['height'],self.canvas_height_spin); self.canvas_config_panel.body.addLayout(cf); self.canvas_config_panel.body.addWidget(self.canvas_apply_button); self.state_layout.addWidget(self.canvas_config_panel)
+            self.runtime_panel=ProfessionalPanel(); self.runtime_card=self.runtime_panel
+            self.state_editors={}
+            self.state_status_label=QLabel(); self.state_status_label.setObjectName('StateSchemaStatus'); self.state_status_label.setWordWrap(True)
+            self.state_form=QFormLayout(); self.state_form.setVerticalSpacing(6); self.state_form.setRowWrapPolicy(QFormLayout.WrapLongRows); self.state_form_host=QWidget(); self.state_form_host.setLayout(self.state_form)
+            rf=QFormLayout(); rf.setVerticalSpacing(6); rf.setRowWrapPolicy(QFormLayout.WrapLongRows); self.speed_label=QLabel(); self.speed_combo=QComboBox(); self.speed_combo.addItems(RUN_SPEEDS); rf.addRow(self.speed_label,self.speed_combo)
+            self.runtime_panel.body.addWidget(self.state_status_label); self.runtime_panel.body.addWidget(self.state_form_host); self.runtime_panel.body.addLayout(rf)
+            self.timeline_status_label=QLabel(); self.timeline_status_label.setObjectName('Muted'); self.timeline_status_label.setWordWrap(True); self.runtime_panel.body.addWidget(self.timeline_status_label)
+            rr=QHBoxLayout(); rr.setSpacing(4); self.play_button=QPushButton(); self.play_button.setObjectName('PrimaryButton'); self.play_button.clicked.connect(self.toggle_play); self.step_button=QPushButton(); self.step_button.clicked.connect(self.step_runtime); self.reset_button=QPushButton(); self.reset_button.clicked.connect(self.reset_runtime); rr.addWidget(self.play_button); rr.addWidget(self.step_button); rr.addWidget(self.reset_button); self.runtime_panel.body.addLayout(rr); self.elapsed_label=QLabel(); self.elapsed_label.setObjectName('Muted'); self.runtime_panel.body.addWidget(self.elapsed_label); self.state_layout.addWidget(self.runtime_panel); self.state_layout.addStretch(1)
+            self.speed_combo.currentTextChanged.connect(self._speed_changed)
+            self.state_page.setWidget(self.state_inner); self.inspector_tabs.addTab(self.state_page,'')
             self.workspace_splitter.addWidget(self.inspector_tabs)
             self.vertical_splitter.addWidget(self.workspace_splitter)
 
@@ -390,12 +405,39 @@ if PYSIDE_AVAILABLE:
 
         def _schedule_responsive(self): self.layout_timer.start()
         def _schedule_canvas_fit(self): QTimer.singleShot(16,self._fit_canvas_zoom)
+        def _layout_alignment_actions(self,compact):
+            while self.align_grid.count(): self.align_grid.takeAt(0)
+            if compact:
+                placements=(('left',0,0,1,1),('right',0,1,1,1),('center_h',1,0,1,2),('top',2,0,1,1),('bottom',2,1,1,1),('center_v',3,0,1,2))
+                columns=2; row=4
+            else:
+                placements=(('left',0,0,1,1),('right',0,1,1,1),('center_h',1,0,1,2),('top',2,0,1,1),('bottom',2,1,1,1),('center_v',3,0,1,2))
+                columns=2; row=4
+            for key,r,c,rs,cs in placements: self.align_grid.addWidget(self.align_buttons[key],r,c,rs,cs)
+            for button in (self.distribute_h,self.distribute_v,self.snap_button):
+                self.align_grid.addWidget(button,row,0,1,columns); row+=1
+            for column in range(3): self.align_grid.setColumnStretch(column,1 if column<columns else 0)
+
         def _responsive_tick(self):
             runtime=getattr(self,'_runtime_preferences',None) or RuntimeSettings.from_preferences(self.preferences)
             p=plan_layout(self.width(),self.height(),runtime.density,runtime.ui_scale); wp=workspace_plan(self.width(),self.height(),self.workspace_mode); bucket=(p.left_width,p.inspector_width,wp.compact)
             if bucket!=self._layout_bucket:
                 self.left_card.setVisible(wp.left_visible)
-                self.workspace_splitter.setSizes([p.left_width,p.canvas_width,p.inspector_width]); self._layout_bucket=bucket
+                self.workspace_splitter.setSizes([p.left_width,p.canvas_width,p.inspector_width]); self._layout_alignment_actions(wp.compact); self._layout_bucket=bucket
+            elif self.workspace_splitter.sizes() and self.workspace_splitter.sizes()[-1] > wp.inspector_width + 4:
+                # A restored QSettings splitter state can retain an oversized inspector
+                # after the responsive bucket was already computed for the new window size.
+                self.workspace_splitter.setSizes([p.left_width,p.canvas_width,p.inspector_width])
+            # QScrollArea can retain a content width from a restored layout
+            # state.  Keep both inspector pages horizontally bounded by the
+            # current viewport while allowing their content to grow vertically.
+            for scroll in (self.inspector_page, self.state_page):
+                viewport_width = scroll.viewport().width()
+                if viewport_width > 0:
+                    content = scroll.widget()
+                    content.setMinimumWidth(0)
+                    content.setMaximumWidth(viewport_width)
+                    content.resize(viewport_width, max(content.height(), content.sizeHint().height()))
             hp=header_policy(p)
             self.hero_subtitle.setVisible(hp.show_subtitle)
             self.pixel_status.setVisible(hp.show_status)
@@ -467,14 +509,14 @@ if PYSIDE_AVAILABLE:
             for k,b in self.align_buttons.items(): b.setText(t(labels[k]))
             self.distribute_h.setText(t('align.distribute_h')); self.distribute_v.setText(t('align.distribute_v')); self.snap_button.setText(t('align.snap'))
             self.canvas_config_card.set_title(t('panel.canvas_settings')); self.canvas_size_labels['preset'].setText(t('canvas.preset')); self.canvas_size_labels['width'].setText(t('canvas.width')); self.canvas_size_labels['height'].setText(t('canvas.height')); self.canvas_apply_button.setText(t('action.apply_canvas'))
-            self.runtime_card.set_title(t('panel.runtime')); [self.runtime_labels[k].setText(t(f'state.{k}')) for k in self.runtime_labels]; self.step_button.setText(t('action.step')); self.reset_button.setText(t('action.reset')); self._update_play_button()
+            self.runtime_card.set_title(t('panel.state_preview')); self.speed_label.setText(t('state.speed')); self.step_button.setText(t('action.step')); self.reset_button.setText(t('action.reset')); self._update_play_button(); self._update_timeline_controls()
             self.validation_card.set_title(t('panel.validation')); self.diff_card.set_title(t('panel.diff')); self.logs_card.set_title(t('panel.logs')); self.diagnostics_tabs.setTabText(0,t('panel.validation')); self.diagnostics_tabs.setTabText(1,t('panel.diff')); self.diagnostics_tabs.setTabText(2,t('panel.logs')); self.truth_label.setText(t('footer.truth'))
             if not self.profiler.summary('drag_preview').count:self.perf_label.setText(t('performance.preview_idle'))
             menu_names={'file':'menu.file','edit':'menu.edit','arrange':'menu.arrange','run':'menu.run','view':'menu.view','tools':'menu.tools','help':'menu.help'}
             for k,v in menu_names.items(): self._menus[k].setTitle(t(v))
             action_keys={'new_project':'action.new_project','open_project':'action.open_project','open_scene':'action.open_scene','save':'action.save','handoff':'action.handoff','export_current':'action.export_current','export_all':'action.export_all','exit':'action.exit','undo':'action.undo','redo':'action.redo','add_placeholder':'action.add_placeholder','assign_bitmap':'action.assign_bitmap','delete':'action.delete','front':'action.front','back':'action.back','group':'action.group','ungroup':'action.ungroup','play':'action.play','step':'action.step','reset':'action.reset','validate':'action.batch_validate','diagnostics':'action.diagnostics','design_mode':'workspace.design','review_mode':'workspace.review','toggle_navigator':'view.navigator','toggle_inspector':'view.inspector','canvas_only':'view.canvas_only','reset_workspace':'view.reset_workspace','preferences':'action.preferences','asset_health':'action.asset_health','save_template':'action.save_template','insert_template':'action.insert_template','convert_asset':'action.convert_asset','export_c_header':'action.export_c_header','thumbnail_wall':'action.thumbnail_wall','autosave':'action.autosave','restore_autosave':'action.restore_autosave','command_palette':'command.title','pixel_studio':'action.pixel_studio','font_lab':'action.open_font','bitmap_text':'action.bitmap_text','agent_bridge':'action.agent_bridge','about':'action.about'}
             for name,key in action_keys.items(): self._actions[name].setText(t(key))
-            self._rebuild_phase_combo(); self._sync_runtime_controls(); self._retranslate_validation_panel(); self._update_measurement(); self._schedule_responsive()
+            self._sync_runtime_controls(); self._retranslate_validation_panel(); self._update_measurement(); self._schedule_responsive()
 
         def change_language(self,language):
             if language not in SUPPORTED_LANGUAGES:return
@@ -511,15 +553,12 @@ if PYSIDE_AVAILABLE:
             if not initial and not delta.effects and not resolved_theme_changed:return
             if delta.language_changed or delta.appearance_changed or resolved_theme_changed: PopupManager.close_all()
 
-            # Appearance is expensive. Global Qt repolish only when the resolved
-            # stylesheet signature actually changes (Theme Mode may change while
-            # resolving to the same visual theme).
-            style_signature=(theme,runtime.density,runtime.ui_scale)
-            style_changed=style_signature!=self._applied_style_signature
-            if initial or style_changed:
+            metrics_signature=(runtime.density,runtime.ui_scale)
+            metrics_changed=metrics_signature!=self._applied_style_signature
+            if initial or metrics_changed or resolved_theme_changed:
                 app=QApplication.instance()
-                if app is not None: app.setStyleSheet(build_stylesheet(theme,runtime.density,ui_scale=runtime.ui_scale))
-                self._applied_style_signature=style_signature
+                if app is not None:_apply_application_theme(app,theme,runtime.density,runtime.ui_scale)
+                self._applied_style_signature=metrics_signature
                 if hasattr(self,'canvas'): self.canvas.set_theme(theme)
                 self._apply_status_theme(theme)
                 if self._preferences_window is not None:
@@ -720,7 +759,7 @@ if PYSIDE_AVAILABLE:
             path,_=QFileDialog.getSaveFileName(self,self.tr('action.thumbnail_wall'),str(scene_root(self.scene)/'exports'/'screen_overview.png'),'PNG (*.png)')
             if not path:return
             try:
-                states=clinical_states(self.scene,seconds=int(self.session.runtime.state.get('seconds',0)),battery=int(self.session.runtime.state.get('battery',0))) if {'mode','phase'}<=set(self.scene.get('states',{})) else {'current':dict(self.session.runtime.state)}
+                states=build_export_states(self.scene,integer_policy='representative',max_cases=5000)
                 with tempfile.TemporaryDirectory(prefix='oled_wall_') as td:
                     export_scene(self.scene,Path(td),states); refs=[Path(td)/'reference'/f'{name}.png' for name in states]; build_thumbnail_wall(refs,path,columns=min(4,max(1,len(refs))),scale=4)
                 self.app_status.setText(self.tr('status.exported',path=path)); self.app_status.set_status('success')
@@ -842,31 +881,86 @@ if PYSIDE_AVAILABLE:
             else:self.measure_label.setText(self.tr('measure.hint'))
 
         # ---------- state / canvas ----------
+        def _clear_state_editors(self):
+            while self.state_form.count():
+                item=self.state_form.takeAt(0); widget=item.widget()
+                if widget is not None: widget.deleteLater()
+            self.state_editors.clear()
+
         def _configure_state_controls(self):
-            states=self.scene.get('states',{}); self._syncing=True; self.mode_combo.clear(); mode=states.get('mode',{}); self.mode_combo.addItems([str(v) for v in mode.get('values',[])])
-            battery=states.get('battery',{'min':0,'max':4}); seconds=states.get('seconds',{'min':0,'max':999}); self.battery_spin.setRange(int(battery.get('min',0)),int(battery.get('max',4))); self.seconds_spin.setRange(int(seconds.get('min',0)),int(seconds.get('max',999))); self.canvas_width_spin.setValue(int(self.scene['canvas']['w'])); self.canvas_height_spin.setValue(int(self.scene['canvas']['h'])); dims=(int(self.scene['canvas']['w']),int(self.scene['canvas']['h'])); self.canvas_preset_combo.setCurrentText(next((n for n,s in CANVAS_PRESETS.items() if s==dims),'Custom')); self._syncing=False
+            self._clear_state_editors(); self._syncing=True
+            result=build_state_editor_specs(schema_from_scene(self.scene))
+            if not result.valid:
+                codes=', '.join(str(error.get('code','SCHEMA')) for error in result.errors)
+                self.state_status_label.setText(self.tr('state.schema_invalid',errors=codes)); self.state_status_label.setVisible(True)
+            elif not result.fields:
+                self.state_status_label.setText(self.tr('state.empty')); self.state_status_label.setVisible(True)
+            else:
+                self.state_status_label.clear(); self.state_status_label.setVisible(False)
+                for field in result.fields:
+                    label=QLabel(field.label); label.setObjectName(f'StateLabel_{field.name}')
+                    if field.editor_kind=='combo':
+                        editor=QComboBox(); blocker=QSignalBlocker(editor)
+                        for value in field.values: editor.addItem(str(value),value)
+                        editor.setCurrentIndex(0 if field.values else -1); del blocker
+                        editor.currentIndexChanged.connect(lambda _index,name=field.name:self._state_editor_combo_changed(name))
+                    else:
+                        editor=QSpinBox(); editor.setRange(field.minimum,field.maximum); editor.setValue(field.initial)
+                        editor.valueChanged.connect(lambda value,name=field.name:self._state_changed(name,value))
+                    editor.setObjectName(f'StateEditor_{field.name}'); editor.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Fixed)
+                    self.state_form.addRow(label,editor); self.state_editors[field.name]={'name':field.name,'spec':field.spec,'field':field,'label':label,'editor':editor}
+            self.canvas_width_spin.setValue(int(self.scene['canvas']['w'])); self.canvas_height_spin.setValue(int(self.scene['canvas']['h'])); dims=(int(self.scene['canvas']['w']),int(self.scene['canvas']['h'])); self.canvas_preset_combo.setCurrentText(next((n for n,s in CANVAS_PRESETS.items() if s==dims),'Custom')); self._syncing=False
+            self._timeline_defined=isinstance(self.scene.get('timeline'),list) and bool(self.scene.get('timeline')); self._update_timeline_controls()
         def _canvas_preset_changed(self,name):
             if self._syncing or name not in CANVAS_PRESETS:return
             w,h=CANVAS_PRESETS[name]; self._syncing=True; self.canvas_width_spin.setValue(w); self.canvas_height_spin.setValue(h); self._syncing=False
         def apply_canvas_size(self):
             try:self.session.set_canvas_size(self.canvas_width_spin.value(),self.canvas_height_spin.value()); self.refresh_all(keep_selection=True); self.retranslate_ui(); self._fit_canvas_zoom()
             except Exception as exc:self._show_error(str(exc))
-        def _rebuild_phase_combo(self):
-            current=self.session.runtime.state.get('phase','standby'); blocker=QSignalBlocker(self.phase_combo); self.phase_combo.clear(); self.phase_combo.addItem(self.tr('runtime.standby'),'standby'); self.phase_combo.addItem(self.tr('runtime.running'),'running'); self.phase_combo.setCurrentIndex(max(0,self.phase_combo.findData(current))); del blocker
+        def _state_editor_combo_changed(self,name):
+            binding=self.state_editors.get(name)
+            if binding is not None: self._state_changed(name,binding['editor'].currentData(),binding=binding)
+
+        def _update_timeline_controls(self):
+            defined=bool(getattr(self,'_timeline_defined',False)); controls=(self.play_button,self.step_button,self.reset_button,self.speed_label,self.speed_combo)
+            for widget in controls: widget.setVisible(defined); widget.setEnabled(defined)
+            self.timeline_status_label.setVisible(not defined); self.timeline_status_label.setText(self.tr('timeline.empty') if not defined else '')
+            self.elapsed_label.setText(self.tr('timeline.empty') if not defined else self.tr('runtime.elapsed',seconds=self.session.runtime.elapsed))
+            action=self._actions.get('play') if hasattr(self,'_actions') else None
+            if action is not None: action.setEnabled(defined)
+
         def _sync_runtime_controls(self):
-            state=self.session.runtime.state; self._syncing=True; self.mode_combo.setCurrentText(str(state.get('mode',''))); self.phase_combo.setCurrentIndex(max(0,self.phase_combo.findData(state.get('phase')))); self.battery_spin.setValue(int(state.get('battery',0))); self.seconds_spin.setValue(int(state.get('seconds',0))); self.elapsed_label.setText(self.tr('runtime.elapsed',seconds=self.session.runtime.elapsed)); self._syncing=False
-        def _state_changed(self,name,value):
-            if not self._syncing:self.session.set_state(name,value); self.refresh_all(keep_selection=True)
-        def _phase_changed(self):
-            if not self._syncing and self.phase_combo.currentData():self._state_changed('phase',self.phase_combo.currentData())
+            state=self.session.runtime.state; self._syncing=True
+            for name,binding in self.state_editors.items():
+                editor=binding['editor']; field=binding['field']; blocker=QSignalBlocker(editor); value=state.get(name,field.initial)
+                valid,value=coerce_editor_value(field,value)
+                if valid:
+                    if field.editor_kind=='combo': editor.setCurrentIndex(max(0,editor.findData(value)))
+                    else: editor.setValue(value)
+                del blocker
+            self._syncing=False; self._update_timeline_controls()
+        def _state_changed(self,name,value,*,binding=None):
+            if self._syncing:return
+            binding=binding or self.state_editors.get(name)
+            if binding is None:return
+            valid,value=coerce_editor_value(binding['field'],value)
+            if not valid:return
+            try:self.session.set_state(name,value); self.refresh_all(keep_selection=True)
+            except Exception as exc:self._show_error(str(exc)); self._sync_runtime_controls()
         def _speed_changed(self,_v):
             if self.run_timer.isActive():self.run_timer.start(RUN_SPEEDS.get(self.speed_combo.currentText(),1000))
-        def toggle_play(self): self.run_timer.stop() if self.run_timer.isActive() else self.run_timer.start(RUN_SPEEDS.get(self.speed_combo.currentText(),1000)); self._update_play_button()
+        def toggle_play(self):
+            if not getattr(self,'_timeline_defined',False):return
+            self.run_timer.stop() if self.run_timer.isActive() else self.run_timer.start(RUN_SPEEDS.get(self.speed_combo.currentText(),1000)); self._update_play_button()
         def _update_play_button(self):
-            text=self.tr('action.pause') if self.run_timer.isActive() else self.tr('action.play'); self.play_button.setText(text); self._actions.get('play').setText(text) if self._actions.get('play') else None
-        def _runtime_tick(self):self.session.step(1); self.refresh_all(keep_selection=True)
-        def step_runtime(self):self.session.step(1); self.refresh_all(keep_selection=True)
-        def reset_runtime(self):self.run_timer.stop(); self._update_play_button(); self.session.reset(); self.refresh_all(keep_selection=True)
+            text=self.tr('action.pause') if self.run_timer.isActive() else self.tr('action.play'); self.play_button.setText(text); action=self._actions.get('play') if hasattr(self,'_actions') else None; action.setText(text) if action else None
+        def _runtime_tick(self):
+            if getattr(self,'_timeline_defined',False):self.session.step(1); self.refresh_all(keep_selection=True)
+        def step_runtime(self):
+            if getattr(self,'_timeline_defined',False):self.session.step(1); self.refresh_all(keep_selection=True)
+        def reset_runtime(self):
+            if not getattr(self,'_timeline_defined',False):return
+            self.run_timer.stop(); self._update_play_button(); self.session.reset(); self.refresh_all(keep_selection=True)
 
         # ---------- canvas / zoom / diff ----------
         def _zoom_changed(self):
@@ -987,7 +1081,11 @@ if PYSIDE_AVAILABLE:
             if output:self._perform_export(Path(output),{'current':dict(self.session.runtime.state)})
         def export_all(self):
             output=QFileDialog.getExistingDirectory(self,self.tr('dialog.export_all'))
-            if output:self._perform_export(Path(output),clinical_states(self.scene,seconds=int(self.session.runtime.state.get('seconds',0)),battery=int(self.session.runtime.state.get('battery',0))))
+            if output:
+                self._perform_export(
+                    Path(output),
+                    build_export_states(self.scene, integer_policy='representative', max_cases=5000),
+                )
         def _perform_export(self,output,states):
             try:summary=export_scene(self.scene,output,states)
             except ExportBlockedError as exc:self._show_error(str(exc)); return
@@ -996,8 +1094,8 @@ if PYSIDE_AVAILABLE:
         def export_handoff(self):
             path,_=QFileDialog.getSaveFileName(self,self.tr('action.handoff'),str(scene_root(self.scene)/'exports'/'OLED_Code_AI_Handoff.zip'),'ZIP (*.zip)')
             if not path:return
-            states=clinical_states(self.scene,seconds=int(self.session.runtime.state.get('seconds',0)),battery=int(self.session.runtime.state.get('battery',0))) if {'mode','phase'}<=set(self.scene.get('states',{})) else {'current':dict(self.session.runtime.state)}
-            try:summary=build_handoff_package(self.scene,path,states=states); self.app_status.setText(self.tr('handoff.done',frames=summary.frame_count,path=path)); self.app_status.set_status('success')
+            states=build_export_states(self.scene, integer_policy='representative', max_cases=5000)
+            try:summary=build_handoff_package(self.scene,path,states=states,integer_policy='representative'); self.app_status.setText(self.tr('handoff.done',frames=summary.frame_count,path=path)); self.app_status.set_status('success')
             except Exception as exc:self._show_error(str(exc))
 
         def _editor_tab_changed(self,index):
@@ -1130,18 +1228,27 @@ if PYSIDE_AVAILABLE:
             get_logger('ui').error('%s',message)
             QMessageBox.critical(self,self.tr('dialog.error'),message); self.app_status.setText(message); self.app_status.set_status('danger')
         def layout_violations(self):
-            issues=[]; leaves=[
+            issues=[]; scroll_areas=(self.inspector_page,self.state_page)
+            for scroll in scroll_areas:
+                if scroll.widget().width()>scroll.viewport().width(): issues.append('horizontal-overflow:'+scroll.objectName())
+            leaves=[
                 self.id_edit,self.type_edit,self.resource_edit,*self.geom_spins.values(),
                 self.canvas_width_spin,self.canvas_height_spin,self.canvas_apply_button,
                 self.header_pixel,self.header_review,self.header_project,self.header_settings,
                 self.header_save,self.header_validate,self.header_handoff,self.header_diagnostics,
                 self.screen_new,self.screen_duplicate,self.screen_delete,self.add_button,self.assign_button,self.delete_button,
                 self.asset_import,self.asset_rescan,*self.align_buttons.values(),self.distribute_h,self.distribute_v,self.snap_button,
-                self.mode_combo,self.phase_combo,self.battery_spin,self.seconds_spin,self.speed_combo,self.play_button,self.step_button,self.reset_button,
+                self.state_status_label,self.timeline_status_label,self.speed_label,self.speed_combo,self.play_button,self.step_button,self.reset_button,
+                *(binding['editor'] for binding in self.state_editors.values()),
             ]
             for widget in leaves:
                 if not widget.isVisible(): continue
                 if widget.width()<=0 or widget.height()<=0:issues.append('zero-size:'+widget.__class__.__name__); continue
+                scroll=next((area for area in scroll_areas if area.isAncestorOf(widget)),None)
+                if scroll is not None:
+                    content=scroll.widget(); position=widget.mapTo(content,QPoint(0,0))
+                    if position.x()<0 or position.x()+widget.width()>content.width(): issues.append('clipped-horizontal:'+widget.__class__.__name__)
+                    continue
                 vp=widget.visibleRegion().boundingRect()
                 if vp.width()<max(8,widget.width()//2) or vp.height()<max(8,widget.height()//2):issues.append('clipped:'+widget.__class__.__name__)
             return issues
@@ -1179,14 +1286,35 @@ def check_environment(source: str) -> int:
     except Exception as exc:print(f'CORE CHECK FAIL: {exc}',file=sys.stderr); return 2
 
 
+def _settle_window_layout(app,window,max_passes: int = 12) -> bool:
+    previous=None; stable_passes=0
+    for _ in range(max(2,int(max_passes))):
+        window._responsive_tick()
+        layout=window.centralWidget().layout() if window.centralWidget() is not None else None
+        if layout is not None: layout.activate()
+        app.sendPostedEvents(); app.processEvents()
+        signature=(
+            window.size().toTuple(),tuple(window.workspace_splitter.sizes()),tuple(window.vertical_splitter.sizes()),
+            window.inspector_page.viewport().size().toTuple(),window.state_page.viewport().size().toTuple(),window._layout_bucket,
+            tuple(widget.geometry().getRect() for widget in (*window.geom_spins.values(),*window.align_buttons.values(),window.distribute_h,window.distribute_v,window.snap_button,*(binding['editor'] for binding in window.state_editors.values()))),
+        )
+        if signature==previous:
+            stable_passes+=1
+            if stable_passes>=1:return True
+        else:stable_passes=0
+        previous=signature
+    return False
+
+
 def run_startup_smoke(source: str) -> int:
     """Construct and show the real main window, process events, then close."""
     if not PYSIDE_AVAILABLE:
         print(f'STARTUP SMOKE FAIL: PySide6 is not installed ({PYSIDE_IMPORT_ERROR})',file=sys.stderr); return 2
-    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setOrganizationName('MonoOLEDStudio'); app.setStyle('Fusion'); app.setStyleSheet(build_stylesheet())
+    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setOrganizationName('MonoOLEDStudio'); app.setStyle('Fusion'); _apply_application_theme(app,'monooled-light','comfortable',1.0)
     w=None
     try:
-        w=OLEDDesignerWindow(source,'zh_CN'); w.resize(1180,720); w.setAttribute(Qt.WA_DontShowOnScreen,True); w.show(); app.processEvents(); app.processEvents()
+        w=OLEDDesignerWindow(source,'zh_CN'); w.resize(1180,720); w.setAttribute(Qt.WA_DontShowOnScreen,True); w.show()
+        if not _settle_window_layout(app,w): raise RuntimeError('layout did not settle')
         if not w.isVisible(): raise RuntimeError('main window did not become visible')
         if w.layout_violations(): raise RuntimeError('layout violations: '+','.join(w.layout_violations()))
         w.session.document.dirty=False; w.close(); app.processEvents()
@@ -1200,17 +1328,18 @@ def run_startup_smoke(source: str) -> int:
 
 def run_layout_smoke(source: str) -> int:
     if not PYSIDE_AVAILABLE:return 2
-    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setStyle('Fusion'); app.setStyleSheet(build_stylesheet()); failures=[]
+    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setStyle('Fusion'); _apply_application_theme(app,'monooled-light','comfortable',1.0); failures=[]
     for width,height,language in [(900,620,'zh_CN'),(900,620,'en_US'),(960,680,'zh_CN'),(960,680,'en_US'),(1100,700,'zh_CN'),(1100,700,'en_US'),(1180,720,'zh_CN'),(1180,720,'en_US'),(1440,900,'zh_CN'),(1440,900,'en_US'),(1920,1080,'zh_CN'),(1920,1080,'en_US'),(2560,1440,'zh_CN'),(2560,1440,'en_US')]:
-        w=OLEDDesignerWindow(source,language); w.resize(width,height); w.show(); app.processEvents(); QTimer.singleShot(30,lambda:None); app.processEvents(); issues=w.layout_violations(); failures.extend([f'{width}x{height}/{language}:{x}' for x in issues]); w.session.document.dirty=False; w.close(); app.processEvents()
+        w=OLEDDesignerWindow(source,language); w.resize(width,height); w.show(); settled=_settle_window_layout(app,w); issues=w.layout_violations() if settled else ['layout-did-not-settle']; failures.extend([f'{width}x{height}/{language}:{x}' for x in issues]); w.session.document.dirty=False; w.close(); app.processEvents()
     if failures:print('LAYOUT SMOKE FAIL:\n'+'\n'.join(failures),file=sys.stderr); return 2
     print('LAYOUT SMOKE PASS: 14 window/language combinations'); return 0
 
 
 def run_interaction_smoke(source: str) -> int:
     if not PYSIDE_AVAILABLE:return 2
-    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setStyle('Fusion'); app.setStyleSheet(build_stylesheet()); w=OLEDDesignerWindow(source,'zh_CN'); w.resize(1440,900); w.show(); app.processEvents(); failures=[]
+    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setStyle('Fusion'); _apply_application_theme(app,'monooled-light','comfortable',1.0); w=OLEDDesignerWindow(source,'zh_CN'); w.resize(1440,900); w.show(); failures=[]
     try:
+        if not _settle_window_layout(app,w):failures.append('layout-did-not-settle')
         target='battery' if any(e.get('id')=='battery' for e in w.scene.get('elements',[])) else str(w.scene['elements'][0]['id']); w.select_element(target); before=w.session.geometry(target); raw0=w.session.render().framebuffer.to_vlsb(); w.geom_spins['x'].setValue(before.x+1); app.processEvents(); raw1=w.session.render().framebuffer.to_vlsb();
         if w.session.geometry(target).x!=before.x+1:failures.append('live-x')
         if raw0==raw1:failures.append('live-render')
@@ -1229,14 +1358,15 @@ def run_interaction_smoke(source: str) -> int:
 
 def run_soak_smoke(source: str, cycles: int = 240) -> int:
     if not PYSIDE_AVAILABLE:return 2
-    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setStyle('Fusion'); app.setStyleSheet(build_stylesheet())
+    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setStyle('Fusion'); _apply_application_theme(app,'monooled-light','comfortable',1.0)
     w=OLEDDesignerWindow(source,'zh_CN'); w.resize(1180,720); w.show(); app.processEvents(); failures=[]
     try:
         target='battery' if any(e.get('id')=='battery' for e in w.scene.get('elements',[])) else str(w.scene['elements'][0]['id'])
         w.select_element(target); base=w.session.geometry(target).x
         sizes=((900,620),(960,680),(1100,700),(1180,720),(1440,900),(1920,1080))
         for i in range(max(1,int(cycles))):
-            width,height=sizes[i%len(sizes)]; w.resize(width,height); w._responsive_tick()
+            width,height=sizes[i%len(sizes)]; w.resize(width,height)
+            if not _settle_window_layout(app,w):failures.append(f'layout-settle@{i}'); break
             desired=base+(i&1); w.geom_spins['x'].setValue(desired); w._finish_geometry_edit()
             if i%20==0:w.change_language('en_US' if w.tr.language=='zh_CN' else 'zh_CN')
             if i%30==0:w.toggle_diagnostics(); w.toggle_diagnostics()
@@ -1264,7 +1394,7 @@ def main(argv=None):
     if args.interaction_smoke:return run_interaction_smoke(source)
     if args.soak_smoke:return run_soak_smoke(source)
     if not PYSIDE_AVAILABLE:print('PySide6 is required.',file=sys.stderr); return 2
-    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setOrganizationName('MonoOLEDStudio'); icon=Path(__file__).resolve().parent/'branding'/'monooled_studio.ico'; app.setWindowIcon(QIcon(str(icon))) if icon.exists() else None; app.setStyle('Fusion'); pref=PreferencesStore.load(); runtime=RuntimeSettings.from_preferences(pref); system_dark=app.palette().window().color().value()<128; theme=resolve_theme_name(runtime.color_theme,runtime.theme_mode,system_dark=system_dark); app.setStyleSheet(build_stylesheet(theme,runtime.density,ui_scale=runtime.ui_scale));
+    app=QApplication.instance() or QApplication(sys.argv[:1]); app.setApplicationName(APP_TITLE); app.setOrganizationName('MonoOLEDStudio'); icon=Path(__file__).resolve().parent/'branding'/'monooled_studio.ico'; app.setWindowIcon(QIcon(str(icon))) if icon.exists() else None; app.setStyle('Fusion'); pref=PreferencesStore.load(); runtime=RuntimeSettings.from_preferences(pref); system_dark=app.palette().window().color().value()<128; theme=resolve_theme_name(runtime.color_theme,runtime.theme_mode,system_dark=system_dark); _apply_application_theme(app,theme,runtime.density,runtime.ui_scale);
     if not args.project and args.scene=='main_scene' and runtime.reopen_last_project and runtime.last_project and Path(runtime.last_project).exists(): source=runtime.last_project
     w=OLEDDesignerWindow(source,args.language); w.show(); QTimer.singleShot(args.smoke_ms,w.close) if args.smoke_ms>0 else None; return app.exec()
 

@@ -14,7 +14,8 @@ def test_primary_gui_is_pyside6_and_not_tkinter():
     assert 'from PySide6' in text
     assert 'import tkinter' not in text
     assert 'OLEDDesignerWindow' in text
-    assert 'build_stylesheet' in text
+    assert 'build_adaptive_stylesheet' in text
+    assert 'build_theme_palette' in text
 
 
 def test_gui_check_mode_reports_dependency_or_validates_core():

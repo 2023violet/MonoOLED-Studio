@@ -21,7 +21,7 @@ def run(cmd:list[str], *, env=None, timeout=60)->subprocess.CompletedProcess:
 
 def main()->int:
     version=(SIM/'VERSION').read_text(encoding='utf-8').strip()
-    assert version=='8.4.3'
+    assert version in {'8.4.3','8.4.4'}
     assert AUTOMATION_API_VERSION=='1.2.0'
     assert len(METHOD_SPECS)==82
     contract=json.loads((SIM/'AUTOMATION_API_V1.json').read_text(encoding='utf-8'))
@@ -30,7 +30,8 @@ def main()->int:
 
     manifest=json.loads((ROOT/'DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
     assert manifest['version']==version
-    assert manifest['release_name']=='Windows Release & Real-Qt GA Closure'
+    if version=='8.4.3':
+        assert manifest['release_name']=='Windows Release & Real-Qt GA Closure'
     assert manifest['delivery_profile']=='source'
 
     text_gate=run([sys.executable,str(TOOLS/'VERIFY_WINDOWS_RELEASE_TEXT.py')])

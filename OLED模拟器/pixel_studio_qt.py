@@ -18,7 +18,7 @@ from preferences import PreferencesStore
 from runtime_settings import RuntimeSettings
 from preference_delta import PreferenceDelta
 from system_theme import SystemThemeProvider
-from qt_theme import build_stylesheet
+from qt_theme import build_adaptive_stylesheet, build_theme_palette
 from theme_system import get_theme, resolve_theme_name
 from ui_controls import StudioButton, StudioToolButton, StudioSelect, StudioNumericInput
 QPushButton = StudioButton
@@ -232,7 +232,7 @@ class PixelStudioWindow(QMainWindow):
         self.document=PixelDocument.from_image(self.path) if self.path else PixelDocument(32,16)
         self.document.set_max_undo(int(self.preferences.get('performance.undo_history',200)))
         self.setWindowTitle(f"MonoOLED Studio · {self.tr('pixel.title')}"); self.resize(1180,780)
-        self._runtime_settings=None; self._resolved_theme=None; self.system_theme=SystemThemeProvider(self)
+        self._runtime_settings=None; self._resolved_theme=None; self._adaptive_style_signature=None; self.system_theme=SystemThemeProvider(self)
         self._build_ui(); self.apply_preferences(initial=True); self.refresh_preview()
 
     def _build_ui(self):
@@ -291,7 +291,11 @@ class PixelStudioWindow(QMainWindow):
         if delta.appearance_changed or theme_changed:
             # Embedded editors inherit the application stylesheet. Only a real
             # top-level Pixel window owns a local stylesheet.
-            if self.parentWidget() is None:self.setStyleSheet(build_stylesheet(theme,runtime.density,ui_scale=runtime.ui_scale))
+            if self.parentWidget() is None:
+                self.setPalette(build_theme_palette(theme))
+                signature=(runtime.density,runtime.ui_scale)
+                if signature!=self._adaptive_style_signature:
+                    self.setStyleSheet(build_adaptive_stylesheet(runtime.density,ui_scale=runtime.ui_scale));self._adaptive_style_signature=signature
             self.canvas.theme_name=theme; self.canvas.update()
         if delta.pixel_changed or delta.performance_changed:
             self.canvas.show_grid=runtime.pixel_grid; self.canvas.stroke_interpolation=runtime.stroke_interpolation; self.canvas.wheel_action=runtime.wheel_action; self.canvas.middle_pan_enabled=runtime.middle_pan; self.canvas.space_pan_enabled=runtime.space_pan; self.canvas.brush_size=runtime.brush_size

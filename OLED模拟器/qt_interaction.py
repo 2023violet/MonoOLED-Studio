@@ -34,7 +34,8 @@ class FocusOriginFilter(QObject):
             if key in (Qt.Key_Tab, Qt.Key_Backtab):
                 self.keyboard_navigation = True
         elif et == QEvent.FocusIn and isinstance(obj, QWidget):
-            obj.setProperty('keyboardFocusVisible', bool(self.keyboard_navigation))
+            keyboard_focus = self.keyboard_navigation or event.reason() in (Qt.TabFocusReason, Qt.BacktabFocusReason)
+            obj.setProperty('keyboardFocusVisible', bool(keyboard_focus))
             repolish(obj)
         elif et == QEvent.FocusOut and isinstance(obj, QWidget):
             if obj.property('keyboardFocusVisible'):

@@ -7,6 +7,7 @@ pytest.importorskip('pytestqt')
 from pathlib import Path
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QHBoxLayout, QWidget
 
 from gui import OLEDDesignerWindow
 from ui_controls import PopupManager, StudioSelect
@@ -30,10 +31,12 @@ def test_select_closes_before_current_index_callback_executes(qtbot):
 
 
 def test_only_one_studio_popup_can_be_visible(qtbot):
-    a=StudioSelect();b=StudioSelect();qtbot.addWidget(a);qtbot.addWidget(b)
-    for c in (a,b):c.addItems(['A','B']);c.resize(200,34);c.show()
-    QTest.mouseClick(a.button,Qt.LeftButton);qtbot.wait(2);assert a.popup.isVisible()
-    QTest.mouseClick(b.button,Qt.LeftButton);qtbot.wait(2)
+    host=QWidget();layout=QHBoxLayout(host);a=StudioSelect();b=StudioSelect()
+    layout.addWidget(a);layout.addWidget(b);qtbot.addWidget(host)
+    for c in (a,b):c.addItems(['A','B']);c.resize(200,34)
+    host.show();qtbot.waitExposed(host)
+    QTest.mouseClick(a.button,Qt.LeftButton);qtbot.waitUntil(a.popup.isVisible,timeout=1000)
+    b.showPopup();qtbot.waitUntil(b.popup.isVisible,timeout=1000)
     assert not a.popup.isVisible() and b.popup.isVisible() and PopupManager.visible_count()==1
 
 

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "product": "Curing-Lite OLED",
+  "canvas": {
+    "w": 128,
+    "h": 32,
+    "preview_scale": 6
+  },
+  "storage": {
+    "layout": "VLSB column-page (SSD1306)",
+    "bytes_per_frame": 512,
+    "polarity": "1 = lit"
+  },
+  "states": {},
+  "elements": [],
+  "timeline": []
+}

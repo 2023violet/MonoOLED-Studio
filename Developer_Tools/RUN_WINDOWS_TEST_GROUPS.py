@@ -16,6 +16,21 @@ TESTS = SIM / 'tests'
 DEFAULT_SCALES = ('1.0','1.25','1.5','1.75','2.0','2.25','2.5','3.0')
 
 
+def _write_console(text: str, stream=None) -> None:
+    target = stream if stream is not None else sys.stdout
+    try:
+        target.write(text)
+    except UnicodeEncodeError:
+        encoding = getattr(target, 'encoding', None) or 'utf-8'
+        safe = text.encode(encoding, errors='backslashreplace').decode(encoding)
+        target.write(safe)
+
+
+def _configure_qt_environment(env: dict[str, str], *, platform_name: str = os.name) -> None:
+    if platform_name == 'nt':
+        env.setdefault('QT_QPA_PLATFORM', 'windows')
+
+
 def test_inventory() -> tuple[list[Path], list[Path]]:
     all_tests = sorted(TESTS.glob('test_*.py'))
     qt_tests = sorted(TESTS.glob('test_qt_*.py'))
@@ -85,7 +100,7 @@ def _run_process(cmd: list[str], *, env: dict[str,str], timeout: int, log: Path)
     elapsed = time.monotonic() - started
     output = log.read_text(encoding='utf-8', errors='replace') if log.exists() else ''
     if output:
-        print(output, end='' if output.endswith('\n') else '\n')
+        _write_console(output if output.endswith('\n') else output+'\n')
     try:
         shown_log=log.relative_to(ROOT)
     except ValueError:
@@ -197,6 +212,7 @@ def main() -> int:
     env['PYTHONPATH']=sim+(os.pathsep+existing if existing else '')
     env['PYTHONDONTWRITEBYTECODE']='1'
     env.setdefault('QT_LOGGING_RULES','qt.qpa.*=false')
+    _configure_qt_environment(env)
     if args.phase=='source': return run_source(args,env,report_dir)
     return run_qt(args,env,report_dir)
 

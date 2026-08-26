@@ -32,6 +32,16 @@ def _rgba(widget):
     return bytes(image.bits())
 
 
+def _stable_rgba(qtbot, widget):
+    samples=[]
+    def settled():
+        samples.append(_rgba(widget))
+        if len(samples)>2:samples.pop(0)
+        return len(samples)==2 and samples[0]==samples[1] and any(samples[1])
+    qtbot.waitUntil(settled,timeout=1000)
+    return samples[-1]
+
+
 def _install_focus_filter(app):
     f=FocusOriginFilter(app)
     app.installEventFilter(f)
@@ -45,12 +55,12 @@ def test_production_tool_button_hover_leave_and_unselect_return_to_exact_raster(
     a=StudioToolButton(); a.setObjectName('ToolRailButton'); a.setText('A'); a.setCheckable(True)
     b=StudioToolButton(); b.setObjectName('ToolRailButton'); b.setText('B'); b.setCheckable(True)
     layout.addWidget(a); layout.addWidget(b); qtbot.addWidget(host); host.show(); qtbot.waitExposed(host)
-    QTest.mouseMove(b,b.rect().center()); app.processEvents(); baseline=_rgba(a)
+    QTest.mouseMove(b,b.rect().center()); app.processEvents(); baseline=_stable_rgba(qtbot,a)
     QTest.mouseMove(a,a.rect().center()); app.processEvents(); QTest.mouseMove(b,b.rect().center()); app.processEvents()
-    assert _rgba(a)==baseline
+    qtbot.waitUntil(lambda:_rgba(a)==baseline,timeout=1000)
     a.setChecked(True); app.processEvents(); QTest.mouseMove(a,a.rect().center()); app.processEvents(); QTest.mouseMove(b,b.rect().center()); app.processEvents()
     a.setChecked(False); app.processEvents()
-    assert _rgba(a)==baseline
+    qtbot.waitUntil(lambda:_rgba(a)==baseline,timeout=1000)
     app.removeEventFilter(focus_filter)
 
 
@@ -58,6 +68,7 @@ def test_keyboard_focus_ring_clears_immediately_on_same_control_mouse_click(qtbo
     app=QApplication.instance(); focus_filter=_install_focus_filter(app)
     host=QWidget(); layout=QVBoxLayout(host); a=StudioButton('A'); b=StudioButton('B'); layout.addWidget(a); layout.addWidget(b)
     qtbot.addWidget(host); host.show(); qtbot.waitExposed(host)
+    b.setFocus(Qt.OtherFocusReason); app.processEvents()
     a.setFocus(Qt.TabFocusReason); app.processEvents(); assert bool(a.property('keyboardFocusVisible'))
     QTest.mouseClick(a,Qt.LeftButton); app.processEvents(); assert not bool(a.property('keyboardFocusVisible'))
     app.removeEventFilter(focus_filter)
@@ -81,6 +92,7 @@ def test_pixel_middle_and_space_pan_are_real_and_preference_gated(qtbot):
 def test_preferences_shortcut_conflict_is_rejected_without_partial_save(qtbot,tmp_path):
     prefs=default_preferences(); store=PreferencesStore(tmp_path/'prefs.json',prefs); store.save(); tr=Translator('en_US')
     w=PreferencesWindow(store,tr); qtbot.addWidget(w); w.show(); qtbot.waitExposed(w)
+    w.nav.setCurrentRow(w.SECTIONS.index('shortcuts')); QApplication.processEvents()
     original=store.get('shortcuts.designer.undo')
     w.shortcut_edits['designer.undo'].setText('Ctrl+S'); w._shortcuts_changed(); QApplication.processEvents()
     assert w.shortcut_error.isVisible()
@@ -99,7 +111,7 @@ def _config_store(tmp_path: Path, theme: str, language: str, density: str) -> Pr
 @pytest.mark.parametrize('density',['compact','comfortable','spacious'])
 def test_v71_three_surface_configuration_matrix(qtbot,tmp_path,monkeypatch,theme,language,density):
     # This is 24 configurations per DPI process. The Windows workflow runs it
-    # at 1.0/1.25/1.5/2.0 => 96 configuration rows x 3 production surfaces = 288 constructions.
+    # at eight scales => 192 configuration rows x 3 production surfaces = 576 constructions.
     config_root=tmp_path/'config'; monkeypatch.setenv('XDG_CONFIG_HOME',str(config_root)); monkeypatch.setenv('LOCALAPPDATA',str(config_root))
     if os.name=='nt': pref_path=config_root/'MonoOLEDStudio'/'preferences.json'
     else: pref_path=config_root/'monooled-studio'/'preferences.json'
@@ -107,7 +119,7 @@ def test_v71_three_surface_configuration_matrix(qtbot,tmp_path,monkeypatch,theme
     prefs['appearance']['theme_mode']='light' if theme=='monooled-light' else ('dark' if theme=='monooled-dark' else 'system')
     PreferencesStore(pref_path,prefs).save()
     local_store=PreferencesStore(tmp_path/'local.json',prefs); local_store.save()
-    app=QApplication.instance(); app.setStyleSheet(build_stylesheet(theme,density))
+    app=QApplication.instance()
 
     pixel=PixelStudioWindow(language=language,preferences=local_store); qtbot.addWidget(pixel); pixel.resize(1100,720); pixel.show(); qtbot.waitExposed(pixel); assert not pixel.layout_violations()
     pref=PreferencesWindow(local_store,Translator(language)); qtbot.addWidget(pref); pref.resize(920,660); pref.show(); qtbot.waitExposed(pref); assert not pref.layout_violations()

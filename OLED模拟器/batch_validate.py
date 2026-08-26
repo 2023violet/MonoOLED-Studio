@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import itertools
 from pathlib import Path
+import re
 
 from validate import Finding, validate_scene
 from state_schema import schema_from_scene, validate_state
@@ -58,9 +59,17 @@ def build_state_matrix(scene: dict, *, integer_policy: str='boundaries') -> list
     return matrix
 
 
-def _case_name(state:dict,index:int)->str:
-    if not state:return f'case_{index:04d}'
-    return '__'.join(f'{k}-{v}' for k,v in state.items())
+_SAFE_COMPONENT = re.compile(r'[^A-Za-z0-9_.-]')
+
+
+def case_name(index: int, state: dict) -> str:
+    if not state:
+        return f'case_{index:04d}'
+    fields = '__'.join(
+        f'{name}-{_SAFE_COMPONENT.sub("_", str(value)).replace("..", "__") or "_"}'
+        for name, value in state.items()
+    )
+    return f'case_{index:04d}__{fields}'
 
 
 def validate_matrix(scene:dict,matrix:list[dict],*,progress=None,cancel=None)->MatrixValidationSummary:
@@ -70,7 +79,7 @@ def validate_matrix(scene:dict,matrix:list[dict],*,progress=None,cancel=None)->M
         if callable(cancel) and cancel(): raise RuntimeError('operation cancelled')
         findings=tuple(validate_scene(scene,dict(state)))
         total+=len(findings); blockers+=sum(1 for f in findings if f.severity in {'ERROR','BLOCKER'})
-        rows.append((_case_name(state,index),findings))
+        rows.append((case_name(index, state),findings))
         if callable(progress): progress('validation',index+1,count)
     return MatrixValidationSummary(len(matrix),total,blockers,tuple(rows))
 
