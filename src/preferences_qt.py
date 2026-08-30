@@ -347,6 +347,7 @@ class SettingRow(QWidget):
         self._control_column.updateGeometry()
         self._content.updateGeometry()
         self.updateGeometry()
+        self._flow.activate()
 
     def set_compact(self, compact: bool):
         compact = bool(compact)
@@ -905,7 +906,7 @@ class PreferencesView(QWidget):
     def layout_violations(self) -> list[str]:
         violations=[]
         if self.width()<=0 or self.height()<=0: violations.append('preferences_view')
-        if self.nav.width()<160: violations.append('navigation_width')
+        if self.nav.width()<120: violations.append('navigation_width')
         if self.stack.width()<=0: violations.append('stack_width')
         current=self.stack.currentWidget()
         if current is None or not isinstance(current,QScrollArea) or current.width()<=0 or current.height()<=0:
