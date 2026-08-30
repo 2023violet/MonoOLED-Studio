@@ -45,7 +45,8 @@ def _prepare(app):
 
 def test_dirty_and_inspector_modified_dots_are_live_and_geometry_stable(qtbot):
     app=QApplication.instance(); _prepare(app)
-    window=OLEDDesignerWindow('main_scene'); qtbot.addWidget(window); window.show(); qtbot.wait(20)
+    window=OLEDDesignerWindow('main_scene'); qtbot.addWidget(window); window.show()
+    for _ in range(5): app.processEvents()
     element=next(e for e in window.scene['elements'] if all(k in e for k in ('x','y')) and not e.get('locked'))
     eid=str(element['id']); window._set_selection([eid],source='api',primary=eid); app.processEvents()
     dirty_size=window.document_dirty_dot.size(); label_sizes={k:v.size() for k,v in window.geom_labels.items()}
