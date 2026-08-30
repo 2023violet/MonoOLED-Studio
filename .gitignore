@@ -23,6 +23,7 @@ Desktop.ini
 # Local build output
 build/
 dist/
+.artifacts/
 *.log
 
 # Local sealed delivery artifacts

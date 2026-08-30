@@ -204,9 +204,9 @@ def test_theme_mode_and_ui_scale_have_real_resolution_policy():
     pytest.importorskip('PySide6')
     from theme_system import resolve_theme_name
     from qt_theme import build_stylesheet
-    assert resolve_theme_name('monooled-light', 'dark', system_dark=False) == 'monooled-dark'
-    assert resolve_theme_name('monooled-dark', 'light', system_dark=True) == 'monooled-light'
-    assert resolve_theme_name('monooled-light', 'system', system_dark=True) == 'monooled-dark'
+    assert resolve_theme_name('monooled-light', 'dark', system_dark=False) == 'one-dark-pro'
+    assert resolve_theme_name('one-dark-pro', 'light', system_dark=True) == 'monooled-light'
+    assert resolve_theme_name('monooled-light', 'system', system_dark=True) == 'one-dark-pro'
     normal = build_stylesheet('monooled-light', 'comfortable', ui_scale=1.0)
     scaled = build_stylesheet('monooled-light', 'comfortable', ui_scale=1.25)
     assert 'min-height: 32px' in normal
