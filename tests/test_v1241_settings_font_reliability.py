@@ -8,6 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'src'
+SYSTEM_FONT = ROOT / 'test_assets' / 'fonts' / 'DejaVuSans.ttf'
 
 from font_pack import FontPack, GlyphMetrics, create_font_pack, rasterize_characters
 
@@ -128,10 +129,9 @@ def test_imported_font_auto_fit_helper_keeps_representative_glyphs_inside_shared
     import font_pack as module
 
     assert hasattr(module, 'fit_font_size_for_cell')
-    system_font = ImageFont.truetype('DejaVuSans.ttf', 10)
-    path = getattr(system_font, 'path', None)
-    if not path:
-        pytest.skip('Pillow font path unavailable')
+    path = str(SYSTEM_FONT)
+    if not SYSTEM_FONT.is_file():
+        pytest.skip('test font unavailable')
 
     fitted = module.fit_font_size_for_cell(path, (10, 12), 8, 'Agjp', 24)
     assert 4 <= fitted < 24
@@ -152,10 +152,9 @@ def test_imported_font_recommended_layout_centers_family_with_one_shared_baselin
     import font_pack as module
 
     assert hasattr(module, 'recommended_truetype_layout')
-    probe = ImageFont.truetype('DejaVuSans.ttf', 10)
-    path = getattr(probe, 'path', None)
-    if not path:
-        pytest.skip('Pillow font path unavailable')
+    path = str(SYSTEM_FONT)
+    if not SYSTEM_FONT.is_file():
+        pytest.skip('test font unavailable')
     size, baseline = module.recommended_truetype_layout(path, (24, 24), 'ABEN08Agjp', 18)
     assert 4 <= size <= 18
     assert 0 <= baseline < 24
