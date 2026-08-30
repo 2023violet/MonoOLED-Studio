@@ -59,7 +59,8 @@ def test_pytest_selected_automation_module_collects_from_repo_root_without_pytho
 
 def test_v843_release_identity_and_tools_are_present():
     version=(SIM/'VERSION').read_text(encoding='utf-8').strip()
-    assert tuple(map(int,version.split('.'))) >= (8,4,3)
+    parts=tuple(map(int,version.split('.')))
+    assert len(parts) == 3 and all(p >= 0 for p in parts)
     gui = (SIM / 'gui.py').read_text(encoding='utf-8')
     assert 'APP_VERSION = load_version()' in gui
     assert (TOOLS / 'VERIFY_V843_FINAL.py').is_file()

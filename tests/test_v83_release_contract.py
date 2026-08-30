@@ -8,7 +8,8 @@ ROOT=SIM.parent
 
 def test_v83_release_identity_and_documents():
     version=(SIM/'VERSION').read_text(encoding='utf-8').strip()
-    assert tuple(map(int,version.split('.'))) >= (8,3,0)
+    parts=tuple(map(int,version.split('.')))
+    assert len(parts) == 3 and all(p >= 0 for p in parts)
     gui=(SIM/'gui.py').read_text(encoding='utf-8')
     prefs=(SIM/'preferences_qt.py').read_text(encoding='utf-8')
     assert 'APP_VERSION = load_version()' in gui

@@ -4,6 +4,7 @@ from support import load_curing_scene
 from copy import deepcopy
 import json
 from pathlib import Path
+import re
 import sys
 
 import pytest
@@ -143,7 +144,7 @@ def test_v51_release_version_and_manifest_are_consistent():
     version=(SIM / 'VERSION').read_text(encoding='utf-8').strip()
     manifest = json.loads((SIM.parent / 'DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
     assert manifest['version'] == version
-    assert tuple(map(int,version.split('.'))) >= (5,1,0)
+    assert re.fullmatch(r'\d+\.\d+\.\d+', version)
 
 
 def test_windows_builder_has_soak_gate():

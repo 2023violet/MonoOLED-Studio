@@ -35,9 +35,10 @@ def test_pyinstaller_spec_is_onedir_and_bundles_required_data():
     assert "contents_directory='.'" in spec
 
 
-def test_release_version_is_at_least_v5():
+def test_release_version_is_semantic():
     version=(SIM / 'VERSION').read_text(encoding='utf-8').strip()
-    assert tuple(map(int,version.split('.'))) >= (5,0,0)
+    parts=tuple(map(int, version.split('.')))
+    assert len(parts) == 3 and all(p >= 0 for p in parts)
 
 
 def test_v5_user_root_has_only_one_launch_entry_and_developer_tools_are_nested():

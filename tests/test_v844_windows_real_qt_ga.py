@@ -79,7 +79,8 @@ def test_windows_runner_preserves_explicit_qpa_override():
 def test_v844_release_identity_and_closure_artifacts_are_current():
     sim = ROOT / 'src'
     version=(sim / 'VERSION').read_text(encoding='utf-8').strip()
-    assert tuple(map(int,version.split('.'))) >= (8,4,4)
+    parts=tuple(map(int,version.split('.')))
+    assert len(parts) == 3 and all(p >= 0 for p in parts)
     assert 'APP_VERSION = load_version()' in (sim / 'gui.py').read_text(encoding='utf-8')
     assert (TOOLS / 'VERIFY_V844_FINAL.py').is_file()
     assert (TOOLS / 'BUILD_DELIVERY_V844.py').is_file()

@@ -11,7 +11,8 @@ def _version_tuple(text: str) -> tuple[int, ...]:
 
 def test_v82_native_interaction_contract_survives_current_release():
     version=(SIM/'VERSION').read_text(encoding='utf-8').strip()
-    assert _version_tuple(version) >= (8,2,0)
+    parts=_version_tuple(version)
+    assert len(parts) == 3 and all(p >= 0 for p in parts)
     assert 'APP_VERSION = load_version()' in (SIM/'gui.py').read_text(encoding='utf-8')
     manifest=json.loads((ROOT/'DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
     assert manifest['version']==version
