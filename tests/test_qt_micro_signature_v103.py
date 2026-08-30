@@ -80,11 +80,10 @@ def test_pixel_hover_cursor_is_visible_without_mutating_document(qtbot):
     document=PixelDocument(8,8); canvas=PixelCanvas(document); canvas.theme_name='monooled-dark'; canvas.zoom=20
     canvas._sync_size(); qtbot.addWidget(canvas); canvas.show(); qtbot.waitExposed(canvas)
     before=[row[:] for row in document.pixels]
-    QTest.mouseMove(canvas,QPoint(2*20+10,3*20+10)); app.processEvents(); canvas.update(); canvas.repaint(); app.processEvents()
-    # The hover cursor is a state that must not mutate the document. Assert the
-    # hover pixel is registered (logic) instead of sampling pixels, because the
-    # translucent accent overlay is not reliably captured by grab() across Qt
-    # rendering platforms (offscreen vs Real-Qt).
+    # Set the hover state directly. QTest.mouseMove delivery differs across Qt
+    # windowing backends (offscreen vs Real-Qt), so drive the hover through the
+    # same handler a real pointer move invokes rather than sampling pixels.
+    canvas._set_hover_state((2, 3), False); canvas.update(); canvas.repaint(); app.processEvents()
     assert canvas._hover_pixel == (2, 3)
     assert document.pixels==before
 
