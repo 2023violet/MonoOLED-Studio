@@ -28,8 +28,12 @@ def _write_console(text: str, stream=None) -> None:
 
 
 def _configure_qt_environment(env: dict[str, str], *, platform_name: str = os.name) -> None:
-    if platform_name == 'nt':
-        env.setdefault('QT_QPA_PLATFORM', 'windows')
+    # The Real-Qt gate runs on CI runners whose Windows session is
+    # non-interactive: the native 'windows' platform cannot show windows, so
+    # window visibility checks fail and synthetic mouse drags stall in native
+    # message pumps. Use the offscreen platform so the Qt logic under test runs
+    # deterministically on a headless runner.
+    env.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 
 def isolated_user_state_env(env: dict[str, str], root: Path) -> dict[str, str]:
