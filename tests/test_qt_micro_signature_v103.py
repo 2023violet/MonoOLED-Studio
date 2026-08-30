@@ -80,8 +80,10 @@ def test_pixel_hover_cursor_is_visible_without_mutating_document(qtbot):
     document=PixelDocument(8,8); canvas=PixelCanvas(document); canvas.theme_name='monooled-dark'; canvas.zoom=20
     canvas._sync_size(); qtbot.addWidget(canvas); canvas.show(); qtbot.waitExposed(canvas)
     before=[row[:] for row in document.pixels]
-    QTest.mouseMove(canvas,QPoint(2*20+10,3*20+10)); app.processEvents()
+    QTest.mouseMove(canvas,QPoint(2*20+10,3*20+10)); app.processEvents(); canvas.update(); canvas.repaint(); app.processEvents()
     accent=canvas.palette().highlight().color()
+    # The hover overlay is a translucent accent stroke over the base cell; sample
+    # the stroke center and accept a tolerant blend distance across renderers.
     assert _distance(_pixel(canvas,2*20+1,3*20+10),accent)<=128
     assert document.pixels==before
 
