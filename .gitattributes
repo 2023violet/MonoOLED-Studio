@@ -1,2 +1,7 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# Frozen product assets are byte-verified against a SHA-256 manifest that is
+# sensitive to exact line endings, so no EOL conversion may be applied. Store
+# and check out these files byte-for-byte.
+test_assets/projects/curing_lite/** -text
