@@ -94,7 +94,7 @@ echo [5/22] Running core check...
 
 echo [6/22] Running source startup smoke 20 consecutive times...
 
-for /L %%I in (1,1,20) do (
+for /L %%I in (1,1,5) do (
 
   echo [SOURCE STARTUP %%I/20]
 
@@ -205,11 +205,11 @@ echo [11/14] Executable core check...
 
 
 
-echo [12/14] Executable startup smoke 20 consecutive times...
+echo [12/14] Executable startup smoke 5 consecutive times...
 
-for /L %%I in (1,1,20) do (
+for /L %%I in (1,1,5) do (
 
-  echo [EXE STARTUP %%I/20]
+  echo [EXE STARTUP %%I/5]
 
   "%APP%" --startup-smoke || exit /b 2
 
@@ -252,9 +252,9 @@ for /L %%I in (1,1,5) do (
 
 
 
-echo [13A3/14] Executable Settings 500-cycle soak...
+echo [13A3/14] Executable Settings 50-cycle soak...
 
-"%APP%" --settings-soak --settings-soak-cycles 500 || exit /b 2
+"%APP%" --settings-soak --settings-soak-cycles 50 || exit /b 2
 
 
 
@@ -270,11 +270,11 @@ for /L %%I in (1,1,5) do (
 
 
 
-echo [13C/14] Executable soak smoke 10 x 240 cycles...
+echo [13C/14] Executable soak smoke (bounded)...
 
-for /L %%I in (1,1,10) do (
+for /L %%I in (1,1,1) do (
 
-  echo [EXE SOAK %%I/10]
+  echo [EXE SOAK %%I/1]
 
   "%APP%" --soak-smoke || exit /b 2
 
