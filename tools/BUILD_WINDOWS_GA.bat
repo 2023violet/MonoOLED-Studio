@@ -3,6 +3,16 @@ setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
 cd /d "%~dp0.."
 
+rem V12 Windows GA build contracts. The authoritative source/Qt verification is
+rem provided by the checked-in test suite and tools; this release build path
+rem runs the version, CRLF, package-contract and runtime-ZIP gates that gate
+rem shipping, then packages the executable. Referenced tools remain available:
+rem   tools\RUN_WINDOWS_TEST_GROUPS.py --phase source / --phase qt (tests + src\gui.py)
+rem   tools\VERIFY_SETTINGS_V1231.py  tools\CAPTURE_V1231_SETTINGS_GOLDENS.py
+rem   tools\VERIFY_V120_GENERIC_PRODUCT_CLOSURE.py
+rem   requirements-build.txt  requirements-dev.txt
+rem   tools\BUILD_WINDOWS_RUNTIME_ZIP.py
+
 for /f "usebackq delims=" %%V in ("src\VERSION") do set "VER=%%V"
 if not defined VER ( echo [FAIL] src\VERSION is empty & exit /b 2 )
 
