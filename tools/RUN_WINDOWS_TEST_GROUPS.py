@@ -28,12 +28,8 @@ def _write_console(text: str, stream=None) -> None:
 
 
 def _configure_qt_environment(env: dict[str, str], *, platform_name: str = os.name) -> None:
-    # The Real-Qt gate runs on CI runners whose Windows session is
-    # non-interactive: the native 'windows' platform cannot show windows, so
-    # window visibility checks fail and synthetic mouse drags stall in native
-    # message pumps. Use the offscreen platform so the Qt logic under test runs
-    # deterministically on a headless runner.
-    env.setdefault('QT_QPA_PLATFORM', 'offscreen')
+    if platform_name == 'nt':
+        env.setdefault('QT_QPA_PLATFORM', 'windows')
 
 
 def isolated_user_state_env(env: dict[str, str], root: Path) -> dict[str, str]:
@@ -180,6 +176,12 @@ def run_qt(args, env: dict[str,str], report_dir: Path) -> int:
     print(f'[REAL-QT] modules={len(qt)} scales={scales}; each module is an isolated process')
     for scale in scales:
         scale_env = env.copy(); scale_env['QT_SCALE_FACTOR'] = scale
+        # CI runners have a non-interactive Windows session: the native 'windows'
+        # platform cannot show windows (isVisible checks fail) and synthetic mouse
+        # drags stall in native message pumps, risking 600s deadlocks. Run the
+        # Real-Qt phase on offscreen so the Qt logic under test executes
+        # deterministically on a headless runner.
+        scale_env['QT_QPA_PLATFORM'] = 'offscreen'
         scale_tag = scale.replace('.', '_')
         for path in qt:
             tag = f'qt_{scale_tag}_{path.stem}'
