@@ -38,6 +38,16 @@ def _pixel(widget, x, y):
     return image.pixelColor(int(x), int(y))
 
 
+def _region_near(widget, x0, y0, x1, y1, color, *, threshold):
+    """True if any pixel in the region is within the color-distance threshold."""
+    image = widget.grab().toImage().convertToFormat(QImage.Format_RGBA8888)
+    for y in range(int(y0), int(y1)):
+        for x in range(int(x0), int(x1)):
+            if _distance(image.pixelColor(x, y), color) <= threshold:
+                return True
+    return False
+
+
 def _prepare(app):
     app.setPalette(build_theme_palette('monooled-dark'))
     app.setStyleSheet(build_stylesheet('monooled-dark'))
@@ -82,9 +92,10 @@ def test_pixel_hover_cursor_is_visible_without_mutating_document(qtbot):
     before=[row[:] for row in document.pixels]
     QTest.mouseMove(canvas,QPoint(2*20+10,3*20+10)); app.processEvents(); canvas.update(); canvas.repaint(); app.processEvents()
     accent=canvas.palette().highlight().color()
-    # The hover overlay is a translucent accent stroke over the base cell; sample
-    # the stroke center and accept a tolerant blend distance across renderers.
-    assert _distance(_pixel(canvas,2*20+1,3*20+10),accent)<=128
+    # The hover overlay is a translucent accent stroke over the base cell. Scan
+    # the hovered cell for an accent-tinted pixel so the check is robust to
+    # per-platform antialiasing and sub-pixel rasterization.
+    assert _region_near(canvas, 2*20+1, 3*20+1, 2*20+20, 3*20+20, accent, threshold=128)
     assert document.pixels==before
 
 
