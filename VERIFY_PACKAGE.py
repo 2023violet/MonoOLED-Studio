@@ -1,149 +1,115 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import hashlib, json, struct, sys
+import hashlib
+import json
+import re
 from pathlib import Path
+import py_compile
+import sys
 
 ROOT=Path(__file__).resolve().parent
-SUMS=ROOT/'SHA256SUMS.txt'
-SIM=ROOT/'OLED模拟器'
-VERSION='8.4.4'
-RELEASE='Windows Real-Qt GA Final Closure'
-COMPAT_LAUNCHER_SHA='558c2115941aff959927dc6b29c6bd4ac5a746dc2c6854ea921efd2180615c87'
+SRC=ROOT / 'src'
+TESTS=ROOT / 'tests'
+TOOLS=ROOT / 'tools'
+EXPECTED_PRODUCTION_MODULES=77
+REQUIRED_DIRS=('src','tests','tools','test_assets','docs','.github')
+OBSOLETE_ROOTS=('OLED模拟器','Developer_Tools','Curing_Lite光固化机产品 - UI设计初稿','scenes')
+CURRENT_DOCS={
+    'README.md','USER_GUIDE_CN.md','USER_GUIDE_EN.md','SCENE_SCHEMA.md',
+    'AUTOMATION_API_V1.md','DESIGN_SYSTEM.md','V12_GENERIC_PRODUCT_CLOSURE.md','V12_1_RELEASE_ENGINEERING.md','V12_2_FONT_PIPELINE_VALIDATION.md','V12_3_COMPACT_PREFERENCES.md','V12_3_1_SETTINGS_RELIABILITY.md','V12_3_2_UX_HARDENING.md','V12_3_3_RESILIENCE_HARDENING.md','V12_3_4_AUTONOMOUS_QUALITY_HARDENING.md','V12_3_5_ARTIFACT_RECOVERY_INTEGRITY.md','V12_3_6_CROSS_SESSION_STARTUP_INTEGRITY.md','V12_3_7_WINDOWS_RELEASE_INTEGRITY.md','V12_3_8_LONG_SESSION_LIVE_ASSET_RESILIENCE.md','V12_3_9_AUTOMATION_LIFECYCLE_INTEGRITY.md','V12_4_0_WINDOWS_CRITICAL_PATH_RELIABILITY.md','V12_4_1_SETTINGS_FONT_RELIABILITY.md','V12_4_2_SETTINGS_GEOMETRY_CONVERGENCE.md','WINDOWS_BUILD.md',
+}
 
 
-def fail(message:str)->int:
-    print('FAIL: '+message,file=sys.stderr); return 1
-
-def sha(path:Path)->str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def fail(message: str) -> None:
+    raise RuntimeError(message)
 
 
-def main()->int:
-    if not SUMS.is_file(): return fail('SHA256SUMS.txt not found')
-    listed={}; failures=[]
-    for line in SUMS.read_text(encoding='utf-8').splitlines():
-        if not line.strip(): continue
-        try: digest,rel=line.split('  ',1)
-        except ValueError: return fail(f'malformed checksum line: {line!r}')
-        if rel in listed: return fail(f'duplicate checksum path {rel}')
-        listed[rel]=digest; p=ROOT/rel
-        if not p.is_file(): failures.append(f'MISSING {rel}'); continue
-        if sha(p)!=digest: failures.append(f'HASH {rel}')
-    actual={p.relative_to(ROOT).as_posix() for p in ROOT.rglob('*') if p.is_file() and p!=SUMS and '__pycache__' not in p.parts and '.pytest_cache' not in p.parts and p.suffix!='.pyc'}
-    if actual-set(listed): failures.append('UNMANAGED '+', '.join(sorted(actual-set(listed))[:8]))
-    if set(listed)-actual: failures.append('CHECKSUM_ONLY '+', '.join(sorted(set(listed)-actual)[:8]))
-    if failures:
-        print('\n'.join(failures),file=sys.stderr); return fail(f'{len(failures)} delivery integrity issue(s)')
+def sha256(path: Path) -> str:
+    h=hashlib.sha256()
+    with path.open('rb') as f:
+        for chunk in iter(lambda:f.read(1024*1024),b''): h.update(chunk)
+    return h.hexdigest()
 
-    version=(SIM/'VERSION').read_text(encoding='utf-8').strip()
+
+def verify_layout() -> None:
+    for name in REQUIRED_DIRS:
+        if not (ROOT/name).is_dir(): fail(f'missing required V12 directory: {name}')
+    for name in OBSOLETE_ROOTS:
+        if (ROOT/name).exists(): fail(f'obsolete V12 path still present: {name}')
+    # The obsolete root MonoOLEDStudio.exe launcher is deliberately rejected.
+    if (ROOT/'MonoOLEDStudio.exe').exists(): fail('obsolete root MonoOLEDStudio.exe must not be shipped; build Windows EXE from tools')
+    if any(not p.relative_to(ROOT).as_posix().isascii() for p in ROOT.rglob('*') if '.git' not in p.parts):
+        fail('non-ASCII distributed path detected')
+
+
+def verify_docs() -> None:
+    docs=ROOT/'docs'
+    names={p.name for p in docs.iterdir() if p.is_file()}
+    missing=CURRENT_DOCS-names
+    if missing: fail(f'missing current V12 docs: {sorted(missing)}')
+    for legacy in ('archive','releases','design','superpowers'):
+        if (docs/legacy).exists(): fail(f'legacy documentation tree must not ship: docs/{legacy}')
+
+
+def verify_source() -> None:
+    version=(ROOT/'src/VERSION').read_text(encoding='utf-8').strip()
+    if not re.fullmatch(r'\d+\.\d+\.\d+',version): fail(f'invalid semantic VERSION: {version!r}')
     manifest=json.loads((ROOT/'DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
-    if version!=VERSION: return fail(f'unexpected VERSION {version!r}')
-    if manifest.get('product')!='MonoOLED Studio' or manifest.get('version')!=VERSION or manifest.get('primary_gui')!='PySide6 / Qt':
-        return fail(f'manifest does not describe MonoOLED Studio {VERSION} Qt release')
-    if manifest.get('release_name')!=RELEASE: return fail('unexpected V8.4.4 release name')
+    if manifest.get('version') != version or manifest.get('release_version') != version:
+        fail(f'release identity mismatch: VERSION={version}, manifest={manifest.get("version")}/{manifest.get("release_version")}')
+    modules=sorted((ROOT/'src').glob('*.py'))
+    if len(modules) != EXPECTED_PRODUCTION_MODULES:
+        fail(f'expected {EXPECTED_PRODUCTION_MODULES} production Python modules, got {len(modules)}')
+    for path in modules: py_compile.compile(str(path),doraise=True)
+    scene=json.loads((ROOT/'src/scenes/main_scene.json').read_text(encoding='utf-8'))
+    if scene.get('states') != {} or scene.get('timeline') != []: fail('default V12 scene must be state/timeline-neutral')
+    payload=json.dumps(scene,ensure_ascii=False).lower()
+    if any(word in payload for word in ('curing','battery','countdown','clinical','turbo','ortho')): fail('product-specific content leaked into default scene')
 
-    if manifest.get('delivery_profile')!='source': return fail('V8.4.4 complete delivery must declare delivery_profile=source')
 
-    frozen=json.loads((SIM/'reports/frozen_product_assets_v70.json').read_text(encoding='utf-8'))
-    if frozen.get('count')!=464 or len(frozen.get('files',{}))!=464: return fail('frozen product asset manifest must contain 464 files')
-    for rel,expected in frozen['files'].items():
-        p=ROOT/rel
-        if not p.is_file() or sha(p)!=expected: return fail(f'frozen V7.0 product asset drift: {rel}')
-    golden=json.loads((SIM/'reports/frozen_golden_v70.json').read_text(encoding='utf-8'))
-    gdir=SIM/'exports/clinical_14/golden'
-    if golden.get('count')!=14 or golden.get('bytes_each')!=512: return fail('frozen Golden manifest invalid')
-    for name,expected in golden['files'].items():
-        p=gdir/name
-        if not p.is_file() or p.stat().st_size!=512 or sha(p)!=expected: return fail(f'Golden drift: {name}')
+def verify_frozen_assets() -> None:
+    path=ROOT/'test_assets/manifests/frozen_product_assets_v70.json'
+    data=json.loads(path.read_text(encoding='utf-8'))
+    files=data.get('files',{})
+    if data.get('count') != 464 or len(files) != 464: fail('frozen asset manifest must contain exactly 464 assets')
+    for rel,expected in files.items():
+        if not rel.isascii() or not rel.startswith('test_assets/projects/curing_lite/'): fail(f'invalid V12 frozen path: {rel}')
+        target=ROOT/rel
+        if not target.is_file(): fail(f'missing frozen asset: {rel}')
+        actual=sha256(target)
+        if actual != expected: fail(f'frozen asset hash mismatch: {rel}')
 
-    modules=(
-        'preferences.py','preferences_qt.py','theme_system.py','runtime_settings.py','preference_delta.py','ui_metrics.py','system_theme.py',
-        'ui_controls.py','popup_geometry.py','popup_state.py','qt_interaction.py','commands.py','project_workspace.py','autosave.py','asset_library.py',
-        'selection_model.py','workspace_host.py','font_pack.py','font_lab_qt.py','automation_service.py','automation_qt.py','agent_bridge.py',
-        'resource_cache.py','atomic_io.py','diagnostics.py','state_schema.py','automation_jobs.py')
-    for rel in modules:
-        if not (SIM/rel).is_file(): return fail(f'V8.4 module missing: {rel}')
 
-    documents=('FINAL_VERIFICATION_REPORT.md','TEST_MATRIX_V844.md','WINDOWS_REAL_QT_GA_FINAL_CLOSURE_V844.md','TEST_MATRIX_V843.md','WINDOWS_RELEASE_REAL_QT_GA_CLOSURE_V843.md','TEST_MATRIX_V842.md','AUTOMATION_RELIABILITY_GA_CLOSURE_V842.md','TEST_MATRIX_V841.md','AUTOMATION_STATE_MODEL_CLOSURE_V841.md','TEST_MATRIX_V84.md','FINAL_PROJECT_CODE_AI_CLOSURE_V84.md','CODE_AI_AUTOMATION_API_V1.md','AUTOMATION_API_V1.json','TEST_MATRIX_V83.md','RELIABILITY_PERFORMANCE_CLOSURE_V83.md','USER_GUIDE_CN.md')
-    for rel in documents:
-        if not (SIM/rel).is_file(): return fail(f'V8.4 release document missing: {rel}')
+def verify_build_contract() -> None:
+    builder=(ROOT/'tools/BUILD_WINDOWS_GA.bat').read_text(encoding='utf-8')
+    quick=(ROOT/'tools/BUILD_WINDOWS_QUICK.bat').read_text(encoding='utf-8')
+    release=(ROOT/'.github/workflows/release-windows.yml').read_text(encoding='utf-8')
+    spec=(ROOT/'tools/MonoOLEDStudio.spec').read_text(encoding='utf-8')
+    for marker in ('requirements-build.txt','requirements-dev.txt','src\\gui.py','tests','VERIFY_V120_GENERIC_PRODUCT_CLOSURE.py','VERIFY_SETTINGS_V1231.py','CAPTURE_V1231_SETTINGS_GOLDENS.py','BUILD_WINDOWS_RUNTIME_ZIP.py'):
+        if marker not in builder: fail(f'Windows GA builder missing current marker: {marker}')
+    for marker in ('MonoOLEDStudio.spec','MonoOLEDStudio.exe','--check','--startup-smoke'):
+        if marker not in quick: fail(f'Windows quick builder missing current marker: {marker}')
+    for marker in ('BUILD_WINDOWS_GA.bat','PUBLISH_GITHUB_RELEASE.ps1','contents: write'):
+        if marker not in release: fail(f'GitHub Release workflow missing marker: {marker}')
+    for marker in ("ref: ${{ github.event_name == 'push' && github.ref || inputs.tag }}", '--require-git-head', 'if: always()'):
+        if marker not in release: fail(f'GitHub Release workflow missing release-integrity marker: {marker}')
+    runtime_zip=(ROOT/'tools/BUILD_WINDOWS_RUNTIME_ZIP.py').read_text(encoding='utf-8')
+    for marker in ('BUILD_INFO.json','expected_git_commit','extract_runtime_zip'):
+        if marker not in runtime_zip: fail(f'Windows runtime ZIP tool missing release-integrity marker: {marker}')
+    if "add_tree('test_assets'" in spec: fail('PyInstaller runtime must not bundle test_assets')
+    for marker in ("ROOT / 'src' / 'gui.py'", "'src/scenes'", "'docs'"):
+        if marker not in spec: fail(f'PyInstaller spec missing V12 marker: {marker}')
+    for rel in ('tests/test_v1232_ux_hardening.py','tests/test_qt_v1232_ux_hardening.py','tests/test_v1233_resilience_hardening.py','tests/test_v1234_autonomous_quality_hardening.py','tests/test_v1235_artifact_integrity.py','tests/test_v1236_cross_session_integrity.py','tests/test_v1237_windows_release_integrity.py','tests/test_v1238_long_session_resilience.py','tests/test_v1239_automation_lifecycle_integrity.py','tests/test_qt_v1242_settings_layout_geometry.py'):
+        if not (ROOT/rel).is_file(): fail(f'missing current V12 quality regression: {rel}')
 
-    gui=(SIM/'gui.py').read_text(encoding='utf-8')
-    canvas=(SIM/'qt_canvas.py').read_text(encoding='utf-8')
-    controls=(SIM/'ui_controls.py').read_text(encoding='utf-8')
-    editor=(SIM/'editor_model.py').read_text(encoding='utf-8')
-    automation=(SIM/'automation_qt.py').read_text(encoding='utf-8')
-    system_theme=(SIM/'system_theme.py').read_text(encoding='utf-8')
-    i18n=(SIM/'i18n.py').read_text(encoding='utf-8')
-    launcher=(SIM/'windows_launcher.c').read_text(encoding='utf-8')
-    for marker in ("APP_VERSION = '8.4.4'",'def run_startup_smoke(','--startup-smoke','CORE CHECK PASS','PreferenceDelta','editor_registry.apply_runtime_delta'):
-        if marker not in gui: return fail(f'V8.4 GUI marker missing: {marker}')
-    if canvas.count('def mouseReleaseEvent(')!=1: return fail('OLEDCanvas must contain exactly one mouseReleaseEvent implementation')
-    if '_frame_image' not in canvas or 'drawImage' not in canvas: return fail('QImage framebuffer paint cache marker missing')
-    for marker in ('self.popup = None','self.list = None','installEventFilter','def showPopup(','def hidePopup('):
-        if marker not in controls: return fail(f'StudioSelect hardening marker missing: {marker}')
-    for marker in ('RenderResources','def batch_set_geometry(','def batch_move('):
-        if marker not in editor: return fail(f'EditorSession V8.3 marker missing: {marker}')
-    if 'self.timer.start()' not in automation.split('def start(',1)[1]: return fail('Agent timer must start on demand')
-    if '.join(' not in automation: return fail('Agent worker join marker missing')
-    if 'lambda' in system_theme and 'colorSchemeChanged.connect' in system_theme: return fail('SystemThemeProvider must not connect application signal through capturing lambda')
-    en_block=i18n[i18n.index('EN = {'):]
-    if '"workspace.design": "设计"' in en_block or '"workspace.review": "评审"' in en_block: return fail('English workspace labels still contain Chinese text')
-    for marker in ('startup_smoke_ok','.venv-runtime','MONOOLED_PYTHON','WaitForSingleObject'):
-        if marker not in launcher: return fail(f'V8.3 launcher source marker missing: {marker}')
 
-    attrs=ROOT/'.gitattributes'
-    if not attrs.is_file(): return fail('.gitattributes missing')
-    attr_text=attrs.read_text(encoding='utf-8')
-    for marker in ('*.bat text eol=crlf','*.cmd text eol=crlf'):
-        if marker not in attr_text: return fail(f'Windows EOL contract missing: {marker}')
-    if not (ROOT/'pytest.ini').is_file(): return fail('pytest.ini repository-root import contract missing')
-    scripts=sorted([*(ROOT/'Developer_Tools').glob('*.bat'),*(ROOT/'Developer_Tools').glob('*.cmd')])
-    if not scripts: return fail('Windows command scripts missing')
-    for path in scripts:
-        raw=path.read_bytes(); crlf=raw.count(b'\r\n'); bare=raw.count(b'\n')-crlf
-        if crlf<=0 or bare: return fail(f'Windows script must be CRLF-only: {path.relative_to(ROOT)} (CRLF={crlf}, LF-only={bare})')
-
-    workflow=(ROOT/'.github/workflows/build-windows-exe.yml').read_text(encoding='utf-8')
-    builder=(ROOT/'Developer_Tools/BUILD_WINDOWS_EXE.bat').read_text(encoding='utf-8')
-    for marker in ('1.0','1.25','1.5','1.75','2.0','2.25','2.5','3.0','test_qt_v82_studio_select_state_machine.py','test_qt_v82_preferences_theme_surface.py','test_qt_v83_reliability.py'):
-        if marker not in workflow or marker not in builder: return fail(f'Windows Real-Qt gate marker missing: {marker}')
-    for marker in ('VERIFY_JUNIT_NO_SKIPS.py','--startup-smoke','VERIFY_V82_STRESS.py','VERIFY_V83_STRESS.py','VERIFY_V84_FINAL.py','VERIFY_V841_FINAL.py','VERIFY_V842_FINAL.py','VERIFY_V843_FINAL.py','VERIFY_V844_FINAL.py'):
-        if marker not in builder: return fail(f'Windows V8.4 zero-skip/build marker missing: {marker}')
-    for rel in ('Developer_Tools/VERIFY_V83_STRESS.py','Developer_Tools/VERIFY_V84_FINAL.py','Developer_Tools/VERIFY_V841_FINAL.py','Developer_Tools/VERIFY_V842_FINAL.py','Developer_Tools/VERIFY_V843_FINAL.py','Developer_Tools/VERIFY_V844_FINAL.py','Developer_Tools/BUILD_DELIVERY_V84.py','Developer_Tools/BUILD_DELIVERY_V841.py','Developer_Tools/BUILD_DELIVERY_V842.py','Developer_Tools/BUILD_DELIVERY_V843.py','Developer_Tools/BUILD_DELIVERY_V844.py','Developer_Tools/RUN_WINDOWS_TEST_GROUPS.py','Developer_Tools/VERIFY_WINDOWS_RELEASE_TEXT.py','Developer_Tools/EXPORT_AUTOMATION_API_V1.py','Developer_Tools/VERIFY_JUNIT_NO_SKIPS.py','Developer_Tools/CREATE_RUNTIME_ENV.bat','Developer_Tools/RUN_MONOOLED_DIAGNOSTIC.bat'):
-        if not (ROOT/rel).is_file(): return fail(f'V8.4 release tool missing: {rel}')
-
-    automation_contract=json.loads((SIM/'AUTOMATION_API_V1.json').read_text(encoding='utf-8'))
-    if automation_contract.get('api_version')!='1.2.0': return fail('Automation API contract version must be 1.2.0')
-    automation_source=(SIM/'automation_service.py').read_text(encoding='utf-8')
-    for marker in ('AUTOMATION_API_VERSION = \'1.2.0\'','project.open_screen','render.all_states','validate.all_states','pixel.create','export.code_ai_handoff','state.validate_schema','state.set_schema','state.validate','state.count','job.start','job.status','job.result','job.cancel'):
-        if marker not in automation_source: return fail(f'Automation API 1.1 marker missing: {marker}')
-    builder=(ROOT/'Developer_Tools/BUILD_WINDOWS_EXE.bat').read_text(encoding='utf-8')
-    if 'test_qt_v84_project_automation.py' not in builder or 'VERIFY_V84_FINAL.py' not in builder or 'VERIFY_V841_FINAL.py' not in builder or 'VERIFY_V842_FINAL.py' not in builder or 'VERIFY_V843_FINAL.py' not in builder or 'VERIFY_V844_FINAL.py' not in builder:
-        return fail('Windows V8.4.4 historical/Real-Qt gate markers missing')
-    if 'RUN_WINDOWS_TEST_GROUPS.py' not in builder or '--phase source' not in builder or '--phase qt' not in builder:
-        return fail('Windows bounded test runner markers missing')
-    if 'pytest "OLED模拟器\\tests" -q' in builder:
-        return fail('monolithic Windows pytest invocation must not return')
-
-    if (ROOT/'CuringLiteOLEDDesigner_SourceLauncher.exe').exists() or (ROOT/'CuringLiteOLEDDesigner_SourceLauncher-script.pyw').exists():
-        return fail('broken legacy SourceLauncher must not be delivered')
-    entry=ROOT/'MonoOLEDStudio.exe'
-    if not entry.is_file(): return fail('MonoOLEDStudio.exe runtime-locator user entry missing')
-    raw=entry.read_bytes()
-    if sha(entry)!=COMPAT_LAUNCHER_SHA: return fail('bundled compatibility launcher binary drifted without Windows rebuild evidence')
-    if raw[:2]!=b'MZ' or b'PE\x00\x00' not in raw[:2048]: return fail('MonoOLEDStudio.exe is not a PE Windows executable')
-    for marker in (b'KERNEL32.dll',b'USER32.dll','MonoOLED Studio'.encode('utf-16le'),'OLED模拟器\\gui.py'.encode('utf-16le')):
-        if marker not in raw: return fail(f'Windows launcher contract marker missing: {marker!r}')
-    pe=struct.unpack_from('<I',raw,0x3C)[0]; sections=struct.unpack_from('<H',raw,pe+6)[0]; opt=struct.unpack_from('<H',raw,pe+20)[0]; table=pe+24+opt
-    names=[raw[table+i*40:table+i*40+8].split(b'\0',1)[0].decode('ascii','ignore') for i in range(sections)]
-    if '.rsrc' not in names: return fail('runtime-locator launcher icon resource section missing')
-    if list(ROOT.glob('*.bat')) or (ROOT/'MonoOLEDStudio.spec').exists(): return fail('user root must not expose BAT/SPEC build files')
-
-    print(f'PASS: delivery integrity verified for {len(listed)} managed file(s)')
-    print('PASS: version=8.4.4, frozen product assets=464/464, Golden=14/14 x 512B')
-    print('PASS: V8.2–V8.4.4 inheritance + CRLF-safe bounded Windows/Real-Qt GA release gates present')
+def main() -> int:
+    try:
+        verify_layout(); verify_docs(); verify_source(); verify_frozen_assets(); verify_build_contract()
+    except Exception as exc:
+        print(f'[FAIL] V12 package verification: {exc}',file=sys.stderr); return 2
+    print('[PASS] V12 package verification: layout, docs, source, 464 frozen hashes, and build contract are current.')
     return 0
 
 if __name__=='__main__': raise SystemExit(main())

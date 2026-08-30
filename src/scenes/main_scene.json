@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "product": "Generic 1-bit OLED",
+  "canvas": {
+    "w": 128,
+    "h": 32,
+    "preview_scale": 6
+  },
+  "storage": {
+    "layout": "VLSB column-page (SSD1306)",
+    "bytes_per_frame": 512,
+    "polarity": "1 = lit"
+  },
+  "states": {},
+  "elements": [
+    {
+      "id": "sample_mark",
+      "type": "image",
+      "asset": "src/scenes/generic_mark.png",
+      "x": 56,
+      "y": 12,
+      "w": 16,
+      "h": 8
+    }
+  ],
+  "timeline": [],
+  "zones": []
+}

@@ -1,0 +1,1120 @@
+{
+  "product": "MonoOLED Studio",
+  "api": "Automation API",
+  "api_version": "1.2.0",
+  "transport": "semantic service; localhost token-authenticated JSON-RPC adapter",
+  "methods": {
+    "asset.copy": {
+      "permission": "edit",
+      "summary": "Copy a project bitmap.",
+      "params": {
+        "path": "relative path",
+        "target": "relative path"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "asset.create": {
+      "permission": "edit",
+      "summary": "Create a blank project bitmap.",
+      "params": {
+        "path": "relative path",
+        "width": "int",
+        "height": "int",
+        "value": "0|1?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "asset.delete": {
+      "permission": "edit",
+      "summary": "Delete a project bitmap.",
+      "params": {
+        "path": "relative path"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "asset.import": {
+      "permission": "edit",
+      "summary": "Import an external bitmap into the project.",
+      "params": {
+        "source": "path",
+        "target": "relative path"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "asset.rename": {
+      "permission": "edit",
+      "summary": "Rename a project bitmap.",
+      "params": {
+        "path": "relative path",
+        "target": "relative path"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "automation.capabilities": {
+      "permission": "observe",
+      "summary": "List Automation API 1.2 methods and contracts.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "automation.describe_method": {
+      "permission": "observe",
+      "summary": "Describe one Automation API method.",
+      "params": {
+        "method": "string"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "export.all": {
+      "permission": "edit",
+      "summary": "Export deterministic state matrix through the canonical Studio exporter.",
+      "params": {
+        "output_dir": "relative dir",
+        "integer_policy": "representative|boundaries|full",
+        "summary_only": "bool?",
+        "include_hashes": "bool?",
+        "max_cases": "int?",
+        "allow_large_matrix": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "export.c_header": {
+      "permission": "edit",
+      "summary": "Export current framebuffer C header.",
+      "params": {
+        "path": "relative path",
+        "symbol": "string?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "export.code_ai_handoff": {
+      "permission": "edit",
+      "summary": "Generate deterministic Code AI handoff from Studio truth.",
+      "params": {
+        "path": "relative zip path",
+        "integer_policy": "representative|boundaries|full",
+        "summary_only": "bool?",
+        "max_cases": "int?",
+        "allow_large_matrix": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "export.current": {
+      "permission": "edit",
+      "summary": "Export current state through the canonical Studio exporter.",
+      "params": {
+        "output_dir": "relative dir",
+        "state": "object?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "export.font_pack": {
+      "permission": "edit",
+      "summary": "Create deterministic ZIP of a FontPack.",
+      "params": {
+        "font_id": "relative dir",
+        "path": "relative zip path"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "font.create_pack": {
+      "permission": "edit",
+      "summary": "Create FontPack.",
+      "params": {
+        "path": {
+          "type": "relative path",
+          "required": true
+        },
+        "name": {
+          "type": "string",
+          "required": false
+        },
+        "cell": {
+          "type": "[width:int,height:int]",
+          "required": false
+        },
+        "baseline": {
+          "type": "int",
+          "required": false
+        },
+        "advance": {
+          "type": "int",
+          "required": false
+        }
+      },
+      "returns": {
+        "font_id": "relative dir",
+        "name": "string",
+        "cell": "[int,int]"
+      },
+      "transaction_supported": false
+    },
+    "font.generate_glyphs": {
+      "permission": "edit",
+      "summary": "Rasterize characters into FontPack.",
+      "params": {
+        "font_id": {
+          "type": "relative dir",
+          "required": true
+        },
+        "characters": {
+          "type": "string",
+          "required": true
+        },
+        "font_path": {
+          "type": "path|null",
+          "required": false
+        },
+        "font_size": {
+          "type": "int",
+          "required": false,
+          "minimum": 1,
+          "default": 12
+        },
+        "threshold": {
+          "type": "int",
+          "required": false,
+          "minimum": 0,
+          "maximum": 255,
+          "default": 128
+        },
+        "offset": {
+          "type": "[x:int,y:int]",
+          "required": false,
+          "default": [
+            0,
+            0
+          ]
+        }
+      },
+      "returns": {
+        "font_id": "relative dir",
+        "count": "int"
+      },
+      "transaction_supported": false
+    },
+    "font.get_glyph": {
+      "permission": "observe",
+      "summary": "Read one bitmap glyph.",
+      "params": {
+        "font_id": {
+          "type": "relative dir",
+          "required": true
+        },
+        "char": {
+          "type": "single character",
+          "required": true
+        }
+      },
+      "returns": {
+        "font_id": "relative dir",
+        "char": "string",
+        "pixels": "int[][]",
+        "metrics": "object"
+      },
+      "transaction_supported": false
+    },
+    "font.get_pack": {
+      "permission": "observe",
+      "summary": "Read FontPack metrics/characters.",
+      "params": {
+        "font_id": {
+          "type": "relative dir",
+          "required": true
+        }
+      },
+      "returns": {
+        "font_id": "relative dir",
+        "name": "string",
+        "cell": "[int,int]",
+        "baseline": "int",
+        "advance": "int",
+        "characters": "string[]"
+      },
+      "transaction_supported": false
+    },
+    "font.list": {
+      "permission": "observe",
+      "summary": "List FontPack assets.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "font.set_metrics": {
+      "permission": "edit",
+      "summary": "Update FontPack baseline/advance.",
+      "params": {
+        "font_id": {
+          "type": "relative dir",
+          "required": true
+        },
+        "baseline": {
+          "type": "int",
+          "required": false
+        },
+        "advance": {
+          "type": "int",
+          "required": false
+        }
+      },
+      "returns": {
+        "font_id": "relative dir",
+        "baseline": "int",
+        "advance": "int"
+      },
+      "transaction_supported": false
+    },
+    "font.update_glyph": {
+      "permission": "edit",
+      "summary": "Update one bitmap glyph.",
+      "params": {
+        "font_id": {
+          "type": "relative dir",
+          "required": true
+        },
+        "char": {
+          "type": "single character",
+          "required": true
+        },
+        "pixels": {
+          "type": "int[][]",
+          "required": true
+        },
+        "metrics": {
+          "type": "{bearing_x:int?,bearing_y:int?,advance:int?}",
+          "required": false
+        }
+      },
+      "returns": {
+        "font_id": "relative dir",
+        "char": "string"
+      },
+      "transaction_supported": false
+    },
+    "history.begin_transaction": {
+      "permission": "edit",
+      "summary": "Begin one undoable Agent scene transaction.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "history.commit": {
+      "permission": "edit",
+      "summary": "Commit Agent transaction as one Designer undo.",
+      "params": {
+        "transaction": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "history.rollback": {
+      "permission": "edit",
+      "summary": "Rollback Agent transaction.",
+      "params": {
+        "transaction": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "job.cancel": {
+      "permission": "edit",
+      "summary": "Request cooperative cancellation of a long-running Automation job.",
+      "params": {
+        "job_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "job.release": {
+      "permission": "edit",
+      "summary": "Release one terminal Automation job result from server memory.",
+      "params": {
+        "job_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "job.result": {
+      "permission": "observe",
+      "summary": "Read terminal long-running Automation job result.",
+      "params": {
+        "job_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "job.start": {
+      "permission": "edit",
+      "summary": "Start one server-owned long-running Automation operation.",
+      "params": {
+        "operation": {
+          "type": "string",
+          "required": true
+        },
+        "arguments": {
+          "type": "object",
+          "required": false
+        }
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "job.status": {
+      "permission": "observe",
+      "summary": "Read long-running Automation job progress.",
+      "params": {
+        "job_id": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "layout.align": {
+      "permission": "edit",
+      "summary": "Align selected elements to selection/primary/canvas.",
+      "params": {
+        "mode": "string",
+        "reference": "selection|primary|canvas"
+      },
+      "returns": {},
+      "transaction_supported": true
+    },
+    "layout.distribute": {
+      "permission": "edit",
+      "summary": "Distribute selected elements.",
+      "params": {
+        "axis": "horizontal|vertical"
+      },
+      "returns": {},
+      "transaction_supported": true
+    },
+    "layout.measure": {
+      "permission": "observe",
+      "summary": "Measure selected elements.",
+      "params": {
+        "ids": "string[]?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.close": {
+      "permission": "edit",
+      "summary": "Close an in-memory PixelDocument; dirty documents require discard=true.",
+      "params": {
+        "document_id": {
+          "type": "string",
+          "required": true
+        },
+        "discard": {
+          "type": "bool",
+          "required": false
+        }
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.create": {
+      "permission": "edit",
+      "summary": "Create an in-memory blank PixelDocument bound to a project path.",
+      "params": {
+        "path": "relative path",
+        "width": "int",
+        "height": "int"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.erase": {
+      "permission": "edit",
+      "summary": "Erase pixels.",
+      "params": {
+        "document_id": "string",
+        "x": "int",
+        "y": "int"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.fill": {
+      "permission": "edit",
+      "summary": "Flood fill a PixelDocument.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.flip": {
+      "permission": "edit",
+      "summary": "Flip PixelDocument horizontally/vertically.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.get_document": {
+      "permission": "observe",
+      "summary": "Read a PixelDocument.",
+      "params": {
+        "document_id": "string"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.line": {
+      "permission": "edit",
+      "summary": "Draw a pixel-exact line.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.open": {
+      "permission": "observe",
+      "summary": "Open a project bitmap as a PixelDocument.",
+      "params": {
+        "path": "relative path"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.paint": {
+      "permission": "edit",
+      "summary": "Paint pixels.",
+      "params": {
+        "document_id": "string",
+        "x": "int",
+        "y": "int",
+        "value": "0|1"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.rect": {
+      "permission": "edit",
+      "summary": "Draw a pixel-exact rectangle.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.redo": {
+      "permission": "edit",
+      "summary": "Redo PixelDocument edit.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.resize_canvas": {
+      "permission": "edit",
+      "summary": "Resize PixelDocument canvas with anchor.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.rotate": {
+      "permission": "edit",
+      "summary": "Rotate PixelDocument by 0/90/180/270.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.save": {
+      "permission": "edit",
+      "summary": "Save PixelDocument to project PNG.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "pixel.undo": {
+      "permission": "edit",
+      "summary": "Undo PixelDocument edit.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.create_screen": {
+      "permission": "edit",
+      "summary": "Create a new project screen.",
+      "params": {
+        "screen_id": "string",
+        "label": "string?",
+        "open": "bool?",
+        "save_current": "bool?",
+        "discard_current": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.delete_screen": {
+      "permission": "edit",
+      "summary": "Delete a project screen while preserving at least one screen.",
+      "params": {
+        "screen_id": "string",
+        "save_current": "bool?",
+        "discard_current": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.duplicate_screen": {
+      "permission": "edit",
+      "summary": "Duplicate a project screen.",
+      "params": {
+        "screen_id": "string",
+        "new_id": "string",
+        "label": "string?",
+        "open": "bool?",
+        "save_current": "bool?",
+        "discard_current": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.get": {
+      "permission": "observe",
+      "summary": "Observe the active project/scene identity.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.get_contract": {
+      "permission": "observe",
+      "summary": "Return project coordinate/framebuffer/schema contract.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.list_assets": {
+      "permission": "observe",
+      "summary": "List project-owned bitmap assets.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.list_screens": {
+      "permission": "observe",
+      "summary": "List screens in the active OLED project.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.open_screen": {
+      "permission": "edit",
+      "summary": "Switch the active project screen without silently discarding unsaved changes.",
+      "params": {
+        "screen_id": {
+          "type": "string",
+          "required": true
+        },
+        "save_current": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        },
+        "discard_current": {
+          "type": "bool",
+          "required": false,
+          "default": false
+        }
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.rename_screen": {
+      "permission": "edit",
+      "summary": "Rename a project screen and its scene file.",
+      "params": {
+        "screen_id": "string",
+        "new_id": "string",
+        "label": "string?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.save": {
+      "permission": "edit",
+      "summary": "Atomically save the active scene and project manifest.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "project.save_all": {
+      "permission": "edit",
+      "summary": "Save active scene, open pixel documents and project manifest.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "render.all_states": {
+      "permission": "observe",
+      "summary": "Render every state in a deterministic state matrix.",
+      "params": {
+        "integer_policy": "representative|boundaries|full",
+        "summary_only": "bool?",
+        "include_frames": "bool?",
+        "max_cases": "int?",
+        "allow_large_matrix": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "render.annotated_preview": {
+      "permission": "observe",
+      "summary": "Write enlarged preview with resolved element boxes/ids.",
+      "params": {
+        "path": "relative path",
+        "state": "object?",
+        "scale": "int?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "render.current": {
+      "permission": "observe",
+      "summary": "Render one state to canonical framebuffer truth.",
+      "params": {
+        "state": "object?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "render.framebuffer": {
+      "permission": "observe",
+      "summary": "Return VLSB framebuffer bytes/sha for one state.",
+      "params": {
+        "state": "object?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "render.pixel_diff": {
+      "permission": "observe",
+      "summary": "Compare two rendered states.",
+      "params": {
+        "before_state": "object",
+        "after_state": "object"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "render.png": {
+      "permission": "observe",
+      "summary": "Return canonical PNG as base64.",
+      "params": {
+        "state": "object?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "render.preview_file": {
+      "permission": "observe",
+      "summary": "Write canonical PNG preview under the project root.",
+      "params": {
+        "path": "relative path",
+        "state": "object?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "render.resolved_elements": {
+      "permission": "observe",
+      "summary": "Return renderer-resolved element geometry.",
+      "params": {
+        "state": "object?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "scene.create_element": {
+      "permission": "edit",
+      "summary": "Create a scene element.",
+      "params": {
+        "element": "object"
+      },
+      "returns": {},
+      "transaction_supported": true
+    },
+    "scene.delete_elements": {
+      "permission": "edit",
+      "summary": "Delete scene elements.",
+      "params": {
+        "ids": "string[]"
+      },
+      "returns": {},
+      "transaction_supported": true
+    },
+    "scene.get": {
+      "permission": "observe",
+      "summary": "Read the active scene.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "scene.get_schema": {
+      "permission": "observe",
+      "summary": "Describe supported scene element types and coordinate rules.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "scene.list_elements": {
+      "permission": "observe",
+      "summary": "List scene elements.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "scene.update_element": {
+      "permission": "edit",
+      "summary": "Update fields on one scene element.",
+      "params": {
+        "id": "string",
+        "changes": "object"
+      },
+      "returns": {},
+      "transaction_supported": true
+    },
+    "selection.clear": {
+      "permission": "edit",
+      "summary": "Clear selection.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": true
+    },
+    "selection.get": {
+      "permission": "observe",
+      "summary": "Read selected ids and primary selection.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "selection.set": {
+      "permission": "edit",
+      "summary": "Replace selection.",
+      "params": {
+        "ids": "string[]",
+        "primary_id": "string?"
+      },
+      "returns": {},
+      "transaction_supported": true
+    },
+    "selection.toggle": {
+      "permission": "edit",
+      "summary": "Toggle one element in selection.",
+      "params": {
+        "id": "string"
+      },
+      "returns": {},
+      "transaction_supported": true
+    },
+    "session.events": {
+      "permission": "observe",
+      "summary": "Read bounded semantic Agent event stream using an absolute cursor.",
+      "params": {
+        "since": "int?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "state.count": {
+      "permission": "observe",
+      "summary": "Count legal state combinations before starting a long matrix operation.",
+      "params": {
+        "integer_policy": "representative|boundaries|full",
+        "max_cases": "int?",
+        "allow_large_matrix": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "state.enumerate": {
+      "permission": "observe",
+      "summary": "Enumerate a deterministic legal state matrix.",
+      "params": {
+        "integer_policy": "representative|boundaries|full",
+        "include_states": "bool?",
+        "summary_only": "bool?",
+        "max_cases": "int?",
+        "allow_large_matrix": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "state.get_schema": {
+      "permission": "observe",
+      "summary": "Return the active scene state schema.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "state.list": {
+      "permission": "observe",
+      "summary": "List state variables and their domains.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "state.set_schema": {
+      "permission": "edit",
+      "summary": "Atomically replace the active scene state schema after validation.",
+      "params": {
+        "schema": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "variables": {
+              "type": "object<string,state-variable>",
+              "required": true,
+              "variants": [
+                {
+                  "type": "int",
+                  "fields": {
+                    "type": {
+                      "const": "int"
+                    },
+                    "init": {
+                      "type": "int",
+                      "required": true
+                    },
+                    "values": {
+                      "type": "int[]",
+                      "required": false,
+                      "meaning": "explicit discrete domain; mutually exclusive with min/max"
+                    },
+                    "min": {
+                      "type": "int",
+                      "required": false
+                    },
+                    "max": {
+                      "type": "int",
+                      "required": false
+                    }
+                  }
+                },
+                {
+                  "type": "enum",
+                  "fields": {
+                    "type": {
+                      "const": "enum"
+                    },
+                    "init": {
+                      "type": "json-scalar",
+                      "required": true
+                    },
+                    "values": {
+                      "type": "json-scalar[]",
+                      "required": true
+                    }
+                  }
+                }
+              ],
+              "notes": [
+                "default is accepted as an input alias for init; normalized output always uses init"
+              ]
+            },
+            "relations": {
+              "type": "array",
+              "required": false,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "left": {
+                    "type": "state-variable-name",
+                    "required": true
+                  },
+                  "operator": {
+                    "type": "string",
+                    "required": true,
+                    "enum": [
+                      "<",
+                      "<=",
+                      "==",
+                      "!=",
+                      ">=",
+                      ">"
+                    ]
+                  },
+                  "right": {
+                    "type": "state-variable-name",
+                    "required": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "returns": {
+        "schema": "normalized state-schema",
+        "changed": "bool"
+      },
+      "transaction_supported": true
+    },
+    "state.validate": {
+      "permission": "observe",
+      "summary": "Validate one concrete state against domains and relational constraints.",
+      "params": {
+        "state": {
+          "type": "object",
+          "required": true
+        }
+      },
+      "returns": {
+        "valid": "bool",
+        "violations": "state-violation[]"
+      },
+      "transaction_supported": false
+    },
+    "state.validate_schema": {
+      "permission": "observe",
+      "summary": "Validate a proposed root-level state schema without mutating the project.",
+      "params": {
+        "schema": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "variables": {
+              "type": "object<string,state-variable>",
+              "required": true,
+              "variants": [
+                {
+                  "type": "int",
+                  "fields": {
+                    "type": {
+                      "const": "int"
+                    },
+                    "init": {
+                      "type": "int",
+                      "required": true
+                    },
+                    "values": {
+                      "type": "int[]",
+                      "required": false,
+                      "meaning": "explicit discrete domain; mutually exclusive with min/max"
+                    },
+                    "min": {
+                      "type": "int",
+                      "required": false
+                    },
+                    "max": {
+                      "type": "int",
+                      "required": false
+                    }
+                  }
+                },
+                {
+                  "type": "enum",
+                  "fields": {
+                    "type": {
+                      "const": "enum"
+                    },
+                    "init": {
+                      "type": "json-scalar",
+                      "required": true
+                    },
+                    "values": {
+                      "type": "json-scalar[]",
+                      "required": true
+                    }
+                  }
+                }
+              ],
+              "notes": [
+                "default is accepted as an input alias for init; normalized output always uses init"
+              ]
+            },
+            "relations": {
+              "type": "array",
+              "required": false,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "left": {
+                    "type": "state-variable-name",
+                    "required": true
+                  },
+                  "operator": {
+                    "type": "string",
+                    "required": true,
+                    "enum": [
+                      "<",
+                      "<=",
+                      "==",
+                      "!=",
+                      ">=",
+                      ">"
+                    ]
+                  },
+                  "right": {
+                    "type": "state-variable-name",
+                    "required": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "returns": {
+        "valid": "bool",
+        "errors": "validation-error[]",
+        "schema": "normalized state-schema"
+      },
+      "transaction_supported": false
+    },
+    "validate.all_states": {
+      "permission": "observe",
+      "summary": "Validate a deterministic state matrix.",
+      "params": {
+        "integer_policy": "representative|boundaries|full",
+        "summary_only": "bool?",
+        "include_cases": "bool?",
+        "max_cases": "int?",
+        "allow_large_matrix": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "validate.current": {
+      "permission": "observe",
+      "summary": "Validate one state.",
+      "params": {
+        "state": "object?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    }
+  },
+  "invariants": [
+    "Automation manipulates project/scene/pixel/font semantics, never GUI coordinates.",
+    "Canonical Renderer and Studio Exporter remain the pixel/export truth.",
+    "Revision guards prevent stale writes.",
+    "Scene/layout/selection/state-schema transactions can commit or rollback as one Designer history operation.",
+    "State schema supports explicit discrete domains and constrained state-variable relations without script evaluation.",
+    "Project, asset and pixel lifecycle operations are explicit and are not falsely advertised as scene-transaction rollback."
+  ]
+}

@@ -1,44 +1,11 @@
-# MonoOLED Studio 8.4.4 — Windows Real-Qt GA Final Closure Complete Delivery
+# V1.0.0 Initial Release Delivery
 
-## Identity
+This package is the **release-ready GitHub source** for MonoOLED Studio **1.0.0**.
 
-- Version: **8.4.4**
-- Release: **Windows Real-Qt GA Final Closure**
-- Automation API: **1.2.0 / 82 methods (unchanged)**
-- Delivery profile: **source**
+End users should not run Python or build scripts. The public Windows delivery channel is **GitHub Releases**, where a `v1.0.0` tag produces `MonoOLEDStudio_v1.0.0_Windows_x64.zip` and its SHA-256 sidecar after the Windows GA gate passes. After extraction the user starts `MonoOLEDStudio\MonoOLEDStudio.exe`.
 
-## What V8.4.4 changes
+Developers can use `tools\BUILD_WINDOWS_QUICK.bat` for a fast local EXE or `tools\BUILD_WINDOWS_GA.bat` for the full Windows Real-Qt/DPI certification path. `tools\BUILD_WINDOWS_EXE.bat` remains only as a compatibility wrapper to GA.
 
-V8.4.4 is deliberately limited to the failures reproduced by the real Windows validation of the V8.4.3 sealed package:
+Release acceptance is defined by `VERIFY_PACKAGE.py`, the source regression suite, the Windows GA builder, the tag/version guard, and the V1.0.0 Startup/Settings/Font critical-path gates. Product-specific Curing-Lite data remains test-only under `test_assets/projects/curing_lite/`.
 
-- Inspector content no longer overflows horizontally and vertical scrolling is not misreported as clipping;
-- smoke checks wait for a stable layout signature;
-- `StatusPill` applies parse-clean QSS;
-- the bounded runner mirrors UTF-8 logs safely to CP936 consoles;
-- explicit Editor geometry and canonical Renderer resource paths avoid redundant hot-path work while keeping the original V8.3 thresholds and content-hash invalidation;
-- identical asset-cache payloads are no longer atomically replaced, so packaged layout settlement cannot self-trigger through the asset directory watcher;
-- the runtime ZIP checksum is generated and verified by the pinned build Python, and a hash/sidecar error terminates the Builder;
-- the Windows builder retains every V8.4.3 release gate and adds V8.4.4 repeated source/EXE smoke evidence.
-
-V8.4.4 does **not** redesign or modify Renderer/VLSB semantics, Automation API 1.2 behavior, Scene/Project/State/FontPack schema behavior, the 464 frozen assets, the 14 Golden frames, or Curing-Lite ORTHO product pixels.
-
-## Primary documents
-
-- `OLED模拟器/WINDOWS_REAL_QT_GA_FINAL_CLOSURE_V844.md`
-- `OLED模拟器/TEST_MATRIX_V844.md`
-- `OLED模拟器/FINAL_VERIFICATION_REPORT.md`
-- `OLED模拟器/CODE_AI_AUTOMATION_API_V1.md`
-
-## Primary release tools
-
-- `Developer_Tools/BUILD_WINDOWS_EXE.bat`
-- `Developer_Tools/RUN_WINDOWS_TEST_GROUPS.py`
-- `Developer_Tools/VERIFY_WINDOWS_RELEASE_TEXT.py`
-- `Developer_Tools/VERIFY_V844_FINAL.py`
-- `Developer_Tools/BUILD_DELIVERY_V844.py`
-
-## Windows GA boundary
-
-A Linux source/package validation does not establish native Windows GA. Windows GA is established only when the **original delivered** `Developer_Tools\BUILD_WINDOWS_EXE.bat` runs from a Windows fresh extraction and completes its bounded source groups, all Real-Qt modules at 100–300% DPI with `0 failed / 0 skipped`, inherited release gates, PyInstaller build, executable interaction checks and soak.
-
-The final decision record uses `GA Release Gates = PASS`, `Known blockers = 0`, `Known P0/P1 = 0` and `Evidence confidence = High`; it does not use an absolute 100% confidence claim.
+For deterministic source delivery, run `python tools/BUILD_DELIVERY_V120.py`.

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "name": "Curing-Lite OLED",
+  "default_canvas": [
+    128,
+    32
+  ],
+  "active_screen": "123",
+  "asset_dirs": [
+    "assets"
+  ],
+  "screens": [
+    {
+      "id": "main",
+      "label": "Clinical UI",
+      "path": "scenes/main_scene.json"
+    },
+    {
+      "id": "123",
+      "label": "123",
+      "path": "scenes/123.json"
+    }
+  ],
+  "design_rules": {
+    "required_elements": [
+      "battery",
+      "hero_digits",
+      "mode_label"
+    ],
+    "zones": {
+      "battery": {
+        "x": 0,
+        "y": 0,
+        "w": 20,
+        "h": 32
+      },
+      "mode_label": {
+        "x": 86,
+        "y": 0,
+        "w": 42,
+        "h": 16
+      }
+    }
+  }
+}

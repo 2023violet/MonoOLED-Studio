@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - 'v*.*.*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-windows:
+    name: Windows source gate
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          architecture: 'x64'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install test dependencies
+        shell: cmd
+        run: python -m pip install -r requirements-dev.txt
+      - name: Verify Windows command-file contract
+        shell: cmd
+        run: python tools\VERIFY_WINDOWS_RELEASE_TEXT.py
+      - name: Run bounded source regression
+        shell: cmd
+        run: python tools\RUN_WINDOWS_TEST_GROUPS.py --phase source --python python --report-dir .artifacts\ci --source-group-size 8 --group-timeout 300
+      - name: Core source check
+        shell: cmd
+        run: python src\gui.py --check
+      - name: Verify release-ready source package
+        shell: cmd
+        run: python VERIFY_PACKAGE.py
