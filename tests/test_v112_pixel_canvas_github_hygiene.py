@@ -15,7 +15,9 @@ def test_pixel_canvas_uses_oled_black_white_truth_not_theme_surface():
 
 def test_github_root_markdown_is_curated():
     root_markdown = sorted(p.name for p in ROOT.glob('*.md'))
-    assert root_markdown == ['DELIVERY_README.md', 'README.md']
+    # Allow the core docs plus standard open-source support files; reject
+    # stray/placeholder markdown at the repository root.
+    assert root_markdown == ['CONTRIBUTING.md', 'DELIVERY_README.md', 'README.md', 'SECURITY.md']
 
 
 def test_github_documentation_is_classified():

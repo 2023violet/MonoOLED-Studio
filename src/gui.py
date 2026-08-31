@@ -76,7 +76,7 @@ try:
     from qt_canvas import OLEDCanvas
     from qt_widgets import ProfessionalPanel, StatusPill
     from pixel_studio_qt import PixelStudioWindow
-    from preferences_qt import PreferencesView
+    from preferences_qt import PreferencesView, PreferencesWindow
     from font_lab_qt import FontLabEditor
     from qt_interaction import FocusOriginFilter
     from ui_controls import StudioButton, StudioToolButton, StudioSelect, StudioNumericInput, StudioSegmentedControl, StudioStateDot, StudioMarkedLabel, PopupManager
