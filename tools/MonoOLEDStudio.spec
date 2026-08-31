@@ -13,9 +13,9 @@ datas=[]
 datas += add_tree('src/scenes', 'src/scenes')
 datas += add_tree('src/branding', 'src/branding')
 datas += add_tree('docs', 'docs')
-for rel,dest in [('src/VERSION','src'),('src/AUTOMATION_API_V1.json','src')]:
+for rel in ('src/VERSION','src/AUTOMATION_API_V1.json'):
     p=ROOT/rel
-    if p.exists(): datas.append((str(p),dest))
+    if p.exists(): datas.append((str(p),'.'))
 
 a = Analysis(
     [str(ROOT / 'src' / 'gui.py')],
