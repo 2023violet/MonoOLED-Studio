@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse, json, secrets, socketserver, sys, threading
+import argparse, json, secrets, socketserver, threading
 from automation_service import AUTOMATION_API_VERSION, PermissionDeniedError, StaleRevisionError, StudioAutomationService, TransactionError, UnsavedChangesError
 
 

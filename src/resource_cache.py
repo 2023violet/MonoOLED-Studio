@@ -36,6 +36,10 @@ class RenderResources:
         self._bitmaps: OrderedDict[Path, tuple[str, BitmapAsset]] = OrderedDict()
         self._fonts: OrderedDict[Path, tuple[str, dict]] = OrderedDict()
         self._fontpacks: OrderedDict[Path, tuple[str, FontPack]] = OrderedDict()
+        # Manifest digest -> precomputed glyph fingerprint payload. The glyph
+        # bytes are hashed once per manifest change, not on every render hit, so
+        # the hot path never re-reads glyph files while staying content-addressed.
+        self._fontpack_fingerprints: dict[Path, tuple[str, bytes]] = {}
         self.stats = CacheStats()
 
     @staticmethod
@@ -82,16 +86,24 @@ class RenderResources:
 
     def font_pack(self, root: str | Path) -> FontPack:
         root = Path(root).resolve(); manifest = root / 'fontpack.json'
-        manifest_raw = manifest.read_bytes(); data = json.loads(manifest_raw.decode('utf-8'))
-        h = sha256(); h.update(manifest_raw)
-        # Content fingerprint includes every declared glyph, not timestamps.
-        for ch, meta in sorted(data.get('glyphs', {}).items(), key=lambda kv: kv[0]):
-            p = (root / str(meta['asset'])).resolve()
-            try:
-                p.relative_to(root)
-            except ValueError as exc:
-                raise ValueError('glyph asset must stay inside font pack') from exc
-            h.update(ch.encode('utf-8')); h.update(p.read_bytes())
+        manifest_raw = manifest.read_bytes(); manifest_digest = self._digest(manifest_raw)
+        mf = self._fontpack_fingerprints.get(root)
+        if mf is None or mf[0] != manifest_digest:
+            data = json.loads(manifest_raw.decode('utf-8'))
+            payload = bytearray(manifest_raw)
+            for ch, meta in sorted(data.get('glyphs', {}).items(), key=lambda kv: kv[0]):
+                p = (root / str(meta['asset'])).resolve()
+                try:
+                    p.relative_to(root)
+                except ValueError as exc:
+                    raise ValueError('glyph asset must stay inside font pack') from exc
+                payload += ch.encode('utf-8')
+                # Hash each glyph once per manifest change; ordinary render hits
+                # reuse the cached payload and never re-read glyph files.
+                payload += self._digest(p.read_bytes()).encode('utf-8')
+            self._fontpack_fingerprints[root] = (manifest_digest, bytes(payload))
+            mf = self._fontpack_fingerprints[root]
+        h = sha256(); h.update(mf[1])
         digest = h.hexdigest(); cached = self._fontpacks.get(root)
         if cached and cached[0] == digest:
             self._fontpacks.move_to_end(root)
@@ -103,12 +115,12 @@ class RenderResources:
 
     def invalidate(self, path: str | Path | None = None) -> None:
         if path is None:
-            self._bitmaps.clear(); self._fonts.clear(); self._fontpacks.clear(); return
+            self._bitmaps.clear(); self._fonts.clear(); self._fontpacks.clear(); self._fontpack_fingerprints.clear(); return
         p = Path(path).resolve()
         self._bitmaps.pop(p, None); self._fonts.pop(p, None)
         for root in list(self._fontpacks):
             try:
-                if p == root or p.is_relative_to(root): self._fontpacks.pop(root, None)
+                if p == root or p.is_relative_to(root): self._fontpacks.pop(root, None); self._fontpack_fingerprints.pop(root, None)
             except AttributeError:  # pragma: no cover - Python <3.9 compatibility
-                try: p.relative_to(root); self._fontpacks.pop(root, None)
+                try: p.relative_to(root); self._fontpacks.pop(root, None); self._fontpack_fingerprints.pop(root, None)
                 except ValueError: pass

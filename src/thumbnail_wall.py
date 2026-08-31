@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 
 def build_thumbnail_wall(images, output: str | Path, *, columns: int=4, scale: int=4, gap: int=16, label_height: int=18) -> Path:

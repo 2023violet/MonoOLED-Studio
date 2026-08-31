@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
-import json
 from io import BytesIO
 from pathlib import Path
 from typing import Mapping

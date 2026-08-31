@@ -3,10 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from assets import BitmapAsset, load_bitmap, load_mode_font
+from assets import BitmapAsset
 from framebuffer import FrameBuffer
 from scene import resolve, subst, when_match
-from font_pack import FontPack
 from resource_cache import RenderResources
 
 

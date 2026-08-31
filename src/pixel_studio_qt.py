@@ -104,7 +104,7 @@ class TextInsertDialog(QDialog):
         for manifest in sorted(self.project_root.rglob('fontpack.json')):
             try:
                 pack=FontPack.load(manifest.parent);rel=manifest.parent.relative_to(self.project_root).as_posix();self.font.addItem(f'{pack.name} · {pack.cell[0]}×{pack.cell[1]}',rel)
-            except Exception:continue
+            except (OSError, ValueError, KeyError):continue
         form.addRow(tr('pixel.text'),self.text);form.addRow(tr('pixel.font_pack'),self.font);form.addRow('X',self.x);form.addRow('Y',self.y);form.addRow(tr('pixel.tracking'),self.tracking);layout.addLayout(form)
         self.hint=QLabel(tr('pixel.font_hint'));self.hint.setObjectName('Muted');self.hint.setWordWrap(True);layout.addWidget(self.hint)
         row=QHBoxLayout();row.addStretch(1);cancel=StudioButton(tr('dialog.cancel'));apply=StudioButton(tr('pixel.action.insert_bitmap_text'));apply.setObjectName('PrimaryButton');cancel.clicked.connect(self.reject);apply.clicked.connect(self.accept);row.addWidget(cancel);row.addWidget(apply);layout.addLayout(row)

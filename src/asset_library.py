@@ -89,7 +89,7 @@ class AssetLibrary:
                 entry = AssetEntry(**raw['entry'])
                 raw_hash = str(raw['content_sha256'])
                 self._cache[path] = (int(raw['mtime_ns']), int(raw['size']), raw_hash, entry)
-            except Exception:
+            except (KeyError, TypeError, ValueError):
                 continue
         self._trim_cache()
 

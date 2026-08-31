@@ -16,7 +16,7 @@ from asset_convert import convert_bitmap
 from c_export import write_c_header
 from component_templates import TemplateLibrary
 from design_rules import check_design_rules
-from batch_validate import build_state_matrix, validate_matrix, write_matrix_report
+from batch_validate import build_state_matrix, validate_matrix
 from export_matrix import build_export_states
 from editor_model import EditorSession
 from evidence import frame_evidence
@@ -34,7 +34,7 @@ from selection_model import SelectionModel
 from workspace_host import EditorRegistry, CallbackEditor, editor_is_dirty
 from performance_profiler import PerformanceProfiler
 from ui_performance import RefreshWorkPlan, InteractionTrace
-from selection_tools import align, align_to, distribute, measure, selection_metrics, snap_positions, smart_guides
+from selection_tools import align_to, distribute, measure, selection_metrics, snap_positions, smart_guides
 from canvas_geometry import fit_integer_zoom
 from scene import ROOT, load_scene, scene_root
 from session_log import SessionLogger
@@ -42,7 +42,7 @@ from validate import has_blockers
 from preferences import PreferencesStore, default_preferences
 from runtime_settings import RuntimeSettings
 from preference_delta import PreferenceDelta
-from commands import CommandRegistry, ShortcutConflictError
+from commands import CommandRegistry
 from theme_system import resolve_theme_name
 from micro_signature import modified_geometry_fields
 from state_schema import schema_from_scene
@@ -63,8 +63,8 @@ DEFAULT_PROJECT = None
 
 try:
     import PySide6
-    from PySide6.QtCore import QEvent, QFileSystemWatcher, QPoint, QRect, QSize, QSettings, QSignalBlocker, QThread, Qt, QTimer
-    from PySide6.QtGui import QAction, QColor, QCloseEvent, QIcon, QImage, QKeySequence, QPixmap, QShortcut
+    from PySide6.QtCore import QEvent, QFileSystemWatcher, QPoint, QSize, QSettings, QSignalBlocker, QThread, Qt, QTimer
+    from PySide6.QtGui import QAction, QCloseEvent, QIcon, QKeySequence, QShortcut
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QFormLayout,
         QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -76,9 +76,9 @@ try:
     from qt_canvas import OLEDCanvas
     from qt_widgets import ProfessionalPanel, StatusPill
     from pixel_studio_qt import PixelStudioWindow
-    from preferences_qt import PreferencesView, PreferencesWindow
+    from preferences_qt import PreferencesView
     from font_lab_qt import FontLabEditor
-    from qt_interaction import FocusOriginFilter, set_button_role
+    from qt_interaction import FocusOriginFilter
     from ui_controls import StudioButton, StudioToolButton, StudioSelect, StudioNumericInput, StudioSegmentedControl, StudioStateDot, StudioMarkedLabel, PopupManager
     from automation_qt import QtAutomationBridge
     QPushButton = StudioButton
@@ -528,12 +528,8 @@ if PYSIDE_AVAILABLE:
         def _schedule_canvas_fit(self): QTimer.singleShot(16,self._fit_canvas_zoom)
         def _layout_alignment_actions(self,compact):
             while self.align_grid.count(): self.align_grid.takeAt(0)
-            if compact:
-                placements=(('left',0,0,1,1),('right',0,1,1,1),('center_h',1,0,1,2),('top',2,0,1,1),('bottom',2,1,1,1),('center_v',3,0,1,2))
-                columns=2; row=4
-            else:
-                placements=(('left',0,0,1,1),('right',0,1,1,1),('center_h',1,0,1,2),('top',2,0,1,1),('bottom',2,1,1,1),('center_v',3,0,1,2))
-                columns=2; row=4
+            placements=(('left',0,0,1,1),('right',0,1,1,1),('center_h',1,0,1,2),('top',2,0,1,1),('bottom',2,1,1,1),('center_v',3,0,1,2))
+            columns=2; row=4
             for key,r,c,rs,cs in placements: self.align_grid.addWidget(self.align_buttons[key],r,c,rs,cs)
             for button in (self.distribute_h,self.distribute_v,self.snap_button):
                 self.align_grid.addWidget(button,row,0,1,columns); row+=1

@@ -9,7 +9,7 @@ try:
     from PySide6.QtWidgets import (
         QAbstractSpinBox, QFrame, QHBoxLayout, QLabel, QListWidget,
         QListWidgetItem, QPushButton as _QPushButton, QSpinBox,
-        QToolButton as _QToolButton, QStyledItemDelegate, QStyle, QVBoxLayout, QWidget,
+        QToolButton as _QToolButton, QStyledItemDelegate, QVBoxLayout, QWidget,
     )
     PYSIDE_AVAILABLE = True
 except Exception:  # pragma: no cover - host/core environments may omit Qt

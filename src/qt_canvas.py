@@ -222,7 +222,7 @@ class OLEDCanvas(QWidget):
                     if gap>0:
                         x1=ox+(int(a['x'])+int(a['w']))*z; x2=ox+int(b['x'])*z; yy=oy+min(int(a['y']),int(b['y']))*z+4
                         painter.drawLine(x1,yy,x2,yy); painter.drawText((x1+x2)//2-12,yy-10,24,9,Qt.AlignCenter,f'{gap}px')
-            except Exception:
+            except (KeyError, TypeError, ValueError):
                 pass
 
         # Editor-only zones and smart alignment guides.
