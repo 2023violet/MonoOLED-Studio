@@ -21,7 +21,8 @@ a = Analysis(
     [str(ROOT / 'src' / 'gui.py')],
     pathex=[str(ROOT / 'src')],
     binaries=[], datas=datas, hiddenimports=[], hookspath=[], hooksconfig={},
-    runtime_hooks=[], excludes=['tkinter'], noarchive=False,
+    runtime_hooks=[], excludes=['tkinter','pydoc_data','pydoc','lib2to3','unittest',
+                                'doctest','pdb','venv','ensurepip','distutils','pip'], noarchive=False,
 )
 pyz = PYZ(a.pure)
 exe = EXE(
