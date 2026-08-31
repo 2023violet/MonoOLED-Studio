@@ -31,7 +31,7 @@ jobs:
   windows-x64:
     name: Windows x64 GA and GitHub Release
     runs-on: windows-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     env:
       RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
     steps:
