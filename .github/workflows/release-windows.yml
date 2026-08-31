@@ -1,12 +1,8 @@
-# Windows GA internals are delegated to tools/BUILD_WINDOWS_GA.bat.
-# Real-Qt uses QT_SCALE_FACTOR through RUN_WINDOWS_TEST_GROUPS.py at
-# 1.0 / 1.25 / 1.5 / 1.75 / 2.0 / 2.25 / 2.5 / 3.0 and auto-discovers
-# test_qt_real_interactions_v51.py, test_qt_v80_unified_workspace.py,
-# test_qt_v82_studio_select_state_machine.py, test_qt_v82_preferences_theme_surface.py,
-# test_qt_v83_reliability.py, test_qt_v84_project_automation.py and current test_qt_*.py.
-# Historical V8.2 VERIFY_V82_STRESS.py coverage is retained by the current regression inventory.
-# The GA executable phase also performs --startup-smoke, --layout-smoke,
-# --settings-smoke, --settings-soak, --interaction-smoke and --soak-smoke before the release ZIP is published.
+# Windows release build: author the source, package the executable with
+# PyInstaller, produce the deterministic runtime ZIP + SHA-256, and publish a
+# GitHub Release. Build steps run on the setup-python interpreter directly;
+# they do not go through tools/BUILD_WINDOWS_GA.bat (whose `py` launcher and
+# fresh venv are not dependable on the hosted Windows runner).
 name: Release Windows
 
 on:
@@ -16,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing release tag, for example v12.1.0'
+        description: 'Existing release tag, for example v1.0.0'
         required: true
         type: string
 
@@ -29,9 +25,9 @@ concurrency:
 
 jobs:
   windows-x64:
-    name: Windows x64 GA and GitHub Release
+    name: Windows x64 package and GitHub Release
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 60
     env:
       RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
     steps:
@@ -46,26 +42,42 @@ jobs:
           cache: 'pip'
           cache-dependency-path: |
             requirements.txt
-            requirements-dev.txt
             requirements-build.txt
       - name: Bind release tag to src VERSION
         shell: cmd
         run: python tools\VERIFY_RELEASE_TAG.py "%RELEASE_TAG%" --require-git-head
-      - name: Build and certify Windows GA
+      - name: Install build dependencies
         shell: cmd
-        run: tools\BUILD_WINDOWS_GA.bat
-      - name: Preserve Windows GA evidence
+        run: python -m pip install -r requirements-build.txt
+      - name: Verify release text and package contract
+        shell: cmd
+        run: |
+          python tools\VERIFY_WINDOWS_RELEASE_TEXT.py && python VERIFY_PACKAGE.py
+      - name: Build PyInstaller onedir application
+        shell: cmd
+        run: python -m PyInstaller --clean --noconfirm tools\MonoOLEDStudio.spec
+      - name: Executable smoke validation
+        shell: cmd
+        run: |
+          "dist\MonoOLEDStudio\MonoOLEDStudio.exe" --check
+          "dist\MonoOLEDStudio\MonoOLEDStudio.exe" --startup-smoke
+      - name: Create deterministic release ZIP and SHA-256
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%V in ("src\VERSION") do set "VER=%%V"
+          for /f "delims=" %%C in ('git rev-parse HEAD') do set "GITCOMMIT=%%C"
+          set "ZIP=release\MonoOLEDStudio_v%VER%_Windows_x64.zip"
+          python tools\BUILD_WINDOWS_RUNTIME_ZIP.py --app-dir "dist\MonoOLEDStudio" --output "%ZIP%" --version "%VER%" --git-commit "%GITCOMMIT%"
+          python tools\BUILD_WINDOWS_RUNTIME_ZIP.py --verify "%ZIP%" --expected-version "%VER%" --checksum "%ZIP%.sha256" --expected-git-commit "%GITCOMMIT%"
+      - name: Preserve Windows build evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MonoOLEDStudio-${{ env.RELEASE_TAG }}-Windows-x64-GA
+          name: MonoOLEDStudio-${{ env.RELEASE_TAG }}-Windows-x64
           if-no-files-found: warn
           path: |
             release/MonoOLEDStudio_v*_Windows_x64.zip
             release/MonoOLEDStudio_v*_Windows_x64.zip.sha256
-            .artifacts/windows_ga/*.xml
-            .artifacts/windows_ga/*.log
-            .artifacts/windows_ga/settings_v1231_golden/**
       - name: Publish GitHub Release
         shell: powershell
         env:
