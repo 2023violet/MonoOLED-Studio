@@ -9,9 +9,11 @@ def add_tree(rel: str, dest: str | None = None):
     return [(str(src), dest or rel)] if src.exists() else []
 
 # Runtime-only bundled roots: product scenes/branding/docs; test fixtures are excluded.
+# Frozen code resolves resources as Path(__file__).parent/..., which in an onedir
+# build is the app root, so branding (icons + window icon) must land at the root.
 datas=[]
 datas += add_tree('src/scenes', 'src/scenes')
-datas += add_tree('src/branding', 'src/branding')
+datas += add_tree('src/branding', 'branding')
 datas += add_tree('docs', 'docs')
 for rel in ('src/VERSION','src/AUTOMATION_API_V1.json'):
     p=ROOT/rel
