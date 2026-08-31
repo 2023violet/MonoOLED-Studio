@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/2023violet/MonoOLED-Studio/blob/main/docs/README.md
+    about: Product, API, and design documentation

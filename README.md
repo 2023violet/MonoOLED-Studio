@@ -1,5 +1,7 @@
 # MonoOLED Studio V1.0.0 — Initial Release
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 MonoOLED Studio is a Windows-focused, generic 1-bit OLED scene and pixel authoring workbench.
 
 ## Download for Windows — GitHub Releases
@@ -54,3 +56,7 @@ python tools/BUILD_DELIVERY_V120.py
 | `.github/` | CI and automated GitHub Release workflows |
 
 The root intentionally does not ship a stale `MonoOLEDStudio.exe`. End-user Windows binaries belong in GitHub Releases and are built from the tagged source on a native Windows runner.
+
+## License
+
+[MIT](LICENSE). See [CONTRIBUTING](CONTRIBUTING.md) for contribution guidelines and [SECURITY](SECURITY.md) for reporting vulnerabilities.
