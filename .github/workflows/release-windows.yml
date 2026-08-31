@@ -62,13 +62,14 @@ jobs:
           "dist\MonoOLEDStudio\MonoOLEDStudio.exe" --check
           "dist\MonoOLEDStudio\MonoOLEDStudio.exe" --startup-smoke
       - name: Create deterministic release ZIP and SHA-256
-        shell: cmd
+        shell: powershell
         run: |
-          for /f "usebackq delims=" %%V in ("src\VERSION") do set "VER=%%V"
-          for /f "delims=" %%C in ('git rev-parse HEAD') do set "GITCOMMIT=%%C"
-          set "ZIP=release\MonoOLEDStudio_v%VER%_Windows_x64.zip"
-          python tools\BUILD_WINDOWS_RUNTIME_ZIP.py --app-dir "dist\MonoOLEDStudio" --output "%ZIP%" --version "%VER%" --git-commit "%GITCOMMIT%"
-          python tools\BUILD_WINDOWS_RUNTIME_ZIP.py --verify "%ZIP%" --expected-version "%VER%" --checksum "%ZIP%.sha256" --expected-git-commit "%GITCOMMIT%"
+          $ver = (Get-Content 'src\VERSION' -Raw).Trim()
+          $gitCommit = (git rev-parse HEAD).Trim()
+          $zip = "release\MonoOLEDStudio_v${ver}_Windows_x64.zip"
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          python tools\BUILD_WINDOWS_RUNTIME_ZIP.py --app-dir "dist\MonoOLEDStudio" --output $zip --version $ver --git-commit $gitCommit
+          python tools\BUILD_WINDOWS_RUNTIME_ZIP.py --verify $zip --expected-version $ver --checksum "$zip.sha256" --expected-git-commit $gitCommit
       - name: Preserve Windows build evidence
         if: always()
         uses: actions/upload-artifact@v4
