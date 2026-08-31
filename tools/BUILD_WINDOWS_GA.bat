@@ -20,20 +20,20 @@ echo ============================================================
 echo  MonoOLED Studio V%VER% - Windows Release Gradable Build
 echo ============================================================
 
-set "PY_CMD=py -3.13"
-%PY_CMD% -c "import sys; assert sys.version_info >= (3,13)" >nul 2>&1
+rem Resolve a usable interpreter (3.10+). Prefer `python` on PATH (provided by
+rem actions/setup-python on CI and by a Python install locally); this avoids
+rem relying on a `py` launcher that may be absent or mis-versioned.
+set "PY_CMD=python"
+python -c "import sys; assert sys.version_info >= (3,10)" >nul 2>&1
+if not errorlevel 1 goto :interp_ok
+where py >nul 2>&1
+if not errorlevel 1 set "PY_CMD=py -3"
+%PY_CMD% -c "import sys; assert sys.version_info >= (3,10)" >nul 2>&1
 if errorlevel 1 (
-  set "PY_CMD=py -3"
-  %PY_CMD% -c "import sys; assert sys.version_info >= (3,10)" >nul 2>&1
-  if errorlevel 1 (
-    set "PY_CMD=python"
-    %PY_CMD% -c "import sys; assert sys.version_info >= (3,10)" >nul 2>&1
-    if errorlevel 1 (
-      echo [FAIL] Python 3.10+ not found. Python 3.13 x64 is recommended.
-      exit /b 2
-    )
-  )
+  echo [FAIL] Python 3.10+ not found. Python 3.13 x64 is recommended.
+  exit /b 2
 )
+:interp_ok
 
 if not exist ".venv-build\Scripts\python.exe" (
   echo [1/6] Creating isolated build environment...
