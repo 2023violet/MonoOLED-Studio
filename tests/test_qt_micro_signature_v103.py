@@ -35,7 +35,9 @@ def _distance(a, b):
 
 def _pixel(widget, x, y):
     image = widget.grab().toImage().convertToFormat(QImage.Format_RGBA8888)
-    return image.pixelColor(int(x), int(y))
+    px = min(image.width() - 1, max(0, int((float(x) + 0.5) * image.width() / widget.width())))
+    py = min(image.height() - 1, max(0, int((float(y) + 0.5) * image.height() / widget.height())))
+    return image.pixelColor(px, py)
 
 
 def _prepare(app):
@@ -95,7 +97,6 @@ def test_studio_select_current_row_has_right_side_accent_dot(qtbot):
     qtbot.addWidget(combo); combo.show(); qtbot.waitExposed(combo); combo.showPopup(); app.processEvents()
     rect=combo.list.visualItemRect(combo.list.item(1)); assert rect.isValid()
     accent=combo.palette().highlight().color(); x=rect.right()-12; y=rect.center().y()
-    image=combo.list.viewport().grab().toImage().convertToFormat(QImage.Format_RGBA8888)
-    sample=image.pixelColor(max(0,x),max(0,y))
+    sample=_pixel(combo.list.viewport(), x, y)
     assert _distance(sample,accent)<=64
     combo.hidePopup()
