@@ -40,4 +40,4 @@ def test_current_root_readme_and_about_surface_use_v100_identity():
     assert readme.startswith(f'# MonoOLED Studio V{VERSION} — Maintenance Release')
     assert f'MonoOLEDStudio_v{VERSION}_Windows_x64.zip' in readme
     prefs = (SRC / 'preferences_qt.py').read_text(encoding='utf-8')
-    assert prefs.count('Maintenance Release') >= 2
+    assert prefs.count('Initial Release') >= 2
