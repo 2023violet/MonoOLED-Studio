@@ -768,6 +768,10 @@ if PYSIDE_AVAILABLE:
                     try:self._preferences_window.apply_runtime_settings(runtime)
                     except RuntimeError:self._preferences_window=None
                 self._schedule_responsive()
+                # Apply the first responsive pass synchronously so callers that
+                # switch metrics and immediately inspect layout state cannot see
+                # stale scroll-content widths before the queued timer fires.
+                self._responsive_tick()
 
             # Language is independent from renderer/theme. Never refresh product truth here.
             if initial or delta.language_changed:
