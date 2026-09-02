@@ -20,7 +20,7 @@ def test_v841_release_identity_and_documents():
     assert str(manifest['automation_api']['version']).startswith('1.')
     assert (SIM / 'AUTOMATION_API_V1.json').is_file()
     assert (ROOT / 'docs' / 'AUTOMATION_API_V1.md').is_file()
-    assert (ROOT / 'docs' / 'V12_GENERIC_PRODUCT_CLOSURE.md').is_file()
+    assert (ROOT / 'docs' / 'ENGINEERING_HISTORY.md').is_file()
 
 def test_v841_machine_contract_matches_production_and_has_state_model_methods():
     assert AUTOMATION_API_VERSION.startswith('1.')

@@ -120,6 +120,18 @@ def test_template_save_failure_rolls_back_in_memory_state(tmp_path, monkeypatch)
     assert lib.names() == ['existing']
 
 
+def test_template_programming_failure_is_not_treated_as_persistence_failure(tmp_path, monkeypatch):
+    lib = TemplateLibrary(tmp_path / 'templates.json')
+
+    def fail_save():
+        raise RuntimeError('programming failure')
+
+    monkeypatch.setattr(lib, 'save', fail_save)
+    with pytest.raises(RuntimeError, match='programming failure'):
+        lib.save_template('new', [{'id': 'b', 'type': 'text', 'text': 'B', 'x': 1, 'y': 1}])
+    assert lib.names() == ['new']
+
+
 def test_font_generator_removes_stale_managed_glyphs_on_success(tmp_path):
     out = tmp_path / 'glyphs'
     generate_glyphs('AB', output_dir=out, cell=(12, 16))

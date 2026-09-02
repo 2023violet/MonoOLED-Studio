@@ -341,16 +341,19 @@ class EditorSession:
         if snapshot is not None:
             index = max(0, min(command.index, len(elements)))
             elements.insert(index, deepcopy(snapshot))
+        self.document.refresh_elements()
         self.document.dirty = True
 
     def _restore_batch(self, snapshot: tuple[dict, ...]) -> None:
         self.scene['elements'] = [deepcopy(item) for item in snapshot]
+        self.document.refresh_elements()
         self.document.dirty = True
 
     def _restore_scene(self, snapshot: dict) -> None:
         self.scene.clear()
         self.scene.update(deepcopy(snapshot))
         self.document.scene = self.scene
+        self.document.refresh_elements()
         self.runtime.scene = self.scene
         self.runtime.reset()
         self.resources = RenderResources()
@@ -410,6 +413,7 @@ class EditorSession:
         """
         before=tuple(deepcopy(list(before_elements))); after=tuple(deepcopy(self.scene.get('elements',[])))
         if before==after:return False
+        self.document.refresh_elements()
         self._push_undo(_BatchCommand(str(label),before,after)); self._redo.clear(); self.document.dirty=True; self._coalesce_open=False
         if self.logger is not None:self.logger.log('HISTORY_PUSH',batch=str(label),source='external')
         return True
@@ -425,6 +429,7 @@ class EditorSession:
         after = deepcopy(dict(self.scene))
         if before == after:
             return False
+        self.document.refresh_elements()
         self._push_undo(_SceneCommand(str(label), before, after))
         self._redo.clear()
         self.document.dirty = True
@@ -462,6 +467,7 @@ class EditorSession:
         elements = self.scene.setdefault('elements', [])
         index = len(elements)
         elements.append(deepcopy(element))
+        self.document.refresh_elements()
         self.document.dirty = True
         self._push_undo(_ElementCommand(element_id, index, None, deepcopy(element)))
         self._redo.clear()
@@ -475,6 +481,7 @@ class EditorSession:
             if item.get('id') == element_id:
                 before = deepcopy(item)
                 elements.pop(index)
+                self.document.refresh_elements()
                 self.document.dirty = True
                 self._push_undo(_ElementCommand(element_id, index, before, None))
                 self._redo.clear()
@@ -527,6 +534,7 @@ class EditorSession:
             after.setdefault('blend', 'or')
             after.setdefault('resize_policy', 'native_only')
             elements[index] = deepcopy(after)
+            self.document.refresh_elements()
             self.document.dirty = True
             self._push_undo(_ElementCommand(element_id, index, before, deepcopy(after)))
             self._redo.clear()
@@ -546,6 +554,7 @@ class EditorSession:
         after = tuple(deepcopy(elements))
         if before == after:
             return
+        self.document.refresh_elements()
         self.document.dirty = True
         self._push_undo(_BatchCommand(label, before, after))
         self._redo.clear()

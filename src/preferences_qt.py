@@ -54,7 +54,7 @@ _TEXT = {
         'label.drag_preview': '拖拽预览', 'label.validation': '校验时机', 'label.undo': '撤销历史', 'label.cache': '资产缓存（MB）', 'check.overlay': '显示性能信息',
         'button.clear_cache': '清除资产缓存', 'button.reset_workspace': '重置工作区布局', 'button.reset_all': '重置全部偏好设置',
         'label.cache_action': '缓存', 'label.workspace_action': '工作区', 'label.danger': '重置全部设置',
-        'label.build': '构建', 'about': f'MonoOLED Studio\nVersion {APP_VERSION}\nInitial Release',
+        'label.build': '构建', 'about': f'MonoOLED Studio\nVersion {APP_VERSION}\nMaintenance Release',
         'shortcut.preferences.open': '打开设置', 'shortcut.workspace.canvas_only': '仅画布模式',
         'shortcut.project.save': '保存项目', 'shortcut.designer.undo': '撤销', 'shortcut.designer.redo': '重做',
         'shortcut.pixel.pencil': 'Pixel 铅笔', 'shortcut.pixel.select': 'Pixel 选择', 'shortcut.pixel.fill': 'Pixel 填充',
@@ -114,7 +114,7 @@ _TEXT = {
         'label.drag_preview': 'Drag preview', 'label.validation': 'Validation', 'label.undo': 'Undo history', 'label.cache': 'Asset cache (MB)', 'check.overlay': 'Performance overlay',
         'button.clear_cache': 'Clear asset cache', 'button.reset_workspace': 'Reset workspace layout', 'button.reset_all': 'Reset all preferences',
         'label.cache_action': 'Cache', 'label.workspace_action': 'Workspace', 'label.danger': 'Reset all settings',
-        'label.build': 'Build', 'about': f'MonoOLED Studio\nVersion {APP_VERSION}\nInitial Release',
+        'label.build': 'Build', 'about': f'MonoOLED Studio\nVersion {APP_VERSION}\nMaintenance Release',
         'shortcut.preferences.open': 'Open Settings', 'shortcut.workspace.canvas_only': 'Canvas Only',
         'shortcut.project.save': 'Save project', 'shortcut.designer.undo': 'Undo', 'shortcut.designer.redo': 'Redo',
         'shortcut.pixel.pencil': 'Pixel Pencil', 'shortcut.pixel.select': 'Pixel Select', 'shortcut.pixel.fill': 'Pixel Fill',
@@ -145,6 +145,15 @@ _TEXT = {
         'help.maintenance': 'Clearing cache does not delete project assets; resetting layout restores panel geometry only.',
         'help.reset_all': 'Restores every preference to defaults immediately and requires personal options to be configured again.',
     },
+}
+
+# Search accepts common product wording in addition to the visible localized copy.
+# These terms are deliberately keyed to a setting row so results still focus the
+# relevant control rather than merely opening a broad category.
+_SEARCH_ALIASES = {
+    'label.ui_scale': ('interface scale', '界面比例'),
+    'label.danger': ('reset all preferences', '重置所有偏好'),
+    'button.reset_all': ('reset all preferences', '重置所有偏好'),
 }
 
 
@@ -595,6 +604,7 @@ class PreferencesView(QWidget):
         for lang in ('zh_CN','en_US'):
             if key: aliases.append(_TEXT[lang].get(key,''))
             if help_key: aliases.append(_TEXT[lang].get(help_key,''))
+        aliases.extend(_SEARCH_ALIASES.get(key, ()))
         self._search_aliases_by_row[row]=' '.join(x for x in aliases if x).casefold()
         self._sync_row_accessibility(row)
         return row

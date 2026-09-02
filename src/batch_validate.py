@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 from validate import Finding, validate_scene
+from resource_cache import RenderResources
 from state_schema import schema_from_scene, validate_state
 from atomic_io import atomic_write_text
 
@@ -76,9 +77,10 @@ def case_name(index: int, state: dict) -> str:
 def validate_matrix(scene:dict,matrix:list[dict],*,progress=None,cancel=None)->MatrixValidationSummary:
     rows=[]; total=0; blockers=0
     count=len(matrix)
+    resources=RenderResources()
     for index,state in enumerate(matrix):
         if callable(cancel) and cancel(): raise RuntimeError('operation cancelled')
-        findings=tuple(validate_scene(scene,dict(state)))
+        findings=tuple(validate_scene(scene,dict(state),resources=resources))
         total+=len(findings); blockers+=sum(1 for f in findings if f.severity in {'ERROR','BLOCKER'})
         rows.append((case_name(index, state),findings))
         if callable(progress): progress('validation',index+1,count)

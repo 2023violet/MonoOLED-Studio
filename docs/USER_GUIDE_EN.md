@@ -1,27 +1,41 @@
-# MonoOLED Studio 8.0 User Guide
+# MonoOLED Studio 1.0.1 User Guide
 
-MonoOLED Studio 8.0 uses one main-window document workspace. Scene Designer, Pixel assets and Font Lab open as reusable tabs. Save/Undo/Redo are routed to the active editor.
+MonoOLED Studio is a Windows-focused workbench for designing generic 1-bit OLED scenes, pixel assets, and FontPack glyphs. The default project is generic; product-specific assets remain in test fixtures.
 
-Designer supports ordered multi-selection, Ctrl+left-click toggle, marquee selection, explicit Primary Selection and Align-to Selection/Primary/Canvas.
+## First Run
 
-Pixel Workspace keeps left-draw/right-erase, adds Fit zoom, anchored canvas resize, crop, 90/180/270 rotation, flips and exact FontPack text insertion.
+1. Start `MonoOLEDStudio.exe` from the Windows release, or run `python src/gui.py` during development.
+2. Open or create a project and choose a scene from the project navigator.
+3. Use `Ctrl+S` to save. The active document tab owns Save, Undo, and Redo.
 
-Font Lab stores durable FontPack/GlyphPack assets with cell size, baseline, advance and exact glyph pixels. `bitmap_text` Scene elements use the same FontPack truth.
+The main window keeps Scene Designer, Pixel Studio, and Font Lab in one tabbed workspace. Reopening an asset reuses its existing tab.
 
-The optional localhost Code AI bridge is semantic rather than coordinate-driven. It uses a session token, permission levels, revision guards and transactions, and can return rendered PNG/VLSB/framebuffer hashes/resolved geometry/validation evidence.
+## Scene Designer
 
+Click an element to select it. Use Ctrl-click to add or remove elements, or drag across empty canvas space for marquee selection. The last selected item is the primary selection. Alignment and distribution can target the selection, primary element, or canvas; the Inspector reports bounds and measurements for the current selection.
 
-## V8.4.2 Code AI data safety and long operations
+Use the scene list to add, duplicate, rename, or remove screens. Opening another screen prompts before discarding unsaved work. Export and handoff commands are available from the project actions.
 
-Automation API 1.2 separates transaction commit from disk persistence. After an Agent commits an in-memory Scene transaction, `project.get.dirty` stays true until the Scene is saved. `project.open_screen` fails closed with `UNSAVED_CHANGES` unless the caller explicitly chooses `save_current=true` or `discard_current=true`.
+## Pixel Studio
 
-For large state matrices, call `state.count` first. Use summary responses when per-frame metadata is unnecessary, or run `render.all_states`, `validate.all_states`, `export.all`, and `export.code_ai_handoff` through `job.start/status/result/cancel` for server-owned progress and cooperative cancellation.
+Pixel Studio edits 1-bit assets in an embedded tab. Left-drag paints and right-drag erases. Fit zoom, middle-button panning, anchored resize, crop, rotate, flip, and one-step undo/redo are available. Imported non-PNG files are saved as a new PNG so the source file is never overwritten.
 
-## V8.4.3 Windows release validation
+## Font Lab
 
-V8.4.3 adds no Designer or Automation feature surface. It makes the Windows GA path reproducible: delivered `.bat/.cmd` files are CRLF-only, source tests run in bounded groups, and each `test_qt_*.py` module runs in its own timed process at 100–300% DPI with JUnit/log evidence and zero-skip enforcement. Native Windows GA still requires the delivered `tools\BUILD_WINDOWS_GA.bat` to complete on Windows.
+FontPack assets live inside the project, normally under `.oled/fonts/`. A pack stores cell size, baseline, advance, characters, and glyph pixels. Generate glyphs from a TTF/OTF when needed, then inspect or edit individual glyphs. Scene `bitmap_text` elements use the same FontPack data used by Font Lab.
 
+## Automation API
 
-## V12.3 Windows distribution
+The optional localhost Code AI bridge exposes semantic JSON-RPC 2.0 commands. Start with `automation.capabilities`, then inspect the project and scene contracts. Use revision guards for edits and transactions for a group of scene changes. A committed transaction changes memory first; call `project.save` or `project.save_all` to persist it.
 
-End users download `MonoOLEDStudio_v1.0.0_Windows_x64.zip` from GitHub Releases, extract it, and double-click `MonoOLEDStudio\MonoOLEDStudio.exe`. End users do not need Python or BAT files. Developers use `tools\BUILD_WINDOWS_QUICK.bat` for a fast local EXE; the full `tools\BUILD_WINDOWS_GA.bat` is reserved for native Windows certification and the tag-driven GitHub Release workflow.
+Long operations use `job.start`, `job.status`, `job.result`, `job.cancel`, and `job.release`. Rendering can return PNG, VLSB bytes, framebuffer hashes, resolved geometry, and pixel diffs. The complete contract is in `AUTOMATION_API_V1.md`.
+
+## Export and Validation
+
+Use `python src/validate.py <scene>` for a direct scene check, `python src/exporter.py <scene> <output>` for a scene export, and `python src/batch_validate.py` for a state matrix. The GUI and Automation API expose the same renderer and validation logic.
+
+## Windows Distribution
+
+End users download `MonoOLEDStudio_v1.0.1_Windows_x64.zip`, extract it, and run `MonoOLEDStudio\MonoOLEDStudio.exe`. Python is not required. Developers can use `tools\BUILD_WINDOWS_QUICK.bat`; native release certification uses `tools\BUILD_WINDOWS_GA.bat` and the Real-Qt test groups.
+
+Runtime data such as logs, autosaves, previews, and asset caches is kept under `.oled/` and is excluded from source delivery packages.

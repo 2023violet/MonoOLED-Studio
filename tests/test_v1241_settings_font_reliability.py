@@ -197,5 +197,5 @@ def test_v1241_font_reliability_contract_remains_part_of_current_release():
     assert manifest['release_version'] == version
     assert manifest['font_pipeline'].endswith('v1241')
     verifier = (ROOT / 'VERIFY_PACKAGE.py').read_text(encoding='utf-8')
-    assert 'EXPECTED_PRODUCTION_MODULES=77' in verifier
-    assert "'V12_4_1_SETTINGS_FONT_RELIABILITY.md'" in verifier
+    assert 'EXPECTED_PRODUCTION_MODULES' not in verifier
+    assert "'ENGINEERING_HISTORY.md'" in verifier

@@ -8,8 +8,8 @@ from typing import Mapping
 
 from PIL import Image
 
-from assets import load_bitmap
 from render import RenderResult, render_scene
+from resource_cache import RenderResources
 from scene import ROOT, scene_root
 from validate import Finding, has_blockers, validate_scene
 from atomic_io import atomic_write_bytes, atomic_write_json, atomic_write_text
@@ -85,11 +85,8 @@ def _write_json(path: Path, data) -> None:
 
 
 def _save_png(result: RenderResult, path: Path) -> None:
-    image = Image.new("1", (result.framebuffer.width, result.framebuffer.height), 0)
-    for y, row in enumerate(result.framebuffer.to_rows()):
-        for x, value in enumerate(row):
-            if value:
-                image.putpixel((x, y), 255)
+    pixels = bytes(255 if value else 0 for row in result.framebuffer.to_rows() for value in row)
+    image = Image.frombytes("L", (result.framebuffer.width, result.framebuffer.height), pixels).convert("1")
     buf=BytesIO(); image.save(buf, format="PNG", optimize=False); atomic_write_bytes(path,buf.getvalue())
 
 
@@ -110,7 +107,7 @@ def _visible_element_contract(item: dict, project_root: Path) -> dict:
     return out
 
 
-def _asset_entry(path: Path, project_root: Path) -> dict:
+def _asset_entry(path: Path, project_root: Path, resources: RenderResources) -> dict:
     raw = path.read_bytes()
     entry = {
         "path": _relative(path, project_root),
@@ -118,7 +115,7 @@ def _asset_entry(path: Path, project_root: Path) -> dict:
         "bytes": len(raw),
     }
     if path.suffix.lower() in {".png", ".bmp", ".jpg", ".jpeg"}:
-        asset = load_bitmap(path)
+        asset = resources.bitmap(path)
         entry.update({
             "kind": "bitmap",
             "width": asset.width,
@@ -217,12 +214,13 @@ def export_scene(scene: dict, output_dir: str | Path, states: Mapping[str, dict]
     golden_dir.mkdir(parents=True, exist_ok=True)
 
     all_findings: dict[str, tuple[Finding, ...]] = {}
+    resources = RenderResources()
     state_items = list(states.items())
     total_steps = max(1, len(state_items) * 2)
     for index, (name, state) in enumerate(state_items):
         if callable(cancel) and cancel():
             raise RuntimeError('operation cancelled')
-        findings = tuple(validate_scene(scene, dict(state)))
+        findings = tuple(validate_scene(scene, dict(state), resources=resources))
         all_findings[name] = findings
         if callable(progress):
             progress('export.validation', index + 1, total_steps)
@@ -243,7 +241,7 @@ def export_scene(scene: dict, output_dir: str | Path, states: Mapping[str, dict]
             raise RuntimeError('operation cancelled')
         safe_name=frame_names[name]
         state = dict(states[name])
-        result = render_scene(scene, state)
+        result = render_scene(scene, state, resources=resources)
         raw = result.framebuffer.to_vlsb()
         if len(raw) != expected_bytes:
             raise ExportBlockedError(f"{name}: framebuffer length {len(raw)} != {expected_bytes}")
@@ -290,7 +288,7 @@ def export_scene(scene: dict, output_dir: str | Path, states: Mapping[str, dict]
     }
     _write_json(output_dir / "ui_contract.json", contract)
 
-    manifest = {"schema_version": 1, "assets": [_asset_entry(p, project_root) for p in sorted(used_files, key=lambda p: _relative(p, project_root))]}
+    manifest = {"schema_version": 1, "assets": [_asset_entry(p, project_root, resources) for p in sorted(used_files, key=lambda p: _relative(p, project_root))]}
     _write_json(output_dir / "asset_manifest.json", manifest)
 
     atomic_write_text(output_dir / "UI_SPEC.md", _markdown_spec(scene, frame_contracts))

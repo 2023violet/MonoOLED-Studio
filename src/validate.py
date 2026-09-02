@@ -5,9 +5,9 @@ from pathlib import Path
 import itertools
 import re
 
-from assets import AssetFormatError, load_bitmap, load_mode_font
-from font_pack import FontPack
+from assets import AssetFormatError
 from render import render_scene
+from resource_cache import RenderResources
 from scene import init_state, resolve, subst
 
 
@@ -68,13 +68,13 @@ def _enum_template_paths(template: str, scene: dict, state: dict, lower: bool) -
     return paths
 
 
-def _validate_bitmap_path(findings: list[Finding], path: Path, element: dict, expected_w=None, expected_h=None) -> None:
+def _validate_bitmap_path(findings: list[Finding], path: Path, element: dict, resources: RenderResources, expected_w=None, expected_h=None) -> None:
     eid = element["id"]
     if not path.exists():
         _add(findings, "BLOCKER", "ASSET_NOT_FOUND", f"{eid}: {path}", eid)
         return
     try:
-        asset = load_bitmap(path)
+        asset = resources.bitmap(path)
     except (AssetFormatError, OSError, ValueError) as exc:
         _add(findings, "BLOCKER", "NON_BINARY_ASSET", f"{eid}: {exc}", eid)
         return
@@ -89,9 +89,10 @@ def _validate_bitmap_path(findings: list[Finding], path: Path, element: dict, ex
             )
 
 
-def validate_scene(scene: dict, state: dict | None = None) -> list[Finding]:
+def validate_scene(scene: dict, state: dict | None = None, *, resources: RenderResources | None = None) -> list[Finding]:
     findings: list[Finding] = []
     state = dict(init_state(scene) if state is None else state)
+    resources = resources or RenderResources()
 
     canvas = scene.get("canvas", {})
     cw, ch = canvas.get("w"), canvas.get("h")
@@ -155,7 +156,7 @@ def validate_scene(scene: dict, state: dict | None = None) -> list[Finding]:
         try:
             if kind == "image":
                 for path in _enum_template_paths(element["asset"], scene, state, bool(element.get("var_lower"))):
-                    _validate_bitmap_path(findings, path, element, element.get("w"), element.get("h"))
+                    _validate_bitmap_path(findings, path, element, resources, element.get("w"), element.get("h"))
             elif kind == "image_seq":
                 count = int(element.get("count", 0))
                 if count <= 0:
@@ -163,19 +164,19 @@ def validate_scene(scene: dict, state: dict | None = None) -> list[Finding]:
                 for n in range(max(0, count)):
                     filename = element["pattern"].replace("{n}", str(n))
                     path = (resolve(element["dir"], scene=scene) / filename).resolve()
-                    _validate_bitmap_path(findings, path, element, element.get("w"), element.get("h"))
+                    _validate_bitmap_path(findings, path, element, resources, element.get("w"), element.get("h"))
             elif kind == "digits":
                 for d in "0123456789":
                     filename = element["pattern"].replace("{d}", d)
                     path = (resolve(element["dir"], scene=scene) / filename).resolve()
-                    _validate_bitmap_path(findings, path, element, element.get("digit_w"), element.get("digit_h"))
+                    _validate_bitmap_path(findings, path, element, resources, element.get("digit_w"), element.get("digit_h"))
             elif kind == "text":
                 header = resolve(element["font_header"], scene=scene).resolve()
                 if not header.exists():
                     _add(findings, "BLOCKER", "ASSET_NOT_FOUND", f"{eid}: {header}", eid)
                 else:
                     try:
-                        load_mode_font(header)
+                        resources.mode_font(header)
                     except (AssetFormatError, OSError, ValueError) as exc:
                         _add(findings, "BLOCKER", "FONT_INVALID", f"{eid}: {exc}", eid)
             elif kind == "bitmap_text":
@@ -184,7 +185,7 @@ def validate_scene(scene: dict, state: dict | None = None) -> list[Finding]:
                     _add(findings,"BLOCKER","ASSET_NOT_FOUND",f"{eid}: {root}/fontpack.json",eid)
                 else:
                     try:
-                        pack=FontPack.load(root); text=subst(str(element.get("text","")),state)
+                        pack=resources.font_pack(root); text=subst(str(element.get("text","")),state)
                         missing=[ch for ch in text if ch not in pack.characters()]
                         if missing:_add(findings,"BLOCKER","FONT_MISSING_GLYPH",f"{eid}: missing {missing!r}",eid)
                     except Exception as exc:_add(findings,"BLOCKER","FONT_INVALID",f"{eid}: {exc}",eid)
@@ -193,7 +194,7 @@ def validate_scene(scene: dict, state: dict | None = None) -> list[Finding]:
 
     # Rendering current state catches dynamic geometry/template issues not covered statically.
     try:
-        result = render_scene(scene, state)
+        result = render_scene(scene, state, resources=resources)
         expected_bytes = cw * (ch // 8) if ch % 8 == 0 else None
         if expected_bytes is not None and len(result.framebuffer.to_vlsb()) != expected_bytes:
             _add(findings, "BLOCKER", "FRAMEBUFFER_SIZE", f"rendered framebuffer is not {expected_bytes} bytes")

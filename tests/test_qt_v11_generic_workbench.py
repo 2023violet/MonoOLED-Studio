@@ -29,6 +29,8 @@ def test_preview_sections_follow_scene_capabilities(qtbot, tmp_path, monkeypatch
     window.resize(1440, 900)
     window.show()
     qtbot.wait(20)
+    window.inspector_tabs.setCurrentIndex(1)
+    QApplication.processEvents()
     base = deepcopy(window.scene)
 
     static_scene = deepcopy(base)
@@ -53,7 +55,10 @@ def test_preview_sections_follow_scene_capabilities(qtbot, tmp_path, monkeypatch
     timeline_scene = deepcopy(base)
     timeline_scene.setdefault('states', {})
     timeline_scene['timeline'] = [{'at': 2, 'set': {}}]
-    timeline_scene['preview'] = {'timeline': {'step': 2, 'unit': 'tick', 'label': 'Step'}}
+    timeline_scene['preview'] = {
+        'capabilities': ['timeline'],
+        'timeline': {'step': 2, 'unit': 'tick', 'label': 'Step'},
+    }
     window._reset_session(timeline_scene)
     QApplication.processEvents()
     assert 'timeline' in window.preview_capabilities

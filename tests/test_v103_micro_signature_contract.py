@@ -96,5 +96,4 @@ def test_v103_delivery_contract_is_published_and_enforced():
     assert not (repo / 'docs' / 'releases').exists()
     builder = (repo / 'tools' / 'BUILD_WINDOWS_GA.bat').read_text(encoding='utf-8')
     assert 'VERIFY_MICRO_SIGNATURE_V103.py' in builder
-    assert (repo / 'docs' / 'V12_GENERIC_PRODUCT_CLOSURE.md').is_file()
-
+    assert (repo / 'docs' / 'ENGINEERING_HISTORY.md').is_file()

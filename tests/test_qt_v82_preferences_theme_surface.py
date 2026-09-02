@@ -33,7 +33,11 @@ def test_one_dark_preferences_content_page_is_dark_not_white(qtbot,tmp_path):
 
 def test_all_preferences_selects_follow_anchor_toggle_contract(qtbot,tmp_path):
     w=PreferencesWindow(_store(tmp_path),Translator('zh_CN')); qtbot.addWidget(w); w.show(); qtbot.wait(20)
-    selects=w.findChildren(StudioSelect); assert len(selects)>=10
+    selects=w.findChildren(StudioSelect)
+    assert set(selects)=={
+        w.language,w.theme_mode,w.density,w.ui_scale,w.wheel,w.middle,w.snap,
+        w.validation,w.drag_preview,
+    }
     for combo in selects:
         if combo.count()==0: continue
         combo.showPopup(); qtbot.wait(1); assert combo.popup.isVisible()

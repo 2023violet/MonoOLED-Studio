@@ -35,12 +35,13 @@ def test_main_close_flushes_embedded_preferences_view() -> None:
     assert body.index('self._preferences_view.flush_pending_save()') > body.index('QMessageBox.Cancel')
 
 
-def test_theme_refresh_signature_includes_theme_and_forces_qss_reparse() -> None:
+def test_theme_refresh_signature_tracks_metrics_without_theme_qss_reparse() -> None:
     body = _function_body(GUI, '_apply_application_theme')
-    assert "signature = f'{theme}:{density}:{ui_scale}'" in body
+    assert "signature = f'{density}:{ui_scale}'" in body
     assert "app.setStyleSheet('')" not in body
     assert 'app.setStyleSheet(build_adaptive_stylesheet(density, ui_scale=ui_scale))' in body
     assert body.count('app.setStyleSheet(build_adaptive_stylesheet') == 1
+    assert 'app.setPalette(palette)' in body
 
 
 def test_preferences_removes_inert_color_theme_control() -> None:

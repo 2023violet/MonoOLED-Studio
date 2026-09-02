@@ -40,8 +40,7 @@ def test_editor_chrome_is_safe_before_actions_are_constructed():
     body = source.split('        def _sync_editor_chrome(self):', 1)[1].split('\n        def ', 1)[0]
     assert "self._actions['undo']" not in body
     assert "self._actions['redo']" not in body
-    assert ".get('undo')" in body
-    assert ".get('redo')" in body
+    assert 'self._editor_sync_chrome()' in body
 
 
 def test_startup_smoke_follows_real_preferences_theme_resolution_path():

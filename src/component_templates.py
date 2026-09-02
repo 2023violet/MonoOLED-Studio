@@ -46,7 +46,7 @@ class TemplateLibrary:
         self.data.setdefault('templates',{})[name]=deepcopy(elements)
         try:
             self.save()
-        except Exception:
+        except OSError:
             self.data=before
             raise
 

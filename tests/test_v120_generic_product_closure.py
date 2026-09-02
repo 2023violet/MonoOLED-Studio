@@ -54,11 +54,11 @@ def test_preferences_content_is_centered_and_responsive_to_760px():
     assert 'setMaximumWidth(720)' not in prefs
 
 
-def test_builder_spec_and_v12_gate_follow_current_source_layout():
+def test_builder_spec_and_current_gate_follow_current_source_layout():
     builder = (TOOLS / 'BUILD_WINDOWS_GA.bat').read_text(encoding='utf-8')
     spec = (TOOLS / 'MonoOLEDStudio.spec').read_text(encoding='utf-8')
     gate = TOOLS / 'VERIFY_V120_GENERIC_PRODUCT_CLOSURE.py'
-    delivery = TOOLS / 'BUILD_DELIVERY_V120.py'
+    delivery = TOOLS / 'BUILD_SOURCE_DELIVERY.py'
     for marker in ('requirements-build.txt', 'requirements-dev.txt', 'tests', 'src\\gui.py', 'VERIFY_V120_GENERIC_PRODUCT_CLOSURE.py', 'BUILD_WINDOWS_RUNTIME_ZIP.py'):
         assert marker in builder
     assert "ROOT / 'src' / 'gui.py'" in spec
@@ -76,14 +76,14 @@ def test_v12_docs_are_current_only_without_transition_archives():
     assert not (docs / 'design').exists()
     assert not (docs / 'superpowers').exists()
     names = {p.name for p in docs.iterdir() if p.is_file()}
-    required = {'README.md', 'USER_GUIDE_CN.md', 'USER_GUIDE_EN.md', 'SCENE_SCHEMA.md', 'AUTOMATION_API_V1.md', 'DESIGN_SYSTEM.md', 'V12_GENERIC_PRODUCT_CLOSURE.md'}
+    required = {'README.md', 'USER_GUIDE_CN.md', 'USER_GUIDE_EN.md', 'SCENE_SCHEMA.md', 'AUTOMATION_API_V1.md', 'DESIGN_SYSTEM.md', 'ENGINEERING_HISTORY.md', 'WINDOWS_BUILD.md'}
     assert required <= names
 
 
 def test_v12_package_contract_rejects_obsolete_root_launcher():
     assert not (REPO / 'MonoOLEDStudio.exe').exists()
     verifier = (REPO / 'VERIFY_PACKAGE.py').read_text(encoding='utf-8')
-    assert 'V12' in verifier
+    assert 'CURRENT_DOCS' in verifier
     assert 'MonoOLEDStudio.exe' in verifier and 'obsolete' in verifier.lower()
     assert "ROOT / 'src'" in verifier
     assert "ROOT / 'tests'" in verifier

@@ -9,7 +9,9 @@ SIM = Path(__file__).resolve().parents[1] / 'src'
 sys.path.insert(0, str(SIM))
 
 from scene import load_scene, init_state
-from exporter import export_scene
+from exporter import _save_png, export_scene
+from framebuffer import FrameBuffer
+from render import RenderResult
 
 
 def test_export_scene_emits_contract_golden_preview_manifest_and_reports(tmp_path):
@@ -65,3 +67,50 @@ def test_export_is_deterministic_for_same_input(tmp_path):
     assert a.frame_hashes == b.frame_hashes
     assert (tmp_path / 'a' / 'ui_contract.json').read_bytes() == (tmp_path / 'b' / 'ui_contract.json').read_bytes()
     assert (tmp_path / 'a' / 'UI_SPEC.md').read_bytes() == (tmp_path / 'b' / 'UI_SPEC.md').read_bytes()
+
+
+def test_batch_export_decodes_a_shared_bitmap_once(tmp_path, monkeypatch):
+    import assets
+    import resource_cache
+
+    asset_path = tmp_path / 'icon.png'
+    Image.new('1', (2, 2), 1).save(asset_path)
+    scene = {
+        '_root': str(tmp_path),
+        'canvas': {'w': 8, 'h': 8},
+        'storage': {'bytes_per_frame': 8},
+        'states': {},
+        'elements': [{'id': 'icon', 'type': 'image', 'asset': 'icon.png', 'x': 1, 'y': 2, 'w': 2, 'h': 2}],
+        'timeline': [],
+    }
+    decode = assets.decode_bitmap_bytes
+    decoded_paths = []
+
+    def track_decode(path, raw):
+        decoded_paths.append(Path(path).resolve())
+        return decode(path, raw)
+
+    monkeypatch.setattr(assets, 'decode_bitmap_bytes', track_decode)
+    monkeypatch.setattr(resource_cache, 'decode_bitmap_bytes', track_decode)
+
+    export_scene(scene, tmp_path / 'export', {'first': {}, 'second': {}})
+
+    assert decoded_paths == [asset_path.resolve()]
+
+
+def test_png_export_preserves_framebuffer_pixels_without_per_pixel_writer(tmp_path, monkeypatch):
+    framebuffer = FrameBuffer(3, 2)
+    framebuffer.set_pixel(0, 0)
+    framebuffer.set_pixel(2, 0)
+    framebuffer.set_pixel(1, 1)
+
+    def fail_putpixel(*_args, **_kwargs):
+        raise AssertionError('per-pixel PNG writes are not allowed')
+
+    monkeypatch.setattr(Image.Image, 'putpixel', fail_putpixel)
+    target = tmp_path / 'frame.png'
+    _save_png(RenderResult(framebuffer, (), (), ()), target)
+
+    with Image.open(target) as image:
+        assert image.mode == '1'
+        assert [[int(image.getpixel((x, y)) > 0) for x in range(3)] for y in range(2)] == [[1, 0, 1], [0, 1, 0]]

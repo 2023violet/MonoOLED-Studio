@@ -71,7 +71,7 @@ def _child(output: Path) -> int:
                 raise AssertionError(f'{mode}: resolved {actual!r}, expected {expected!r}')
 
             signature = app.property('monooledAdaptiveStyleSignature')
-            expected_signature = f'{expected}:{runtime.density}:{runtime.ui_scale}'
+            expected_signature = f'{runtime.density}:{runtime.ui_scale}'
             if signature != expected_signature:
                 raise AssertionError(f'{mode}: signature {signature!r}, expected {expected_signature!r}')
 

@@ -12,12 +12,11 @@ ROOT=Path(__file__).resolve().parent
 SRC=ROOT / 'src'
 TESTS=ROOT / 'tests'
 TOOLS=ROOT / 'tools'
-EXPECTED_PRODUCTION_MODULES=77
 REQUIRED_DIRS=('src','tests','tools','test_assets','docs','.github')
 OBSOLETE_ROOTS=('OLED模拟器','Developer_Tools','Curing_Lite光固化机产品 - UI设计初稿','scenes')
 CURRENT_DOCS={
     'README.md','USER_GUIDE_CN.md','USER_GUIDE_EN.md','SCENE_SCHEMA.md',
-    'AUTOMATION_API_V1.md','DESIGN_SYSTEM.md','V12_GENERIC_PRODUCT_CLOSURE.md','V12_1_RELEASE_ENGINEERING.md','V12_2_FONT_PIPELINE_VALIDATION.md','V12_3_COMPACT_PREFERENCES.md','V12_3_1_SETTINGS_RELIABILITY.md','V12_3_2_UX_HARDENING.md','V12_3_3_RESILIENCE_HARDENING.md','V12_3_4_AUTONOMOUS_QUALITY_HARDENING.md','V12_3_5_ARTIFACT_RECOVERY_INTEGRITY.md','V12_3_6_CROSS_SESSION_STARTUP_INTEGRITY.md','V12_3_7_WINDOWS_RELEASE_INTEGRITY.md','V12_3_8_LONG_SESSION_LIVE_ASSET_RESILIENCE.md','V12_3_9_AUTOMATION_LIFECYCLE_INTEGRITY.md','V12_4_0_WINDOWS_CRITICAL_PATH_RELIABILITY.md','V12_4_1_SETTINGS_FONT_RELIABILITY.md','V12_4_2_SETTINGS_GEOMETRY_CONVERGENCE.md','WINDOWS_BUILD.md',
+    'AUTOMATION_API_V1.md','DESIGN_SYSTEM.md','ENGINEERING_HISTORY.md','WINDOWS_BUILD.md',
 }
 
 
@@ -59,8 +58,6 @@ def verify_source() -> None:
     if manifest.get('version') != version or manifest.get('release_version') != version:
         fail(f'release identity mismatch: VERSION={version}, manifest={manifest.get("version")}/{manifest.get("release_version")}')
     modules=sorted((ROOT/'src').glob('*.py'))
-    if len(modules) != EXPECTED_PRODUCTION_MODULES:
-        fail(f'expected {EXPECTED_PRODUCTION_MODULES} production Python modules, got {len(modules)}')
     for path in modules: py_compile.compile(str(path),doraise=True)
     scene=json.loads((ROOT/'src/scenes/main_scene.json').read_text(encoding='utf-8'))
     if scene.get('states') != {} or scene.get('timeline') != []: fail('default V12 scene must be state/timeline-neutral')

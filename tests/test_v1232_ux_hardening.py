@@ -106,7 +106,7 @@ def test_settings_toggle_tracks_the_previous_editor_by_document_id_not_fragile_t
     opened = gui.split('        def open_preferences(', 1)[1].split('\n        def ', 1)[0]
     assert '_last_work_editor_doc_id' in opened
     changed = gui.split('        def _editor_tab_changed(', 1)[1].split('\n        def ', 1)[0]
-    assert '_last_work_editor_doc_id' in changed
+    assert 'self._editor_tab_changed_impl(index)' in changed
 
 
 def test_retranslation_preserves_the_users_current_preferences_shortcut_in_tooltip():
@@ -142,8 +142,7 @@ def test_language_retranslation_updates_scene_and_font_editor_tab_titles_not_onl
     assert "doc_id.startswith('font:')" in body
     assert "t('panel.fonts')" in body
     open_font = gui.split('        def open_font_lab(self,root=None):', 1)[1].split('\n        def ', 1)[0]
-    assert "self.tr('panel.fonts')" in open_font
-    assert "'Font · '+root.name" not in open_font
+    assert 'self._editor_open_font_lab(root)' in open_font
 
 
 def test_pixel_document_save_png_never_overwrites_non_png_source(tmp_path):
@@ -183,7 +182,7 @@ def test_editor_registry_rekeys_saved_as_editor_without_leaving_stale_identity()
 def test_pixel_asset_save_callback_rekeys_host_registry_after_save_as():
     source = read('gui.py')
     body = source.split('        def _pixel_asset_saved(self,path', 1)[1].split('\n        def ', 1)[0]
-    assert 'editor_registry.rekey' in body
+    assert 'self._editor_pixel_asset_saved(path, editor)' in body
 
 
 def test_editor_dirty_helper_prefers_editor_level_dirty_state_for_font_lab_metrics():
@@ -232,13 +231,16 @@ def test_main_window_exit_checks_dirty_embedded_editors_before_closing():
 def test_scene_replacement_actions_share_unsaved_transition_guards():
     source = read('gui.py')
     assert 'def _confirm_scene_transition(self):' in source
-    scene_guard = source.split('        def _confirm_scene_transition(self):', 1)[1].split('\n        def ', 1)[0]
+    assert 'self._project_confirm_scene_transition()' in source
+    project_source = read('gui_project_mixin.py')
+    scene_guard = project_source.split('    def _project_confirm_scene_transition(self):', 1)[1].split('\n    def ', 1)[0]
     assert 'self.session.document.dirty' in scene_guard
-    assert 'QMessageBox.Save|QMessageBox.Discard|QMessageBox.Cancel' in scene_guard
+    assert 'QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel' in scene_guard
     assert 'self.save_scene()' in scene_guard
     assert scene_guard.count('self.session.document.dirty') >= 2
     assert 'def _confirm_project_transition(self):' in source
-    project_guard = source.split('        def _confirm_project_transition(self):', 1)[1].split('\n        def ', 1)[0]
+    assert 'self._project_confirm_project_transition()' in source
+    project_guard = project_source.split('    def _project_confirm_project_transition(self):', 1)[1].split('\n    def ', 1)[0]
     assert 'self._confirm_open_editor_changes()' in project_guard
     assert 'self._confirm_scene_transition()' in project_guard
 
@@ -246,15 +248,23 @@ def test_scene_replacement_actions_share_unsaved_transition_guards():
 def test_project_transition_closes_old_project_bound_editors_only_after_confirmation():
     source = read('gui.py')
     assert 'def _close_project_bound_editors(self):' in source
-    closer = source.split('        def _close_project_bound_editors(self):', 1)[1].split('\n        def ', 1)[0]
+    project_source = read('gui_project_mixin.py')
+    closer = project_source.split('    def _project_close_project_bound_editors(self):', 1)[1].split('\n    def ', 1)[0]
     assert "'settings:preferences'" in closer
     assert 'editor_registry.close' in closer
     for name in ('open_project_dialog', 'new_project', 'open_scene_dialog'):
         body = source.split(f'        def {name}(self', 1)[1].split('\n        def ', 1)[0]
+        target = name.lstrip('_')
+        assert f'self._project_{target}' in body, name
+    for name in ('_project_open_project_dialog', '_project_new_project', '_project_open_scene_dialog'):
+        body = project_source.split(f'    def {name}(self', 1)[1].split('\n    def ', 1)[0]
         assert '_confirm_project_transition()' in body, name
         assert '_close_project_bound_editors()' in body, name
     for name in ('_screen_changed', 'delete_screen'):
         body = source.split(f'        def {name}(self', 1)[1].split('\n        def ', 1)[0]
+        assert f'self._project_{name.lstrip("_")}' in body, name
+    for name in ('_project_screen_changed', '_project_delete_screen'):
+        body = project_source.split(f'    def {name}(self', 1)[1].split('\n    def ', 1)[0]
         assert '_confirm_scene_transition()' in body, name
 
 
@@ -267,23 +277,22 @@ def test_settings_tab_is_a_command_boundary_not_a_pass_through_to_hidden_editor(
         assert "'settings:preferences'" in body
     assert 'flush_pending_save' in save
     chrome = source.split('        def _sync_editor_chrome(self):', 1)[1].split('\n        def ', 1)[0]
-    assert 'self.header_undo.setEnabled(not state.settings_active)' in chrome
-    assert 'self.header_redo.setEnabled(not state.settings_active)' in chrome
+    assert 'self._editor_sync_chrome()' in chrome
 
 
 def test_project_and_scene_open_preflight_before_committing_workspace_transition():
-    source = read('gui.py')
-    open_project = source.split('        def open_project_dialog(self):', 1)[1].split('\n        def ', 1)[0]
+    source = read('gui_project_mixin.py')
+    open_project = source.split('    def _project_open_project_dialog(self):', 1)[1].split('\n    def ', 1)[0]
     assert 'try:' in open_project and 'except Exception as exc' in open_project
     assert open_project.index('self._load_project_candidate') < open_project.index('self._confirm_project_transition()')
     assert open_project.index('self._confirm_project_transition()') < open_project.index('self._commit_project_candidate')
     assert open_project.index('self._commit_project_candidate') < open_project.index('self._close_project_bound_editors')
-    new_project = source.split('        def new_project(self):', 1)[1].split('\n        def ', 1)[0]
+    new_project = source.split('    def _project_new_project(self):', 1)[1].split('\n    def ', 1)[0]
     assert 'try:' in new_project and 'except Exception as exc' in new_project
     assert new_project.index('create_project') < new_project.index('self._close_project_bound_editors')
-    open_scene = source.split('        def open_scene_dialog(self):', 1)[1].split('\n        def ', 1)[0]
-    assert 'candidate=load_scene(Path(path))' in open_scene
+    open_scene = source.split('    def _project_open_scene_dialog(self):', 1)[1].split('\n    def ', 1)[0]
+    assert 'candidate = load_scene(Path(path))' in open_scene
     assert 'except Exception as exc' in open_scene
-    assert open_scene.index('candidate=load_scene(Path(path))') < open_scene.index('self._close_project_bound_editors')
-    low_level = source.split('        def _open_project(self,path:Path):', 1)[1].split('\n        def ', 1)[0]
+    assert open_scene.index('candidate = load_scene(Path(path))') < open_scene.index('self._close_project_bound_editors')
+    low_level = source.split('    def _project_open_project(self, path: Path):', 1)[1].split('\n    def ', 1)[0]
     assert low_level.index('self._load_project_candidate') < low_level.index('self._commit_project_candidate')

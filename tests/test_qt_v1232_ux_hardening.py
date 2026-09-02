@@ -28,7 +28,10 @@ def test_settings_search_reveals_offscreen_matching_row_and_escape_clears(qtbot,
     view.search.setText('reset all preferences'); QApplication.processEvents(); qtbot.wait(10)
     assert view.nav.currentRow() == view.SECTIONS.index('advanced')
     current = view.stack.currentWidget()
-    target = next(row for section,row,label,help in view._search_rows if section == 'advanced' and label is not None and 'Reset all preferences' in label.text())
+    target = next(
+        row for section, row, label, _help in view._search_rows
+        if section == 'advanced' and label is view._search_match
+    )
     top = target.mapTo(current.viewport(), target.rect().topLeft()).y()
     bottom = target.mapTo(current.viewport(), target.rect().bottomLeft()).y()
     assert bottom >= 0 and top < current.viewport().height()

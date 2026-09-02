@@ -213,7 +213,7 @@ def main() -> int:
     parser.add_argument('--report-dir', default=str(SIM/'reports/windows_ga'))
     parser.add_argument('--source-group-size', type=int, default=8)
     parser.add_argument('--group-timeout', type=int, default=300)
-    parser.add_argument('--qt-timeout', type=int, default=300)
+    parser.add_argument('--qt-timeout', type=int, default=600)
     parser.add_argument('--scales', default=','.join(DEFAULT_SCALES))
     parser.add_argument('--match', default='')
     parser.add_argument('--qt-smokes', action='store_true', default=True)

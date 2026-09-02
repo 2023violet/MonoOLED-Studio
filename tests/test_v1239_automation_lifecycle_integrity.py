@@ -210,6 +210,23 @@ def test_automation_api_exposes_job_release(tmp_path):
         service._jobs.result(jid)
 
 
+def test_domain_dispatchers_do_not_delegate_back_to_the_monolithic_command_handler(tmp_path):
+    from automation_service import StudioAutomationService
+
+    service = StudioAutomationService(_scene(tmp_path))
+
+    def legacy_handler(*_args, **_kwargs):
+        raise AssertionError('domain dispatcher delegated to legacy command handler')
+
+    service._dispatch_command = legacy_handler
+
+    assert service.call('automation.capabilities')['api_version'] == '1.2.0'
+    assert service.call('scene.get')['scene']['canvas'] == {'w': 128, 'h': 32}
+    assert service.call('render.current')['framebuffer']['bytes'] == 512
+    assert service.call('asset.create', {'path': 'assets/a.png', 'width': 4, 'height': 4})['bytes'] > 0
+    assert service.call('session.events')['events'][0]['event'] == 'asset.create'
+
+
 def test_pixel_document_registry_is_bounded_and_close_releases_capacity(tmp_path):
     from automation_service import StudioAutomationService
 

@@ -19,7 +19,7 @@ def test_v84_release_identity_and_final_documents():
     assert manifest['version'] == version
     for path in (
         ROOT/'docs/AUTOMATION_API_V1.md', ROOT/'docs/USER_GUIDE_CN.md',
-        ROOT/'docs/V12_GENERIC_PRODUCT_CLOSURE.md', SIM/'AUTOMATION_API_V1.json',
+            ROOT/'docs/ENGINEERING_HISTORY.md', SIM/'AUTOMATION_API_V1.json',
     ):
         assert path.is_file(), path
 

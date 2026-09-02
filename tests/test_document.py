@@ -57,3 +57,45 @@ def test_document_move_keeps_text_zone_and_glyph_y_together():
     assert label['zone']['x'] == 90
     assert label['zone']['y'] == 5
     assert label['y'] == 7
+
+
+def test_document_id_index_avoids_rescanning_and_tracks_editor_structure():
+    from editor_model import EditorSession
+
+    class CountingElements(list):
+        def __init__(self, *args):
+            super().__init__(*args)
+            self.iterations = 0
+
+        def __iter__(self):
+            self.iterations += 1
+            return super().__iter__()
+
+    scene = {
+        'canvas': {'w': 8, 'h': 8},
+        'storage': {'bytes_per_frame': 8},
+        'states': {},
+        'elements': CountingElements([{'id': 'first', 'type': 'placeholder', 'x': 0, 'y': 0, 'w': 1, 'h': 1}]),
+        'timeline': [],
+    }
+    session = EditorSession(scene)
+    elements = scene['elements']
+    elements.iterations = 0
+
+    assert session.document.element('first')['id'] == 'first'
+    assert elements.iterations == 0
+
+    session.add_placeholder('second', x=1, y=0, w=1, h=1)
+    elements.iterations = 0
+    assert session.document.element('second')['id'] == 'second'
+    assert elements.iterations == 0
+
+    assert session.undo()
+    elements.iterations = 0
+    try:
+        session.document.element('second')
+    except KeyError:
+        pass
+    else:
+        raise AssertionError('removed element remained in the document index')
+    assert elements.iterations == 0

@@ -125,4 +125,7 @@ def test_v71_three_surface_configuration_matrix(qtbot,tmp_path,monkeypatch,theme
     pref=PreferencesWindow(local_store,Translator(language)); qtbot.addWidget(pref); pref.resize(920,660); pref.show(); qtbot.waitExposed(pref); assert not pref.layout_violations()
     QSettings('MonoOLEDStudio','MonoOLEDStudio').clear()
     designer=OLEDDesignerWindow('main_scene',language); qtbot.addWidget(designer); designer.resize(1180,720); designer.show(); qtbot.waitExposed(designer); assert not designer.layout_violations()
-    designer.session.document.dirty=False; designer.close(); pixel.close(); pref.close(); app.processEvents()
+    designer.session.document.dirty=False
+    for surface in (designer, pixel, pref):
+        surface.close()
+    app.processEvents()

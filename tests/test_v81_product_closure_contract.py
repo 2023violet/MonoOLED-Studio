@@ -49,7 +49,7 @@ def test_v81_version_and_release_docs_present():
     version=(ROOT/'VERSION').read_text(encoding='utf-8').strip()
     assert 'APP_VERSION = load_version()' in s
     docs=ROOT.parent/'docs'
-    assert (docs/'V12_GENERIC_PRODUCT_CLOSURE.md').exists()
+    assert (docs/'ENGINEERING_HISTORY.md').exists()
     assert (docs/'DESIGN_SYSTEM.md').exists()
 
 def test_font_lab_and_new_pixel_dialog_copy_no_longer_hardcodes_known_english_ui_strings():

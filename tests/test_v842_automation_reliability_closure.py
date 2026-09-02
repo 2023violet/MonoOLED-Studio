@@ -20,7 +20,7 @@ def test_v842_release_identity_and_docs():
     assert manifest['automation_api']['version'] == '1.2.0'
     assert manifest['delivery_profile'] == 'source'
     assert (ROOT / 'docs' / 'AUTOMATION_API_V1.md').is_file()
-    assert (ROOT / 'docs' / 'V12_GENERIC_PRODUCT_CLOSURE.md').is_file()
+    assert (ROOT / 'docs' / 'ENGINEERING_HISTORY.md').is_file()
 
 def test_v842_api_contract_is_1_2_and_contains_reliability_methods():
     assert AUTOMATION_API_VERSION == '1.2.0'

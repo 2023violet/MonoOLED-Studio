@@ -112,7 +112,7 @@ def _apply_application_theme(app, theme: str, density: str, ui_scale: float) -> 
     never exposes an intermediate unstyled native-Qt frame.
     """
     palette = build_theme_palette(theme)
-    signature = f'{theme}:{density}:{ui_scale}'
+    signature = f'{density}:{ui_scale}'
     app.setPalette(palette)
     if app.property('monooledAdaptiveStyleSignature') != signature:
         app.setStyleSheet(build_adaptive_stylesheet(density, ui_scale=ui_scale))
@@ -125,14 +125,15 @@ def _apply_application_theme(app, theme: str, density: str, ui_scale: float) -> 
             except RuntimeError:
                 # A widget can be queued for deletion while a modeless window closes.
                 continue
-        for window in app.topLevelWidgets():
-            try:
-                apply_windows_chrome(window, theme)
-                window.update()
-            except RuntimeError:
-                continue
         app.setProperty('monooledAdaptiveStyleSignature', signature)
         app.processEvents()
+    for window in app.topLevelWidgets():
+        try:
+            window.setPalette(palette)
+            apply_windows_chrome(window, theme)
+            window.update()
+        except RuntimeError:
+            continue
 
 
 
@@ -177,6 +178,13 @@ def _validated_last_project_source(value: str) -> str | None:
 
 
 if PYSIDE_AVAILABLE:
+    # Imported only after the PySide availability gate so a headless ``gui``
+    # import retains its existing failure-free behavior.
+    from gui_designer_mixin import DesignerActionsMixin
+    from gui_editor_mixin import EditorTabsMixin
+    from gui_project_mixin import ProjectWorkspaceMixin
+    from gui_resource_mixin import ResourceWorkflowMixin
+
     class PlaceholderDialog(QDialog):
         def __init__(self, tr: Translator, parent=None):
             super().__init__(parent)
@@ -222,7 +230,7 @@ if PYSIDE_AVAILABLE:
             _key, callback = item.data(Qt.UserRole); self.accept(); QTimer.singleShot(0, callback)
 
 
-    class OLEDDesignerWindow(QMainWindow):
+    class OLEDDesignerWindow(ProjectWorkspaceMixin, ResourceWorkflowMixin, DesignerActionsMixin, EditorTabsMixin, QMainWindow):
         def __init__(self, source: str = 'main_scene', language: str = DEFAULT_LANGUAGE):
             super().__init__()
             self.settings = QSettings('MonoOLEDStudio', 'MonoOLEDStudio')
@@ -267,6 +275,7 @@ if PYSIDE_AVAILABLE:
             self._last_frame_signature = None
             self._last_validation_findings = []
             self._layout_bucket = None
+            self._closing = False
             self._diagnostics_open = True
             self._saved_scene_snapshot = deepcopy(self.scene)
             self._saved_frame = None
@@ -301,14 +310,20 @@ if PYSIDE_AVAILABLE:
 
         def _schedule_post_show_startup(self):
             """Move non-critical discovery behind the first event-loop paint."""
+            if self._closing:
+                return
             self._startup_trace.mark('first_event_loop')
             QTimer.singleShot(0, self._post_show_scan_assets)
             QTimer.singleShot(35, self._post_show_scan_fonts)
 
         def _post_show_scan_assets(self):
+            if self._closing:
+                return
             started=perf_counter(); self._scan_assets(); elapsed=(perf_counter()-started)*1000.0; self.profiler.record('startup.asset_scan',elapsed); self._startup_trace.mark('assets_ready')
 
         def _post_show_scan_fonts(self):
+            if self._closing:
+                return
             started=perf_counter(); self._scan_fonts(); elapsed=(perf_counter()-started)*1000.0; self.profiler.record('startup.font_scan',elapsed); self._startup_trace.mark('fonts_ready'); self.logger.log('STARTUP_TRACE',**self._startup_trace.as_dict())
 
         # ---------- model / project ----------
@@ -426,7 +441,7 @@ if PYSIDE_AVAILABLE:
             self.canvas_card.body.addLayout(tools)
             self.context_bar=QWidget(); self.context_bar.setObjectName('CanvasContextBar'); context=QHBoxLayout(self.context_bar); context.setContentsMargins(0,0,0,0); context.setSpacing(m['space_tight']); self.context_label=QLabel(); self.context_label.setObjectName('Muted'); context.addWidget(self.context_label); context.addStretch(1)
             self.context_duplicate=QPushButton(); self.context_duplicate.setObjectName('SecondaryButton'); self.context_duplicate.clicked.connect(self.duplicate_selected_elements); self.context_lock=QPushButton(); self.context_lock.setObjectName('SecondaryButton'); self.context_lock.clicked.connect(self.toggle_selected_lock); context.addWidget(self.context_duplicate); context.addWidget(self.context_lock); self.canvas_card.body.addWidget(self.context_bar); self.context_bar.hide()
-            self.canvas=OLEDCanvas(); self.canvas.selectionChanged.connect(self._canvas_selection_changed); self.canvas.elementMoved.connect(self._canvas_move); self.canvas.dragFinished.connect(self._finish_canvas_drag); self.canvas.pixelHovered.connect(self._pixel_hovered)
+            self.canvas=OLEDCanvas(); self.canvas.selectionChanged.connect(self._canvas_selection_changed); self.canvas.dragStarted.connect(self._start_canvas_drag); self.canvas.elementMoved.connect(self._canvas_move); self.canvas.dragFinished.connect(self._finish_canvas_drag); self.canvas.pixelHovered.connect(self._pixel_hovered)
             self.canvas_scroll=QScrollArea(); self.canvas_scroll.setWidgetResizable(False); self.canvas_scroll.setFrameShape(QFrame.NoFrame); self.canvas_scroll.viewport().setObjectName('CanvasViewport'); self.canvas_scroll.setWidget(self.canvas); self.canvas_card.body.addWidget(self.canvas_scroll,1)
             self.canvas_hint=QLabel(); self.canvas_hint.setObjectName('Muted'); self.canvas_hint.setWordWrap(True); self.canvas_card.body.addWidget(self.canvas_hint)
             self.workspace_splitter.addWidget(self.canvas_card)
@@ -509,12 +524,16 @@ if PYSIDE_AVAILABLE:
 
         def _connect_responsive_events(self):
             self.canvas_scroll.viewport().installEventFilter(self)
+            self.inspector_page.viewport().installEventFilter(self)
+            self.state_page.viewport().installEventFilter(self)
             self.canvas.installEventFilter(self)
             self.workspace_splitter.splitterMoved.connect(lambda *_:self._schedule_canvas_fit())
             self.vertical_splitter.splitterMoved.connect(lambda *_:self._schedule_canvas_fit())
 
         def eventFilter(self,obj,event):  # noqa: N802
             if obj is self.canvas_scroll.viewport() and event.type() in (QEvent.Resize,QEvent.Show): self._schedule_canvas_fit()
+            if obj in (self.inspector_page.viewport(), self.state_page.viewport()) and event.type() in (QEvent.Resize,QEvent.Show):
+                self._sync_scroll_content_width(self.inspector_page if obj is self.inspector_page.viewport() else self.state_page)
             if obj is self.canvas and event.type() in (QEvent.FocusIn,QEvent.FocusOut):
                 focused=event.type()==QEvent.FocusIn
                 self.canvas_card.setProperty('canvasFocus',focused)
@@ -526,6 +545,14 @@ if PYSIDE_AVAILABLE:
 
         def _schedule_responsive(self): self.layout_timer.start()
         def _schedule_canvas_fit(self): QTimer.singleShot(16,self._fit_canvas_zoom)
+        def _sync_scroll_content_width(self, scroll):
+            viewport_width = scroll.viewport().width()
+            if viewport_width <= 0:
+                return
+            content = scroll.widget()
+            content.setMinimumWidth(0)
+            content.setMaximumWidth(viewport_width)
+            content.resize(viewport_width, max(content.height(), content.sizeHint().height()))
         def _layout_alignment_actions(self,compact):
             while self.align_grid.count(): self.align_grid.takeAt(0)
             placements=(('left',0,0,1,1),('right',0,1,1,1),('center_h',1,0,1,2),('top',2,0,1,1),('bottom',2,1,1,1),('center_v',3,0,1,2))
@@ -536,6 +563,8 @@ if PYSIDE_AVAILABLE:
             for column in range(3): self.align_grid.setColumnStretch(column,1 if column<columns else 0)
 
         def _responsive_tick(self):
+            if self._closing:
+                return
             runtime=getattr(self,'_runtime_preferences',None) or RuntimeSettings.from_preferences(self.preferences)
             p=plan_layout(self.width(),self.height(),runtime.density,runtime.ui_scale); wp=workspace_plan(self.width(),self.height(),self.workspace_mode); bucket=(p.left_width,p.inspector_width,wp.compact)
             if bucket!=self._layout_bucket:
@@ -549,12 +578,15 @@ if PYSIDE_AVAILABLE:
             # state.  Keep both inspector pages horizontally bounded by the
             # current viewport while allowing their content to grow vertically.
             for scroll in (self.inspector_page, self.state_page):
-                viewport_width = scroll.viewport().width()
-                if viewport_width > 0:
-                    content = scroll.widget()
-                    content.setMinimumWidth(0)
-                    content.setMaximumWidth(viewport_width)
-                    content.resize(viewport_width, max(content.height(), content.sizeHint().height()))
+                self._sync_scroll_content_width(scroll)
+            if (
+                any(scroll.widget().width() > scroll.viewport().width() for scroll in (self.inspector_page, self.state_page))
+                and getattr(self, '_scroll_width_resync_bucket', None) != bucket
+            ):
+                # A resize can update the viewport after this pass. One queued
+                # retry per responsive bucket lets Qt settle without a timer loop.
+                self._scroll_width_resync_bucket = bucket
+                QTimer.singleShot(0, self._responsive_tick)
             hp=header_policy(p)
             self.hero_subtitle.setVisible(hp.show_subtitle)
             self.pixel_status.setVisible(hp.show_status)
@@ -805,220 +837,72 @@ if PYSIDE_AVAILABLE:
 
         # ---------- project/screens/assets ----------
         def _confirm_scene_transition(self):
-            if not self.session.document.dirty:return True
-            choice=QMessageBox.question(
-                self,self.tr('dialog.unsaved_title'),self.tr('dialog.unsaved_message'),
-                QMessageBox.Save|QMessageBox.Discard|QMessageBox.Cancel,QMessageBox.Cancel,
-            )
-            if choice==QMessageBox.Cancel:return False
-            if choice==QMessageBox.Save:
-                self.save_scene()
-                if self.session.document.dirty:return False
-            return True
+            return self._project_confirm_scene_transition()
 
         def _confirm_project_transition(self):
-            return self._confirm_open_editor_changes() and self._confirm_scene_transition()
+            return self._project_confirm_project_transition()
 
         def _close_project_bound_editors(self):
-            for i in range(self.editor_tabs.count()-1,0,-1):
-                widget=self.editor_tabs.widget(i); doc_id=getattr(widget,'document_id',None)
-                if doc_id=='settings:preferences':continue
-                self.editor_tabs.removeTab(i)
-                if doc_id:self.editor_registry.close(doc_id)
-                widget.deleteLater()
-            self._last_work_editor_doc_id='scene:active'
-            if self.editor_tabs.count():self.editor_tabs.setCurrentIndex(0)
-            self._sync_editor_chrome()
+            return self._project_close_project_bound_editors()
 
         def open_project_dialog(self):
-            path,_=QFileDialog.getOpenFileName(self,self.tr('dialog.open_project'),str(ROOT),'OLED Project (*.oled.json);;JSON (*.json)')
-            if not path:return
-            try:project,scene=self._load_project_candidate(Path(path))
-            except Exception as exc:self._show_error(str(exc));return
-            if not self._confirm_project_transition():return
-            self._commit_project_candidate(project,scene); self._close_project_bound_editors()
+            return self._project_open_project_dialog()
         def _load_project_candidate(self,path:Path):
-            project=ProjectWorkspace.load(path); scene=_decorate_project_scene(load_scene(project.screen_path(project.active_screen),project_root=project.root),project)
-            return project,scene
+            return self._project_load_project_candidate(path)
         def _remember_last_project(self,value):
-            self.preferences.set('startup.last_project',str(value),save=False)
-            try:self.preferences.save()
-            except OSError as exc:self.logger.log('PREFERENCES_SAVE_FAIL',error=str(exc))
+            return self._project_remember_last_project(value)
         def _commit_project_candidate(self,project,scene):
-            self.project=project; self._reset_session(scene); self._rebuild_screens(); self._remember_last_project(str(project.path)); self.logger.log('PROJECT_OPEN',path=str(project.path))
+            return self._project_commit_project_candidate(project,scene)
         def _open_project(self,path:Path):
-            project,scene=self._load_project_candidate(path); self._commit_project_candidate(project,scene)
+            return self._project_open_project(path)
         def new_project(self):
-            root=QFileDialog.getExistingDirectory(self,self.tr('dialog.new_project'))
-            if not root:return
-            name,ok=QInputDialog.getText(self,self.tr('dialog.new_project'),self.tr('project.name'))
-            if not (ok and name.strip() and self._confirm_project_transition()):return
-            try:
-                project=create_project(root,name=name.strip()); self._open_project(project.path)
-            except Exception as exc:self._show_error(str(exc));return
-            self._close_project_bound_editors()
+            return self._project_new_project()
         def _rebuild_screens(self):
-            blocker=QSignalBlocker(self.screen_list); self.screen_list.clear()
-            if self.project:
-                for ref in self.project.screens:
-                    item=QListWidgetItem(ref.label); item.setData(Qt.UserRole,ref.id); self.screen_list.addItem(item)
-                    if ref.id==self.project.active_screen:self.screen_list.setCurrentItem(item)
-            else:
-                item=QListWidgetItem(Path(self.scene.get('_path','scene')).stem); item.setData(Qt.UserRole,'__scene__'); self.screen_list.addItem(item); self.screen_list.setCurrentItem(item)
-            del blocker
+            return self._project_rebuild_screens()
         def _screen_changed(self,current,_prev):
-            if not current or not self.project:return
-            sid=str(current.data(Qt.UserRole));
-            if sid==self.project.active_screen:return
-            old_sid=self.project.active_screen
-            try:candidate=_decorate_project_scene(load_scene(self.project.screen_path(sid),project_root=self.project.root),self.project)
-            except Exception as exc:self._rebuild_screens(); self._show_error(str(exc)); return
-            if not self._confirm_scene_transition():
-                self._rebuild_screens(); return
-            try:
-                self.project.set_active_screen(sid); self.project.save()
-            except Exception as exc:
-                self.project.set_active_screen(old_sid); self._rebuild_screens(); self._show_error(str(exc)); return
-            self._reset_session(candidate)
+            return self._project_screen_changed(current,_prev)
         def new_screen(self):
-            if not self.project:return self._show_error(self.tr('project.required'))
-            sid,ok=QInputDialog.getText(self,self.tr('action.new_screen'),self.tr('screen.id'))
-            if ok and sid.strip():
-                try:self.project.add_screen(sid.strip(),label=sid.strip(),canvas=(int(self.scene['canvas']['w']),int(self.scene['canvas']['h']))); self._rebuild_screens()
-                except Exception as exc:self._show_error(str(exc))
+            return self._project_new_screen()
         def duplicate_screen(self):
-            if not self.project:return
-            sid=self.project.active_screen; new_id,ok=QInputDialog.getText(self,self.tr('action.duplicate'),self.tr('screen.id'),text=sid+'_copy')
-            if ok and new_id.strip():
-                try:self.project.duplicate_screen(sid,new_id=new_id.strip(),label=new_id.strip()); self._rebuild_screens()
-                except Exception as exc:self._show_error(str(exc))
+            return self._project_duplicate_screen()
         def delete_screen(self):
-            if not self.project:return
-            current_sid=self.project.active_screen
-            remaining=[ref.id for ref in self.project.screens if ref.id!=current_sid]
-            if not remaining:return self._show_error('project must keep at least one screen')
-            fallback_sid=remaining[0]
-            try:candidate=_decorate_project_scene(load_scene(self.project.screen_path(fallback_sid),project_root=self.project.root),self.project)
-            except Exception as exc:self._show_error(str(exc));return
-            if not self._confirm_scene_transition():return
-            try:self.project.remove_screen(current_sid); self._rebuild_screens(); self._reset_session(candidate)
-            except Exception as exc:self._show_error(str(exc))
+            return self._project_delete_screen()
 
         def open_scene_dialog(self):
-            path,_=QFileDialog.getOpenFileName(self,self.tr('dialog.open_scene'),str(scene_root(self.scene)),'Scene JSON (*.json);;All Files (*)')
-            if not path:return
-            try:candidate=load_scene(Path(path))
-            except Exception as exc:self._show_error(str(exc));return
-            if not self._confirm_project_transition():return
-            self._close_project_bound_editors(); self.project=None; self._reset_session(candidate); self._remember_last_project('')
+            return self._project_open_scene_dialog()
 
         def _sync_asset_directory_watchers(self):
-            wanted=[]
-            for rel in self.asset_library.asset_dirs:
-                path=(self.asset_library.root/rel).resolve()
-                if path.exists() and path.is_dir():
-                    wanted.append(str(path))
-                    wanted.extend(str(p.resolve()) for p in path.rglob('*') if p.is_dir())
-            current=set(self.asset_watcher.directories()); desired=set(wanted)
-            remove=list(current-desired); add=list(desired-current)
-            if remove:self.asset_watcher.removePaths(remove)
-            if add:self.asset_watcher.addPaths(add)
+            return self._resource_sync_asset_directory_watchers()
 
         def _scan_assets(self):
-            try:
-                self.asset_library.scan(); self._sync_asset_directory_watchers(); self._filter_assets(self.asset_search.text() if hasattr(self,'asset_search') else '')
-            except Exception as exc:
-                if hasattr(self,'app_status'): self.app_status.setText(str(exc)); self.app_status.set_status('warning')
+            return self._resource_scan_assets()
         def _filter_assets(self,query):
-            if not hasattr(self,'asset_list'):return
-            self.asset_list.clear()
-            entries=list(self.asset_library.search(query))
-            empty=not entries; self.asset_empty_title.setVisible(empty); self.asset_empty_guidance.setVisible(empty); self.asset_list.setVisible(not empty)
-            if not entries:return
-            for entry in entries:
-                label=f'{Path(entry.rel_path).name}   {entry.width}×{entry.height}' if entry.valid else f'! {Path(entry.rel_path).name}'
-                item=QListWidgetItem(label); item.setData(Qt.UserRole,entry.rel_path); item.setToolTip(entry.rel_path if entry.valid else entry.error); self.asset_list.addItem(item)
+            return self._resource_filter_assets(query)
         def import_asset(self):
-            path,_=QFileDialog.getOpenFileName(self,self.tr('asset.import'),str(Path.home()),self.tr('dialog.image_filter'))
-            if path:
-                try:entry=self.asset_library.import_asset(path); self._scan_assets(); self.app_status.setText(self.tr('status.asset_imported')); self.app_status.set_status('success'); return entry
-                except Exception as exc:self._show_error(str(exc))
+            return self._resource_import_asset()
         def place_asset(self,item=None):
-            item=item or self.asset_list.currentItem();
-            if not item:return
-            rel=str(item.data(Qt.UserRole)); path=scene_root(self.scene)/rel
-            if self.selected_id and self.session.document.element(self.selected_id).get('type')=='placeholder':
-                try:self.session.assign_bitmap(self.selected_id,path); self._rebuild_elements(); self.refresh_all(keep_selection=True); return
-                except Exception as exc:return self._show_error(str(exc))
-            stem=Path(rel).stem; eid=stem; existing={str(e.get('id')) for e in self.scene.get('elements',[])}; i=2
-            while eid in existing:eid=f'{stem}_{i}'; i+=1
-            try:
-                self.session.add_placeholder(eid,x=0,y=0,w=1,h=1); self.session.assign_bitmap(eid,path); self.selected_ids=[eid]; self.selected_id=eid; self._rebuild_elements(); self.refresh_all(keep_selection=True)
-            except Exception as exc:self._show_error(str(exc))
-        def _asset_directory_changed(self,_path): QTimer.singleShot(80,self._scan_assets)
+            return self._resource_place_asset(item)
+        def _asset_directory_changed(self,_path): return self._resource_asset_directory_changed(_path)
         def show_asset_health(self):
-            used=set()
-            if hasattr(self,'last_render'):
-                for p in self.last_render.used_files:
-                    try:used.add(Path(p).resolve().relative_to(scene_root(self.scene)).as_posix())
-                    except ValueError:pass
-            h=self.asset_library.health_report(used_paths=used); QMessageBox.information(self,self.tr('action.asset_health'),self.tr('asset.health_summary',count=len(self.asset_library.entries),duplicates=len(h.duplicates),unused=len(h.unused),invalid=len(h.invalid)))
+            return self._resource_show_asset_health()
 
         def save_template(self):
-            if not self.selected_ids:
-                return
-            name,ok=QInputDialog.getText(self,self.tr('action.save_template'),self.tr('template.name'))
-            if not ok or not name.strip():
-                return
-            elements=[deepcopy(self.session.document.element(eid)) for eid in self.selected_ids]
-            try:
-                self.template_library.save_template(name.strip(),elements)
-                self.app_status.setText(self.tr('template.saved',name=name.strip())); self.app_status.set_status('success')
-            except Exception as exc:self._show_error(str(exc))
+            return self._resource_save_template()
 
         def insert_template(self):
-            names=self.template_library.names()
-            if not names:
-                return self._show_error(self.tr('template.none'))
-            name,ok=QInputDialog.getItem(self,self.tr('action.insert_template'),self.tr('template.name'),names,0,False)
-            if not ok:return
-            prefix,ok=QInputDialog.getText(self,self.tr('action.insert_template'),self.tr('template.prefix'),text=f'{name}_')
-            if not ok:return
-            try:
-                items=self.template_library.instantiate(name,prefix=prefix,offset=(0,0)); ids=self.session.add_elements(items,label='template_insert'); self.selected_ids=ids; self.selected_id=ids[-1] if ids else None; self._rebuild_elements(); self.refresh_all(keep_selection=True)
-            except Exception as exc:self._show_error(str(exc))
+            return self._resource_insert_template()
 
         def convert_asset(self):
-            source,_=QFileDialog.getOpenFileName(self,self.tr('action.convert_asset'),str(scene_root(self.scene)),self.tr('dialog.image_filter'))
-            if not source:return
-            target_dir=scene_root(self.scene)/'assets'/'converted'; target=target_dir/(Path(source).stem+'.png')
-            try:
-                convert_bitmap(source,target)
-                if self.project and 'assets' not in self.project.data.setdefault('asset_dirs',[]):self.project.data['asset_dirs'].append('assets'); self.project.save()
-                self.asset_library=self._make_asset_library(); self._scan_assets(); self.app_status.setText(self.tr('asset.converted',path=str(target))); self.app_status.set_status('success')
-            except Exception as exc:self._show_error(str(exc))
+            return self._resource_convert_asset()
 
         def _project_symbol(self):
-            raw=str(self.scene.get('product') or (self.project.data.get('name') if self.project else '') or 'monooled_project').strip().lower()
-            clean=''.join(ch if ch.isalnum() else '_' for ch in raw).strip('_')
-            return clean or 'monooled_project'
+            return self._resource_project_symbol()
 
         def export_c_header(self):
-            path,_=QFileDialog.getSaveFileName(self,self.tr('action.export_c_header'),str(scene_root(self.scene)/'exports'/'current_frame.h'),'C Header (*.h)')
-            if not path:return
-            try:
-                write_c_header(self.session.render().framebuffer,path,name=self._project_symbol()+'_oled_frame'); self.app_status.setText(self.tr('status.exported',path=path)); self.app_status.set_status('success')
-            except Exception as exc:self._show_error(str(exc))
+            return self._resource_export_c_header()
 
         def export_thumbnail_wall(self):
-            path,_=QFileDialog.getSaveFileName(self,self.tr('action.thumbnail_wall'),str(scene_root(self.scene)/'exports'/'screen_overview.png'),'PNG (*.png)')
-            if not path:return
-            try:
-                states=build_export_states(self.scene,integer_policy='representative',max_cases=5000)
-                with tempfile.TemporaryDirectory(prefix='oled_wall_') as td:
-                    export_scene(self.scene,Path(td),states); refs=[Path(td)/'reference'/f'{name}.png' for name in states]; build_thumbnail_wall(refs,path,columns=min(4,max(1,len(refs))),scale=4)
-                self.app_status.setText(self.tr('status.exported',path=path)); self.app_status.set_status('success')
-            except Exception as exc:self._show_error(str(exc))
+            return self._resource_export_thumbnail_wall()
 
         # ---------- selection / properties ----------
         def _rebuild_elements(self):
@@ -1096,9 +980,21 @@ if PYSIDE_AVAILABLE:
             self.session.batch_move(ids,dx,dy,coalesce=True)
             self.refresh_drag_preview()
 
+        def _start_canvas_drag(self,_element_id=None):
+            self.deferred_refresh_timer.stop()
+            self.validation_timer.stop()
+            self._deferred_result=None
+
         def _finish_canvas_drag(self,_element_id=None):
             self.session.end_coalesced_edit()
             self.refresh_all(keep_selection=True)
+            # The commit path validates synchronously below.  Keep the rest of
+            # the deferred bookkeeping, but do not validate the same gesture a
+            # second time when the deferred timer expires.
+            self.deferred_refresh_timer.stop()
+            self.validation_timer.stop()
+            self._update_validation_panel()
+            self._run_deferred_refresh(include_validation=False)
 
         def refresh_drag_preview(self):
             """Fast interaction path: render + canvas + geometry only.
@@ -1236,6 +1132,8 @@ if PYSIDE_AVAILABLE:
         def _zoom_changed(self):
             data=self.zoom_combo.currentData(); self._fit_canvas_zoom() if data=='auto' else self.canvas.set_zoom(int(data))
         def _fit_canvas_zoom(self):
+            if self._closing:
+                return
             if self.zoom_combo.currentData()!='auto':return
             size=self.canvas_scroll.viewport().size(); cw,ch=int(self.scene['canvas']['w']),int(self.scene['canvas']['h']); self.canvas.set_zoom(fit_integer_zoom(cw,ch,viewport_w=max(1,size.width()),viewport_h=max(1,size.height()),margin=28,min_zoom=1,max_zoom=24))
         def _overlay_changed(self):self.canvas.set_overlays(grid=self.grid_check.isChecked(),bounds=self.bounds_check.isChecked(),rulers=self.ruler_check.isChecked())
@@ -1279,10 +1177,10 @@ if PYSIDE_AVAILABLE:
             delay=250 if runtime.validation_mode=='idle' else (70 if runtime.validation_mode=='continuous' else 120)
             self.deferred_refresh_timer.start(delay)
 
-        def _run_deferred_refresh(self):
+        def _run_deferred_refresh(self,*,include_validation=True):
             result=self._deferred_result or getattr(self,'last_render',None); self._deferred_result=None
             if result is None:return
-            started=perf_counter(); self._update_validation_panel(); self._update_diff(result.framebuffer); self._update_asset_watcher(result.used_files)
+            started=perf_counter(); self._update_validation_panel() if include_validation else None; self._update_diff(result.framebuffer); self._update_asset_watcher(result.used_files)
             evidence=frame_evidence(result,dict(self.session.runtime.state),elapsed=self.session.runtime.elapsed,project_root=scene_root(self.scene)); signature=(evidence['sha256'],tuple(evidence['state'].items()),evidence['elapsed'])
             if signature!=self._last_frame_signature:self.logger.log('FRAME',**evidence); self._last_frame_signature=signature
             self.profiler.record('deferred_refresh',(perf_counter()-started)*1000.0)
@@ -1300,7 +1198,10 @@ if PYSIDE_AVAILABLE:
 
         def _update_asset_watcher(self,used_files):
             wanted={str(Path(p).resolve()) for p in used_files if Path(p).exists()}; current=set(self.asset_watcher.files()); remove=list(current-wanted); add=list(wanted-current); self.asset_watcher.removePaths(remove) if remove else None; self.asset_watcher.addPaths(add) if add else None
-        def _asset_changed(self,path):self.logger.log('ASSET_CHANGED',path=path); self.refresh_all(keep_selection=True); QTimer.singleShot(80,self._scan_assets)
+        def _asset_changed(self,path):
+            if self._closing:
+                return
+            self.logger.log('ASSET_CHANGED',path=path); self.refresh_all(keep_selection=True); QTimer.singleShot(80,self._scan_assets)
         def _on_log(self,record):
             if not hasattr(self,'log_text'):self.pending_logs.append(record); return
             self.log_text.appendPlainText(json.dumps(record,ensure_ascii=False,sort_keys=True)); bar=self.log_text.verticalScrollBar(); bar.setValue(bar.maximum())
@@ -1309,26 +1210,16 @@ if PYSIDE_AVAILABLE:
             self.pending_logs.clear()
 
         def duplicate_selected_elements(self):
-            if not self.selected_ids:return
-            copies=[]; existing={str(e.get('id')) for e in self.scene.get('elements',[])}
-            for eid in self.selected_ids:
-                e=deepcopy(self.session.document.element(eid)); base=f'{eid}_copy'; nid=base; i=2
-                while nid in existing:nid=f'{base}_{i}';i+=1
-                existing.add(nid); e['id']=nid
-                if 'x' in e:e['x']=int(e['x'])+1
-                if 'y' in e:e['y']=int(e['y'])+1
-                copies.append(e)
-            ids=self.session.add_elements(copies,label='duplicate'); self.selected_ids=ids; self.selected_id=ids[-1] if ids else None; self._rebuild_elements(); self.refresh_all(keep_selection=True)
+            return self._designer_duplicate_selected_elements()
 
         def toggle_selected_lock(self):
-            if not self.selected_ids:return
-            lock=not all(bool(self.session.document.element(eid).get('locked')) for eid in self.selected_ids); self.session.set_locked(self.selected_ids,lock); self._rebuild_elements(); self.refresh_all(keep_selection=True)
+            return self._designer_toggle_selected_lock()
 
         # ---------- edit / autosave ----------
         def undo(self):
-            if self.session.undo():self._rebuild_elements(); self.refresh_all(keep_selection=True)
+            return self._designer_undo()
         def redo(self):
-            if self.session.redo():self._rebuild_elements(); self.refresh_all(keep_selection=True)
+            return self._designer_redo()
         def add_placeholder(self):
             d=PlaceholderDialog(self.tr,self)
             if d.exec()!=QDialog.Accepted:return
@@ -1354,15 +1245,20 @@ if PYSIDE_AVAILABLE:
                     self.logger.log('AUTOSAVE_FAIL',error=str(exc)); self.app_status.setText(self.tr('status.autosave_failed')); self.app_status.setToolTip(str(exc)); self.app_status.set_status('danger'); return False
                 self.logger.log('AUTOSAVE',path=str(path)); self.app_status.setText(self.tr('status.autosaved')); self.app_status.setToolTip(''); self.app_status.set_status('neutral'); return path
         def _prompt_recovery_if_needed(self):
+            if self._closing:
+                return
             runtime=getattr(self,'_runtime_preferences',RuntimeSettings.from_preferences(self.preferences))
             if not runtime.prompt_recovery:return
             candidate=self.autosave.recovery_candidate()
             if not candidate:return
-            box=QMessageBox(self); box.setWindowTitle(self.tr('autosave.recovery_title')); box.setText(self.tr('autosave.recovery_message')); box.setInformativeText(str(candidate)); box.setStandardButtons(QMessageBox.Yes|QMessageBox.No); box.setDefaultButton(QMessageBox.Yes)
-            if box.exec()==QMessageBox.Yes:
+            box=QMessageBox(self); self._recovery_prompt=box; box.setWindowTitle(self.tr('autosave.recovery_title')); box.setText(self.tr('autosave.recovery_message')); box.setInformativeText(str(candidate)); box.setStandardButtons(QMessageBox.Yes|QMessageBox.No); box.setDefaultButton(QMessageBox.Yes)
+            def complete(result):
+                self._recovery_prompt=None
+                if result != QMessageBox.Yes:return
                 try:payload=AutoSaveManager.load_snapshot(candidate)
                 except Exception as exc:self._show_error(str(exc));return
                 payload['_path']=self.scene['_path']; payload['_root']=self.scene['_root']; self._reset_session(payload); self.session.document.dirty=True; self.logger.log('AUTOSAVE_RECOVERY',path=str(candidate))
+            box.finished.connect(complete); box.open()
 
         def restore_autosave(self):
             candidate=self.autosave.latest_recovery()
@@ -1374,51 +1270,21 @@ if PYSIDE_AVAILABLE:
 
         # ---------- save/export/handoff ----------
         def save_scene(self):
-            try:path=self.session.save(); self._capture_saved_baseline(); self.logger.log('SAVE_UI',path=str(path)); self.app_status.setText(self.tr('status.saved')); self.app_status.set_status('success'); self.refresh_all(keep_selection=True)
-            except Exception as exc:self._show_error(str(exc))
+            return self._project_save_scene()
         def export_current(self):
-            output=QFileDialog.getExistingDirectory(self,self.tr('dialog.export_current'))
-            if output:self._perform_export(Path(output),{'current':dict(self.session.runtime.state)})
+            return self._project_export_current()
         def export_all(self):
-            output=QFileDialog.getExistingDirectory(self,self.tr('dialog.export_all'))
-            if output:
-                self._perform_export(
-                    Path(output),
-                    build_export_states(self.scene, integer_policy='representative', max_cases=5000),
-                )
+            return self._project_export_all()
         def _perform_export(self,output,states):
-            try:summary=export_scene(self.scene,output,states)
-            except ExportBlockedError as exc:self._show_error(str(exc)); return
-            except Exception as exc:self._show_error(str(exc)); return
-            self.logger.log('EXPORT',output=str(summary.output_dir),frames=summary.frame_count); self.app_status.setText(self.tr('status.exported',path=str(summary.output_dir))); self.app_status.set_status('success')
+            return self._project_perform_export(output,states)
         def export_handoff(self):
-            path,_=QFileDialog.getSaveFileName(self,self.tr('action.handoff'),str(scene_root(self.scene)/'exports'/'OLED_Code_AI_Handoff.zip'),'ZIP (*.zip)')
-            if not path:return
-            states=build_export_states(self.scene, integer_policy='representative', max_cases=5000)
-            try:summary=build_handoff_package(self.scene,path,states=states,integer_policy='representative'); self.app_status.setText(self.tr('handoff.done',frames=summary.frame_count,path=path)); self.app_status.set_status('success')
-            except Exception as exc:self._show_error(str(exc))
+            return self._project_export_handoff()
 
         def _sync_editor_chrome(self):
-            if not hasattr(self,'editor_tabs'):return
-            widget=self.editor_tabs.currentWidget(); doc_id=getattr(widget,'document_id',None) if widget is not None else None
-            state=editor_chrome_state(doc_id,self.workspace_mode.value)
-            blocker=QSignalBlocker(self.workspace_segment); self.workspace_segment.setCurrentIndex(state.segment_index); del blocker
-            self.header_settings.setChecked(state.settings_active)
-            self.header_settings.setProperty('active',state.settings_active)
-            self.header_undo.setEnabled(not state.settings_active); self.header_redo.setEnabled(not state.settings_active)
-            if hasattr(self,'_actions'):
-                undo=self._actions.get('undo'); redo=self._actions.get('redo')
-                if undo is not None: undo.setEnabled(not state.settings_active)
-                if redo is not None: redo.setEnabled(not state.settings_active)
-            style=self.header_settings.style(); style.unpolish(self.header_settings); style.polish(self.header_settings); self.header_settings.update()
+            return self._editor_sync_chrome()
 
         def _editor_tab_changed(self,index):
-            if index<0:return
-            widget=self.editor_tabs.widget(index); doc_id=getattr(widget,'document_id',None)
-            if doc_id and doc_id!='settings:preferences': self._last_work_editor_doc_id=doc_id
-            if doc_id and self.editor_registry.get(doc_id):self.editor_registry.activate(doc_id)
-            if doc_id and (doc_id.startswith('asset:') or doc_id.startswith('pixel:')):self.workspace_mode=WorkspaceMode.PIXEL
-            self._sync_editor_chrome()
+            return self._editor_tab_changed_impl(index)
 
         def _close_editor_tab(self,index):
             if index<=0:return
@@ -1454,24 +1320,7 @@ if PYSIDE_AVAILABLE:
             return editor.redo() if editor else self.redo()
 
         def open_pixel_studio(self):
-            path=None
-            if self.selected_id:
-                try:
-                    element=self.session.document.element(self.selected_id)
-                    if element.get('type')=='image' and element.get('asset'):path=(scene_root(self.scene)/str(element.get('asset'))).resolve()
-                except Exception:path=None
-            if path is None:
-                chosen,_=QFileDialog.getOpenFileName(self,self.tr('action.pixel_studio'),str(scene_root(self.scene)),self.tr('dialog.image_filter')); path=Path(chosen).resolve() if chosen else None
-                if path is None:return None
-            doc_id='asset:'+str(path)
-            existing=self.editor_registry.get(doc_id)
-            if existing is not None:
-                for i in range(self.editor_tabs.count()):
-                    if getattr(self.editor_tabs.widget(i),'document_id',None)==doc_id:self.editor_tabs.setCurrentIndex(i);self.workspace_mode=WorkspaceMode.PIXEL;self._sync_editor_chrome();return self.editor_tabs.widget(i)
-            try:editor=PixelStudioWindow(path,language=self.tr.language,parent=self.editor_tabs,preferences=self.preferences,project_root=scene_root(self.scene))
-            except Exception as exc:self._show_error(str(exc));return None
-            editor.assetSaved.connect(lambda saved_path,e=editor:self._pixel_asset_saved(saved_path,e)); editor.documentIdentityChanged.connect(lambda changed_path,e=editor:self._pixel_editor_identity_changed(changed_path,e)); editor.document_id=doc_id
-            self.editor_registry.open(editor); idx=self.editor_tabs.addTab(editor,path.name); self.workspace_mode=WorkspaceMode.PIXEL; self.editor_tabs.setCurrentIndex(idx); self._sync_editor_chrome(); return editor
+            return self._editor_open_pixel_studio()
 
         def _pixel_editor_identity_changed(self,path,editor=None):
             if editor is None:return
@@ -1480,82 +1329,22 @@ if PYSIDE_AVAILABLE:
             self.logger.log('PIXEL_ASSET_OPENED',path=str(path))
 
         def _pixel_asset_saved(self,path,editor=None):
-            if editor is not None:
-                try:self.editor_registry.rekey(editor)
-                except (KeyError,ValueError) as exc:self._show_error(str(exc))
-            self.logger.log('PIXEL_ASSET_SAVED',path=str(path)); QTimer.singleShot(80,self._scan_assets); self.refresh_all(keep_selection=True)
+            return self._editor_pixel_asset_saved(path, editor)
 
         def _font_root(self):
-            root=scene_root(self.scene); target=root/'.oled'/'fonts'; target.mkdir(parents=True,exist_ok=True); return target
+            return self._resource_font_root()
 
         def _scan_fonts(self):
-            if not hasattr(self,'font_list'):return
-            self.font_list.clear(); roots=[]; base=scene_root(self.scene); candidates=[base/'.oled'/'fonts',base/'fonts']
-            for element in self.scene.get('elements',[]):
-                rel=element.get('font_pack') if isinstance(element,dict) else None
-                if rel:
-                    path=(base/str(rel)).resolve(); candidates.append(path if path.is_dir() else path.parent)
-            seen=set()
-            for candidate in candidates:
-                try:candidate=candidate.resolve(); candidate.relative_to(base)
-                except (OSError,ValueError):continue
-                if candidate in seen or not candidate.exists():continue
-                seen.add(candidate); manifests=[candidate/'fontpack.json'] if (candidate/'fontpack.json').exists() else candidate.rglob('fontpack.json')
-                for manifest in manifests:
-                    try:roots.append(manifest.parent.relative_to(base).as_posix())
-                    except ValueError:continue
-            roots=sorted(dict.fromkeys(roots)); empty=not roots
-            self.font_empty_title.setVisible(empty); self.font_empty_guidance.setVisible(empty); self.font_list.setVisible(not empty)
-            if roots:self.font_list.addItems(roots)
+            return self._resource_scan_fonts()
 
         def new_font_pack(self):
-            name,ok=QInputDialog.getText(self,self.tr('font.new_title'),self.tr('font.pack_name'),text='Clinical 5x7')
-            if not ok or not name.strip():return
-            safe=''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in name.strip()).strip('_') or 'font_pack'; root=self._font_root()/safe
-            if (root/'fontpack.json').exists():self._show_error(self.tr('font.exists',path=str(root)));return
-            from font_pack import create_font_pack
-            try:create_font_pack(root,name.strip(),cell=(5,8),baseline=6,advance=6).save()
-            except Exception as exc:self._show_error(str(exc));return
-            self._scan_fonts(); self.open_font_lab(root)
+            return self._resource_new_font_pack()
 
         def open_font_lab(self,root=None):
-            if root is None:
-                item=self.font_list.currentItem() if hasattr(self,'font_list') else None
-                if item:root=(scene_root(self.scene)/item.text()).resolve()
-                else:
-                    chosen=QFileDialog.getExistingDirectory(self,self.tr('font.open_title'),str(self._font_root())); root=Path(chosen).resolve() if chosen else None
-            if not root:return
-            root=Path(root).resolve(); manifest=root/'fontpack.json'
-            if not manifest.exists():self._show_error(self.tr('font.manifest_missing',path=str(root)));return
-            doc_id='font:'+str(root)
-            if self.editor_registry.get(doc_id):
-                for i in range(self.editor_tabs.count()):
-                    if getattr(self.editor_tabs.widget(i),'document_id',None)==doc_id:self.editor_tabs.setCurrentIndex(i);return
-            try:editor=FontLabEditor(root,parent=self.editor_tabs,language=self.tr.language)
-            except Exception as exc:self._show_error(str(exc));return
-            editor.fontSaved.connect(lambda _p:(self._scan_fonts(),self.refresh_all(keep_selection=True))); self.editor_registry.open(editor)
-            runtime=self._runtime_preferences or RuntimeSettings.from_preferences(self.preferences); editor.apply_runtime_delta(PreferenceDelta(runtime,runtime,frozenset({'language','theme','metrics','performance'})))
-            idx=self.editor_tabs.addTab(editor,self.tr('panel.fonts')+' · '+root.name); self.editor_tabs.setCurrentIndex(idx)
+            return self._editor_open_font_lab(root)
 
         def insert_bitmap_text(self):
-            if self.workspace_mode!=WorkspaceMode.DESIGN:return
-            root=QFileDialog.getExistingDirectory(self,self.tr('font.select_title'),str(self._font_root()))
-            if not root:return
-            from font_pack import FontPack
-            try:pack=FontPack.load(root)
-            except Exception as exc:self._show_error(str(exc));return
-            text,ok=QInputDialog.getText(self,self.tr('bitmap.text_title'),self.tr('bitmap.text'),text='TEXT')
-            if not ok or not text:return
-            missing=[ch for ch in text if ch not in pack.characters()]
-            if missing:self._show_error(self.tr('font.missing_glyphs',glyphs=str(missing)));return
-            eid,ok=QInputDialog.getText(self,self.tr('bitmap.text_title'),self.tr('bitmap.element_id'),text='bitmap_text_1')
-            if not ok or not eid:return
-            try:
-                rel=Path(root).resolve().relative_to(scene_root(self.scene)).as_posix()
-            except ValueError:self._show_error(self.tr('font.inside_project'));return
-            try:self.session.add_elements([{'id':eid,'type':'bitmap_text','text':text,'font_pack':rel,'x':0,'y':0}],label='bitmap_text_insert')
-            except Exception as exc:self._show_error(str(exc));return
-            self._rebuild_elements(); self._set_selection([eid],source='api',primary=eid); self.refresh_all(keep_selection=True)
+            return self._resource_insert_bitmap_text()
 
         def toggle_agent_bridge(self):
             if self.agent_bridge.running:
@@ -1651,6 +1440,7 @@ if PYSIDE_AVAILABLE:
                 if result==QMessageBox.Save:
                     try:self.session.save()
                     except Exception as exc:self._show_error(str(exc)); event.ignore(); return
+            self._closing = True
             if self._preferences_view is not None:
                 self._preferences_view.flush_pending_save(); self._preferences_view=None
             if self._preferences_window is not None:

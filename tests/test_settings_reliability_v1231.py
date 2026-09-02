@@ -135,6 +135,6 @@ def test_stabilize_layout_activates_active_scroll_page_and_content_layouts():
 
 def test_package_verifier_requires_current_settings_reliability_doc_and_gates():
     verifier = _read(ROOT / 'VERIFY_PACKAGE.py')
-    assert "'V12_3_1_SETTINGS_RELIABILITY.md'" in verifier
+    assert "'ENGINEERING_HISTORY.md'" in verifier
     assert "'VERIFY_SETTINGS_V1231.py'" in verifier
     assert "'CAPTURE_V1231_SETTINGS_GOLDENS.py'" in verifier

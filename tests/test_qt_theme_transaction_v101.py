@@ -35,4 +35,4 @@ def test_light_dark_switch_repaints_without_mouse_or_external_event_flush(qtbot)
 
     assert _luma(light_window) > 0.75
     assert _luma(dark_window) < 0.20
-    assert app.property('monooledAdaptiveStyleSignature') == 'monooled-dark:comfortable:1.0'
+    assert app.property('monooledAdaptiveStyleSignature') == 'comfortable:1.0'

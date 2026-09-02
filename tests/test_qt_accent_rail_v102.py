@@ -16,7 +16,7 @@ SIM = Path(__file__).resolve().parents[1] / 'src'
 sys.path.insert(0, str(SIM))
 
 from qt_theme import build_stylesheet, build_theme_palette
-from ui_controls import StudioButton, StudioToolButton
+from ui_controls import StudioButton, StudioToolButton, accent_rail_spec
 
 
 def _distance(a, b):
@@ -25,7 +25,9 @@ def _distance(a, b):
 
 def _pixel(widget, x, y):
     image = widget.grab().toImage().convertToFormat(QImage.Format_RGBA8888)
-    return image.pixelColor(int(x), int(y))
+    px = min(image.width() - 1, max(0, int((float(x) + 0.5) * image.width() / widget.width())))
+    py = min(image.height() - 1, max(0, int((float(y) + 0.5) * image.height() / widget.height())))
+    return image.pixelColor(px, py)
 
 
 def _prepare(app, theme='monooled-dark'):
@@ -54,7 +56,8 @@ def test_tool_and_segment_style_bottom_rail_persists_when_checked(qtbot):
     for widget in (tool, segment):
         widget.setChecked(True); app.processEvents()
         accent = widget.palette().highlight().color()
-        sample = _pixel(widget, widget.width() // 2, widget.height() - 4)
+        rail = accent_rail_spec(widget.objectName(), widget.width(), widget.height(), checked=True)
+        sample = _pixel(widget, rail.x + rail.width // 2, rail.y)
         assert _distance(sample, accent) <= 32
         QTest.mouseMove(host, QPoint(0, 0)); app.processEvents()
         assert widget._accent_rail_opacity >= 0.99

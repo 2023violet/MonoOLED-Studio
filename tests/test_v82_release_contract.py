@@ -16,7 +16,7 @@ def test_v82_native_interaction_contract_survives_current_release():
     assert 'APP_VERSION = load_version()' in (SIM/'gui.py').read_text(encoding='utf-8')
     manifest=json.loads((ROOT/'DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
     assert manifest['version']==version
-    assert (ROOT/'docs/V12_GENERIC_PRODUCT_CLOSURE.md').is_file()
+    assert (ROOT/'docs/ENGINEERING_HISTORY.md').is_file()
     assert (ROOT/'tools/VERIFY_V82_STRESS.py').is_file()
 
 

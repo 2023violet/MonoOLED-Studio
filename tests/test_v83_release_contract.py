@@ -16,7 +16,7 @@ def test_v83_release_identity_and_documents():
     assert 'Version {APP_VERSION}' in prefs
     manifest=json.loads((ROOT/'DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
     assert manifest['version'] == version
-    assert (ROOT/'docs/V12_GENERIC_PRODUCT_CLOSURE.md').is_file()
+    assert (ROOT/'docs/ENGINEERING_HISTORY.md').is_file()
 
 def test_v83_windows_release_gate_is_zero_skip_and_real_startup():
     workflow=(ROOT/'.github/workflows/release-windows.yml').read_text(encoding='utf-8')

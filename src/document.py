@@ -16,6 +16,7 @@ class SceneDocument:
         self.scene = scene
         self.logger = logger
         self.dirty = False
+        self.refresh_elements()
         current_path=Path(scene['_path']).resolve() if scene.get('_path') else None
         recorded_path=Path(scene['_disk_path']).resolve() if scene.get('_disk_path') else None
         self._disk_fingerprint = str(scene.get('_disk_sha256') or '') if current_path is not None and recorded_path == current_path else None
@@ -28,11 +29,16 @@ class SceneDocument:
         try:return sha256(target.read_bytes()).hexdigest() if target.exists() else None
         except OSError:return None
 
-    def element(self, element_id: str) -> dict:
+    def refresh_elements(self) -> None:
+        self._elements_by_id = {}
         for element in self.scene.get('elements', []):
-            if element.get('id') == element_id:
-                return element
-        raise KeyError(f'unknown element id: {element_id}')
+            self._elements_by_id.setdefault(element.get('id'), element)
+
+    def element(self, element_id: str) -> dict:
+        try:
+            return self._elements_by_id[element_id]
+        except KeyError as exc:
+            raise KeyError(f'unknown element id: {element_id}') from exc
 
     @staticmethod
     def _parts(path: str | Iterable[str]) -> list[str]:
@@ -65,6 +71,8 @@ class SceneDocument:
         if before == value:
             return
         self._set_nested(element, parts, value)
+        if parts == ['id']:
+            self.refresh_elements()
         self.dirty = True
         if self.logger is not None:
             self.logger.log(
