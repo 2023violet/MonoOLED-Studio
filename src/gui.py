@@ -1561,7 +1561,7 @@ def run_font_smoke(source: str) -> int:
         while td.exists():
             try:
                 shutil.rmtree(td)
-            except PermissionError as exc:
+            except OSError as exc:
                 if perf_counter()>=cleanup_deadline:
                     failures.append(f'cleanup:{exc}')
                     break
