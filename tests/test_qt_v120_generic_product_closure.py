@@ -33,8 +33,11 @@ from pixel_studio_qt import PixelCanvas, PixelStudioWindow
 from ui_controls import StudioSelect
 
 
-def _rgb(image: QImage, x: int, y: int) -> tuple[int, int, int]:
-    c = image.pixelColor(x, y)
+def _rgb(canvas, x: int, y: int) -> tuple[int, int, int]:
+    image = canvas.grab().toImage().convertToFormat(QImage.Format_RGBA8888)
+    px = min(image.width() - 1, max(0, int((x + 0.5) * image.width() / canvas.width())))
+    py = min(image.height() - 1, max(0, int((y + 0.5) * image.height() / canvas.height())))
+    c = image.pixelColor(px, py)
     return c.red(), c.green(), c.blue()
 
 
@@ -52,8 +55,7 @@ def test_line_drag_renders_live_pixels_without_committing_until_release(qtbot):
 
     _drag(qtbot, canvas, QPoint(10, 10), QPoint(70, 10))
     assert document.pixels[0][1] == 0
-    image = canvas.grab().toImage().convertToFormat(QImage.Format_RGBA8888)
-    assert _rgb(image, 30, 10) == (255, 255, 255)
+    assert _rgb(canvas, 30, 10) == (255, 255, 255)
     qtbot.mouseRelease(canvas, Qt.LeftButton, pos=QPoint(70, 10))
     assert document.pixels[0][1] == 1
 
@@ -66,9 +68,8 @@ def test_rectangle_drag_renders_live_outline_without_committing_until_release(qt
 
     _drag(qtbot, canvas, QPoint(10, 10), QPoint(70, 50))
     assert document.pixels[0][1] == 0
-    image = canvas.grab().toImage().convertToFormat(QImage.Format_RGBA8888)
-    assert _rgb(image, 30, 10) == (255, 255, 255)
-    assert _rgb(image, 30, 30) == (0, 0, 0)
+    assert _rgb(canvas, 30, 10) == (255, 255, 255)
+    assert _rgb(canvas, 30, 30) == (0, 0, 0)
     qtbot.mouseRelease(canvas, Qt.LeftButton, pos=QPoint(70, 50))
     assert document.pixels[0][1] == 1
     assert document.pixels[1][1] == 0
