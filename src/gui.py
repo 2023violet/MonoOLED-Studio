@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 from time import perf_counter
@@ -1525,8 +1526,9 @@ def run_font_smoke(source: str) -> int:
     pref=PreferencesStore.load(); runtime=RuntimeSettings.from_preferences(pref); system_dark=app.palette().window().color().value()<128
     theme=resolve_theme_name(runtime.color_theme,runtime.theme_mode,system_dark=system_dark); _apply_application_theme(app,theme,runtime.density,runtime.ui_scale)
     failures=[]
-    with tempfile.TemporaryDirectory(prefix='monooled-font-smoke-') as td:
-        root=Path(td)/'font'; editor=None; reopened=None
+    td=Path(tempfile.mkdtemp(prefix='monooled-font-smoke-'))
+    root=td/'font'; editor=None; reopened=None
+    try:
         try:
             editor=FontLabEditor(root,name='GA Font',cell=(16,16),language=runtime.language); editor.setAttribute(Qt.WA_DontShowOnScreen,True); editor.show(); app.processEvents()
             editor.chars.setText('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'+''.join(chr(code) for code in range(0x400,0x500)))
@@ -1550,11 +1552,20 @@ def run_font_smoke(source: str) -> int:
             reopened.close(); app.processEvents(); reopened=None
         except Exception as exc:
             failures.append(f'exception:{exc}')
-        finally:
-            for widget in (editor,reopened):
-                if widget is not None:
-                    try: widget.close(); app.processEvents()
-                    except Exception: pass
+    finally:
+        for widget in (editor,reopened):
+            if widget is not None:
+                try: widget.close(); app.processEvents()
+                except Exception: pass
+        cleanup_deadline=perf_counter()+3.0
+        while td.exists():
+            try:
+                shutil.rmtree(td)
+            except PermissionError as exc:
+                if perf_counter()>=cleanup_deadline:
+                    failures.append(f'cleanup:{exc}')
+                    break
+                app.processEvents(); QThread.msleep(50)
     if failures: print('FONT SMOKE FAIL:\n'+'\n'.join(dict.fromkeys(failures)),file=sys.stderr); return 2
     print('FONT SMOKE PASS: async generation + nonblocking event loop + exact glyph output + existing-pack reopen'); return 0
 
