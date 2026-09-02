@@ -97,6 +97,14 @@ def test_studio_select_outer_geometry_never_clips_its_button(qtbot):
     assert combo.visibleRegion().boundingRect().contains(combo.rect())
 
 
+def test_standalone_scene_scans_only_the_assets_directory(qtbot, tmp_path, monkeypatch):
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'config'))
+    window = OLEDDesignerWindow('main_scene')
+    qtbot.addWidget(window)
+    assert window.asset_library.asset_dirs == ('assets',)
+
+
 def test_startup_and_basic_interaction_latency_have_hard_regression_ceiling(qtbot, tmp_path, monkeypatch):
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'local'))
     monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path / 'config'))

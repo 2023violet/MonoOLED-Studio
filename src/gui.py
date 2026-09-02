@@ -330,7 +330,7 @@ if PYSIDE_AVAILABLE:
         # ---------- model / project ----------
         def _make_asset_library(self):
             root = scene_root(self.scene)
-            dirs = self.project.asset_dirs if self.project else tuple(self.scene.get('asset_dirs', ['.']))
+            dirs = self.project.asset_dirs if self.project else tuple(self.scene.get('asset_dirs', ['assets']))
             return AssetLibrary(root, dirs, cache_budget_mb=int(self.preferences.get('performance.asset_cache_mb',512)))
 
         def _reset_session(self, scene: dict):
