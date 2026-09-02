@@ -26,8 +26,12 @@ if (-not (Test-Path $Sha)) { throw "Missing release checksum: $Sha" }
 & python tools\BUILD_WINDOWS_RUNTIME_ZIP.py --verify $Zip --expected-version $Version --checksum $Sha --expected-git-commit $GitCommit
 if ($LASTEXITCODE -ne 0) { throw "Runtime ZIP/checksum verification failed" }
 
-& gh release view $Tag *> $null
-if ($LASTEXITCODE -eq 0) {
+# gh returns exit code 1 when the release does not exist. Invoke through cmd so
+# PowerShell 7 does not surface that expected probe result as a terminating
+# NativeCommandError under $ErrorActionPreference = 'Stop'.
+cmd.exe /d /s /c "gh release view $Tag >nul 2>nul"
+$ReleaseExists = ($LASTEXITCODE -eq 0)
+if ($ReleaseExists) {
     # Published release assets are immutable in this workflow. A rerun may be
     # a no-op only when the already-published ZIP and checksum are byte-identical.
     $Temp = Join-Path ([IO.Path]::GetTempPath()) ("monooled-release-{0}-{1}" -f $Version, $PID)
