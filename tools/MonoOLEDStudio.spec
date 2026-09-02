@@ -26,6 +26,10 @@ a = Analysis(
     runtime_hooks=[], excludes=['tkinter','pydoc_data','pydoc','lib2to3','unittest',
                                 'doctest','pdb','venv','ensurepip','distutils','pip'], noarchive=False,
 )
+# A host Poppler installation can satisfy Qt's optional ICU delay imports during
+# analysis.  Its ICU DLLs are not Qt runtime dependencies and are ABI-incompatible
+# with the PySide6 wheel, so never ship the host copies in the application root.
+a.binaries = [entry for entry in a.binaries if entry[0] not in {'icuuc.dll', 'icudt78.dll'}]
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name='MonoOLEDStudio', debug=False,
