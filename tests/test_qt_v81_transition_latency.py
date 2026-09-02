@@ -68,7 +68,8 @@ def test_theme_only_switch_keeps_application_stylesheet_identity(qtbot,tmp_path,
 
 def test_v81_language_and_theme_switch_latency_budget(qtbot,tmp_path,monkeypatch):
     monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'local'));monkeypatch.setenv('XDG_CONFIG_HOME',str(tmp_path/'config'))
-    w=OLEDDesignerWindow('main_scene');qtbot.addWidget(w);w.resize(1440,900);w.show();qtbot.wait(20)
+    w=OLEDDesignerWindow('main_scene');qtbot.addWidget(w);w.resize(1440,900);w.show();qtbot.wait(150)
+    assert not w.deferred_refresh_timer.isActive()
     language=[];theme=[]
     for i in range(20):
         lang='en_US' if i%2 else 'zh_CN'
