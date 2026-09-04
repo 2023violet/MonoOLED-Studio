@@ -181,7 +181,7 @@ def run_graduation(project_root: str | Path, evidence_dir: str | Path) -> dict:
     recorder = Recorder(_service(project, "main"))
     try:
         capabilities = recorder.call("automation.capabilities")
-        if capabilities["api_version"] != "1.2.0" or len(capabilities["methods"]) != 84:
+        if capabilities["api_version"] != "1.3.0" or len(capabilities["methods"]) != 92:
             raise AssertionError("Automation API identity changed")
         recorder.call("project.rename_screen", {"screen_id": "main", "new_id": "generic_status", "label": "Generic Status"})
         recorder.call("project.create_screen", {"screen_id": "generic_detail", "label": "Generic Detail"})

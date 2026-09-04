@@ -75,7 +75,7 @@ def test_v123_version_identity_is_consistent():
     assert version == (SRC / 'VERSION').read_text(encoding='utf-8').strip()
     prefs = _text('preferences_qt.py')
     assert 'load_version' in prefs
-    assert 'Initial Release' in prefs
+    assert 'Output Workbench Release' in prefs
 
 
 def test_v123_page_shell_does_not_put_expandable_stretch_before_sections():

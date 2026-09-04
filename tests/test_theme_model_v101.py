@@ -68,10 +68,10 @@ def test_application_theme_transaction_forces_immediate_repolish_and_repaint() -
     body = _function_body(source, '_apply_application_theme')
     assert "app.setStyleSheet('')" not in body
     assert body.count('app.processEvents()') >= 1
-    assert 'app.allWidgets()' in body
-    assert '.unpolish(widget)' in body
-    assert '.polish(widget)' in body
-    assert 'widget.update()' in body
+    assert 'app.topLevelWidgets()' in body
+    assert '.unpolish(window)' in body
+    assert '.polish(window)' in body
+    assert 'window.update()' in body
 
 
 def test_windows_theme_switch_gate_covers_system_light_dark_without_hover() -> None:

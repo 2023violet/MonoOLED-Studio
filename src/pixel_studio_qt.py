@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from PIL import Image
 
-from PySide6.QtCore import QEvent, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QRect, QSize, Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPainterPath, QPen, QPixmap, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
@@ -25,6 +26,9 @@ from ui_controls import StudioButton, StudioToolButton, StudioSelect, StudioNume
 from micro_signature import pixel_hover_spec
 from pixel_hover_performance import hover_damage_rects
 from qt_canvas import adaptive_grid_stride
+from output_workbench_qt import OutputWorkbench
+from bitmap_raster import rasterize_image
+from output_profiles import RasterProfile
 QPushButton = StudioButton
 QToolButton = StudioToolButton
 
@@ -72,16 +76,28 @@ class ImageImportDialog(QDialog):
         self.document = PixelDocument.from_image(self.path)
         self.setWindowTitle(tr('pixel.import.title')); self.resize(620, 420)
         layout = QVBoxLayout(self); form = QFormLayout()
+        self.threshold_mode=StudioSelect(); self.threshold_mode.addItem('亮度阈值','luma'); self.threshold_mode.addItem('RGB 全部达到阈值','rgb_all')
         self.threshold = QSpinBox(); self.threshold.setRange(0,255); self.threshold.setValue(128)
+        self.red=QSpinBox(); self.green=QSpinBox(); self.blue=QSpinBox()
+        for control in (self.red,self.green,self.blue):control.setRange(0,255);control.setValue(255)
         self.invert = QCheckBox(tr('pixel.import.invert'))
-        form.addRow(tr('pixel.import.threshold'), self.threshold); form.addRow('', self.invert); layout.addLayout(form)
+        form.addRow('阈值模式',self.threshold_mode);form.addRow(tr('pixel.import.threshold'), self.threshold);form.addRow('R',self.red);form.addRow('G',self.green);form.addRow('B',self.blue); form.addRow('', self.invert); layout.addLayout(form)
         self.preview = QLabel(); self.preview.setAlignment(Qt.AlignCenter); self.preview.setMinimumHeight(240); layout.addWidget(self.preview,1)
         row=QHBoxLayout(); row.addStretch(1); cancel=QPushButton(tr('dialog.cancel')); apply=QPushButton(tr('pixel.import.apply')); apply.setObjectName('PrimaryButton')
         cancel.clicked.connect(self.reject); apply.clicked.connect(self.accept); row.addWidget(cancel); row.addWidget(apply); layout.addLayout(row)
-        self.threshold.valueChanged.connect(self._refresh); self.invert.toggled.connect(self._refresh); self._refresh()
+        for control in (self.threshold_mode,self.threshold,self.red,self.green,self.blue,self.invert):
+            signal=getattr(control,'currentIndexChanged',None) or getattr(control,'valueChanged',None) or getattr(control,'toggled',None);signal.connect(self._refresh)
+        self.threshold_mode.currentIndexChanged.connect(self._sync_threshold_controls);self._sync_threshold_controls();self._refresh()
+
+    def _sync_threshold_controls(self,*_):
+        rgb=self.threshold_mode.currentData()=='rgb_all';self.threshold.setEnabled(not rgb)
+        for control in (self.red,self.green,self.blue):control.setEnabled(rgb)
 
     def _refresh(self):
-        self.document=PixelDocument.from_image(self.path,threshold=self.threshold.value(),invert=self.invert.isChecked())
+        with Image.open(self.path) as source:
+            profile=RasterProfile(threshold_mode=self.threshold_mode.currentData(),luma_threshold=self.threshold.value(),red_threshold=self.red.value(),green_threshold=self.green.value(),blue_threshold=self.blue.value(),invert_source=self.invert.isChecked())
+            bitmap=rasterize_image(source,profile)
+        self.document=PixelDocument(bitmap.width,bitmap.height,[list(row) for row in bitmap.rows])
         self.preview.setPixmap(_document_pixmap(self.document,max(1,min(8,260//max(1,self.document.height)))))
 
     def converted_document(self): return self.document
@@ -138,6 +154,7 @@ def _rectangle_preview_points(x0: int, y0: int, x1: int, y1: int):
 
 class PixelCanvas(QWidget):
     documentChanged = Signal()
+    pixelsChanged = Signal(object)
     cursorChanged = Signal(int, int)
     selectionChanged = Signal(object)
     zoomChanged = Signal(int)
@@ -150,8 +167,10 @@ class PixelCanvas(QWidget):
         self._pan_active=False; self._pan_origin=None; self._pan_scroll=(0,0); self._space_down=False
         self._hover_pixel=None; self._hover_drawing=False; self._base_cache=None; self._base_cache_builds=0
         self.show_grid=True; self.stroke_interpolation=True; self.theme_name='monooled-light'
+        self.background_color=PIXEL_OFF_COLOR;self.fill_color=PIXEL_ON_COLOR;self.grid_color=None;self.pixel_border_color='#FFFF00'
+        self.trace_points=()
         self.wheel_action='zoom'; self.middle_pan_enabled=True; self.space_pan_enabled=True; self.brush_size=1
-        self.setMouseTracking(True); self.setFocusPolicy(Qt.StrongFocus); self.documentChanged.connect(self._invalidate_base_cache); self._sync_size()
+        self.setMouseTracking(True); self.setFocusPolicy(Qt.StrongFocus); self._sync_size()
 
     def _sync_size(self): self.setFixedSize(self.document.width*self.zoom+1,self.document.height*self.zoom+1); self._invalidate_base_cache()
     def _invalidate_base_cache(self): self._base_cache=None
@@ -160,19 +179,41 @@ class PixelCanvas(QWidget):
 
     def _base_pixmap(self):
         if self._base_cache is not None and self._base_cache.size()==self.size(): return self._base_cache
-        t=get_theme(self.theme_name); pix=QPixmap(self.size()); pix.fill(QColor(PIXEL_OFF_COLOR)); z=self.zoom; painter=QPainter(pix)
-        painter.setPen(Qt.NoPen); painter.setBrush(QColor(PIXEL_ON_COLOR))
+        t=get_theme(self.theme_name); pix=QPixmap(self.size()); pix.fill(QColor(self.background_color)); z=self.zoom; painter=QPainter(pix)
+        painter.setPen(QPen(QColor(self.pixel_border_color),1) if self.pixel_border_color else Qt.NoPen); painter.setBrush(QColor(self.fill_color))
         for y,row in enumerate(self.document.pixels):
             for x,value in enumerate(row):
                 if value:painter.drawRect(x*z,y*z,z,z)
         if self.show_grid:
-            stride=adaptive_grid_stride(z); painter.setPen(QPen(QColor(t['canvas.grid']),1))
+            stride=adaptive_grid_stride(z); painter.setPen(QPen(QColor(self.grid_color or t['canvas.grid']),1))
             xs=list(range(0,self.document.width+1,stride)); ys=list(range(0,self.document.height+1,stride))
             if xs[-1] != self.document.width: xs.append(self.document.width)
             if ys[-1] != self.document.height: ys.append(self.document.height)
             for x in xs:painter.drawLine(x*z,0,x*z,self.document.height*z)
             for y in ys:painter.drawLine(0,y*z,self.document.width*z,y*z)
         painter.end(); self._base_cache=pix; self._base_cache_builds+=1; return pix
+
+    def _stroke_bounds(self, x0, y0, x1, y1):
+        left=(max(1,int(self.brush_size))-1)//2; right=max(1,int(self.brush_size))//2
+        return (
+            max(0,min(x0,x1)-left), max(0,min(y0,y1)-left),
+            min(self.document.width-1,max(x0,x1)+right), min(self.document.height-1,max(y0,y1)+right),
+        )
+
+    def _patch_base_cache(self, bounds):
+        x0,y0,x1,y1=bounds; z=self.zoom
+        damage=QRect(x0*z,y0*z,(x1-x0+1)*z+1,(y1-y0+1)*z+1)
+        if self._base_cache is not None:
+            painter=QPainter(self._base_cache); painter.fillRect(damage,QColor(self.background_color)); painter.setPen(QPen(QColor(self.pixel_border_color),1) if self.pixel_border_color else Qt.NoPen); painter.setBrush(QColor(self.fill_color))
+            for y in range(y0,y1+1):
+                for x in range(x0,x1+1):
+                    if self.document.pixels[y][x]:painter.drawRect(x*z,y*z,z,z)
+            if self.show_grid:
+                stride=adaptive_grid_stride(z); painter.setPen(QPen(QColor(self.grid_color or get_theme(self.theme_name)['canvas.grid']),1))
+                for x in range((x0//stride)*stride,x1+2,stride):painter.drawLine(x*z,y0*z,x*z,(y1+1)*z)
+                for y in range((y0//stride)*stride,y1+2,stride):painter.drawLine(x0*z,y*z,(x1+1)*z,y*z)
+            painter.end()
+        self.pixelsChanged.emit(bounds); self.update(damage.adjusted(-1,-1,1,1))
 
     def _set_hover_state(self,hover,drawing):
         hover=hover if hover is None else (int(hover[0]),int(hover[1])); drawing=bool(drawing)
@@ -203,6 +244,10 @@ class PixelCanvas(QWidget):
             x,y,w,h=self.selection
             if self._selection_preview:x+=self._selection_preview[0]; y+=self._selection_preview[1]
             painter.setPen(QPen(QColor(t['canvas.selection']),2,Qt.DashLine)); painter.setBrush(Qt.NoBrush); painter.drawRect(x*z,y*z,w*z,h*z)
+        if self.trace_points:
+            color=QColor(t['accent.primary']);color.setAlpha(90);painter.setPen(QPen(QColor(t['accent.primary']),2));painter.setBrush(color)
+            for point in self.trace_points:
+                if point is not None:painter.drawRect(point[0]*z+1,point[1]*z+1,max(1,z-2),max(1,z-2))
         hover=pixel_hover_spec(in_bounds=self._hover_pixel is not None,drawing=self._hover_drawing)
         if hover.visible and self._hover_pixel is not None:
             hx,hy=self._hover_pixel; color=QColor(t['accent.primary']); color.setAlphaF(hover.opacity)
@@ -246,11 +291,11 @@ class PixelCanvas(QWidget):
         value=0 if event.button()==Qt.RightButton or self.tool=='Eraser' else 1
         self._stroke_value=value; self._stroke_last=(x,y); self.document.begin_gesture()
         if self.tool in ('Pencil','Eraser'):
-            self.document.brush(x,y,value,size=self.brush_size); self.documentChanged.emit(); self.update()
+            self.document.brush(x,y,value,size=self.brush_size); self._patch_base_cache(self._stroke_bounds(x,y,x,y))
         elif self.tool in ('Line','Rectangle'):
             self._shape_preview=(self.tool,x,y,x,y,value); self.update()
         elif self.tool=='Fill':
-            self._shape_preview=None; self.document.flood_fill(x,y,value); self.document.end_gesture(); self.start=None; self._stroke_last=None; self.documentChanged.emit(); self.update()
+            self._shape_preview=None; self.document.flood_fill(x,y,value); self.document.end_gesture(); self.start=None; self._stroke_last=None; self._invalidate_base_cache(); self.documentChanged.emit(); self.update()
 
     def mouseMoveEvent(self,event):
         x,y=self._pixel(event)
@@ -270,7 +315,7 @@ class PixelCanvas(QWidget):
         last=self._stroke_last or (x,y)
         if self.stroke_interpolation:self.document.brush_segment(last[0],last[1],x,y,self._stroke_value,size=self.brush_size)
         else:self.document.brush(x,y,self._stroke_value,size=self.brush_size)
-        self._stroke_last=(x,y); self.documentChanged.emit(); self.update()
+        self._stroke_last=(x,y); self._patch_base_cache(self._stroke_bounds(last[0],last[1],x,y))
 
     def mouseReleaseEvent(self,event):
         if event.button() in (Qt.LeftButton,Qt.RightButton):
@@ -285,7 +330,7 @@ class PixelCanvas(QWidget):
             if self._selection_drag_origin and self.selection:
                 dx,dy=self._selection_preview or (0,0); sx,sy,sw,sh=self.selection
                 nx=max(0,min(self.document.width-sw,sx+dx)); ny=max(0,min(self.document.height-sh,sy+dy)); adx,ady=nx-sx,ny-sy
-                if adx or ady:self.document.move_region(sx,sy,sw,sh,adx,ady); self.selection=(nx,ny,sw,sh); self.documentChanged.emit()
+                if adx or ady:self.document.move_region(sx,sy,sw,sh,adx,ady); self.selection=(nx,ny,sw,sh); self._invalidate_base_cache(); self.documentChanged.emit()
                 self._selection_drag_origin=None; self._selection_preview=None; self.selectionChanged.emit(self.selection); self.update(); return
             xa,xb=sorted((x0,x1)); ya,yb=sorted((y0,y1)); self.selection=(xa,ya,xb-xa+1,yb-ya+1); self.selectionChanged.emit(self.selection); self.update(); return
         value=0 if event.button()==Qt.RightButton or self.tool=='Eraser' else 1
@@ -296,7 +341,7 @@ class PixelCanvas(QWidget):
             self.document.end_gesture(); self._stroke_last=None; self.documentChanged.emit(); self.update(); return
         else:
             self.document._gesture_before=None; return
-        self.document.end_gesture(); self._stroke_last=None; self.documentChanged.emit(); self.update()
+        self.document.end_gesture(); self._stroke_last=None; self._invalidate_base_cache(); self.documentChanged.emit(); self.update()
 
     def wheelEvent(self,event):
         if self.wheel_action != 'zoom':
@@ -320,14 +365,15 @@ class PixelStudioWindow(QMainWindow):
     assetSaved=Signal(str)
     documentIdentityChanged=Signal(str)
 
-    def __init__(self,path: str|Path|None=None,language: str=DEFAULT_LANGUAGE,parent=None,preferences: PreferencesStore|None=None,project_root: str|Path|None=None):
-        super().__init__(parent); self.preferences=preferences or PreferencesStore.load(); self.tr=Translator(language or self.preferences.get('language',DEFAULT_LANGUAGE)); self.path=Path(path).resolve() if path else None; self.project_root=Path(project_root).resolve() if project_root else (self.path.parent if self.path else Path.cwd()).resolve(); self.clipboard=None
+    def __init__(self,path: str|Path|None=None,language: str=DEFAULT_LANGUAGE,parent=None,preferences: PreferencesStore|None=None,project_root: str|Path|None=None,project_workspace=None):
+        super().__init__(parent); self.preferences=preferences or PreferencesStore.load(); self.tr=Translator(language or self.preferences.get('language',DEFAULT_LANGUAGE)); self.path=Path(path).resolve() if path else None; self.project_workspace=project_workspace;self.project_root=Path(project_root).resolve() if project_root else (self.path.parent if self.path else Path.cwd()).resolve(); self.clipboard=None
         if parent is not None:self.setWindowFlags(Qt.Widget)
         self.document_id='asset:'+str(self.path) if self.path else f'pixel:new:{id(self)}'; self.title=self.path.name if self.path else self.tr('pixel.title')
         self.document=PixelDocument.from_image(self.path) if self.path else PixelDocument(32,16)
         self.document.set_max_undo(int(self.preferences.get('performance.undo_history',200)))
         self.setWindowTitle(f"MonoOLED Studio · {self.tr('pixel.title')}"); self.resize(1180,780)
         self._runtime_settings=None; self._resolved_theme=None; self._adaptive_style_signature=None; self.system_theme=SystemThemeProvider(self)
+        self._preview_timer=QTimer(self); self._preview_timer.setSingleShot(True); self._preview_timer.setInterval(80); self._preview_timer.timeout.connect(self.refresh_preview)
         self._build_ui(); self.apply_preferences(initial=True); self.refresh_preview()
 
     def _build_ui(self):
@@ -366,10 +412,11 @@ class PixelStudioWindow(QMainWindow):
         for key,fn in [('pixel.action.invert',self.invert),('pixel.action.flip_h',self.flip_h),('pixel.action.flip_v',self.flip_v),('pixel.action.canvas_size',self.resize_canvas),('pixel.action.rotate90',self.rotate90),('pixel.action.rotate180',self.rotate180),('pixel.action.rotate270',self.rotate270),('pixel.action.crop_selection',self.crop_selection),('pixel.action.clear',self.clear)]:b=QPushButton(tr(key) if '.' in key else key); b.setProperty('trKey',key if '.' in key else ''); b.clicked.connect(fn); il.addWidget(b)
         section('pixel.tab.export')
         for key,fn in [('pixel.action.open',self.open_image),('pixel.action.save',self.save_png),('pixel.action.export_bin',self.save_bin),('pixel.action.export_c',self.save_c_header),('pixel.action.font',self.font_generator)]:b=QPushButton(tr(key) if '.' in key else key); b.setProperty('trKey',key if '.' in key else ''); b.clicked.connect(fn); il.addWidget(b)
-        il.addStretch(1); self.inspector_scroll.setWidget(inspector); self.workspace_splitter.addWidget(self.inspector_scroll); self.workspace_splitter.setSizes([56,900,280]); layout.addWidget(self.workspace_splitter,1)
+        self.output_workbench=OutputWorkbench(self,il,layout)
+        il.addStretch(1); self.inspector_scroll.setWidget(inspector); self.workspace_splitter.addWidget(self.inspector_scroll); self.workspace_splitter.setSizes([56,900,340]); layout.insertWidget(1,self.workspace_splitter,1)
         self.pixel_status=QLabel(self.tr('font.status.pixel')); self.pixel_status.setObjectName('TechnicalValue'); self.statusBar().addWidget(self.pixel_status,1)
         self.input_hint=QLabel(self.tr('pixel.input_hint')); self.input_hint.setObjectName('Muted'); self.statusBar().addPermanentWidget(self.input_hint)
-        self.canvas.documentChanged.connect(self._document_changed); self.canvas.cursorChanged.connect(self._cursor_changed); self.canvas.selectionChanged.connect(lambda _v:self.refresh_preview()); self.canvas.zoomChanged.connect(self._canvas_zoom_changed)
+        self.canvas.documentChanged.connect(self._document_changed); self.canvas.pixelsChanged.connect(lambda _bounds:self._preview_timer.start()); self.canvas.pixelsChanged.connect(lambda _bounds:self.output_workbench.document_changed()); self.canvas.cursorChanged.connect(self._cursor_changed); self.canvas.selectionChanged.connect(lambda _v:self.refresh_preview()); self.canvas.selectionChanged.connect(lambda _v:self.output_workbench.selection_changed()); self.canvas.zoomChanged.connect(self._canvas_zoom_changed)
         self.canvas_scroll.viewport().installEventFilter(self); self.canvas.installEventFilter(self)
 
     def _refresh_tool_icons(self,selected: str | None = None):
@@ -515,7 +562,7 @@ class PixelStudioWindow(QMainWindow):
         self.path=Path(path).resolve(); self.document=dialog.converted_document(); self.document.set_max_undo(int(self.preferences.get('performance.undo_history',200))); self.canvas.set_document(self.document)
         self.document_id='asset:'+str(self.path); self.title=self.path.name; self.documentIdentityChanged.emit(str(self.path)); self._document_changed(); self.refresh_preview()
     def _document_changed(self):
-        self.refresh_preview(); self.title=(self.path.name if self.path else self.tr('pixel.title'))+(' ●' if self.document.dirty else '')
+        self._preview_timer.stop(); self.refresh_preview(); self.output_workbench.document_changed(); self.title=(self.path.name if self.path else self.tr('pixel.title'))+(' ●' if self.document.dirty else '')
         parent=self.parentWidget()
         while parent is not None:
             if hasattr(parent,'indexOf') and hasattr(parent,'setTabText'):

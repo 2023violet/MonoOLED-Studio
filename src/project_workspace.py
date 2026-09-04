@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 from hashlib import sha256
 import json
 import os
@@ -8,6 +9,7 @@ from pathlib import Path
 import shutil
 
 from atomic_io import unique_temp_path
+from output_profiles import OutputProfile, builtin_profiles, normalize_profile, validate_profile_id
 
 PROJECT_FILENAME = 'project.oled.json'
 PROJECT_SCHEMA_VERSION = 1
@@ -139,6 +141,18 @@ class ProjectWorkspace:
         active = str(self.data.get('active_screen', ''))
         if active and screens and active not in seen:
             raise ValueError(f'active_screen does not exist: {active}')
+        workbench = self.data.get('output_workbench')
+        if workbench is not None:
+            if not isinstance(workbench, dict) or int(workbench.get('schema', 0)) != 1:
+                raise ValueError('unsupported output workbench schema')
+            raw_profiles = workbench.get('profiles')
+            if not isinstance(raw_profiles, dict) or not raw_profiles:
+                raise ValueError('output workbench profiles must be a non-empty object')
+            for profile_id, raw_profile in raw_profiles.items():
+                validate_profile_id(str(profile_id)); normalize_profile(raw_profile)
+            active_profile = str(workbench.get('active_profile', ''))
+            if active_profile not in raw_profiles:
+                raise ValueError('active output profile does not exist')
 
     @property
     def name(self) -> str:
@@ -172,6 +186,61 @@ class ProjectWorkspace:
             self.save()
         except Exception:
             self.data['asset_dirs'] = previous
+            raise
+
+    def get_output_profiles(self) -> tuple[str, dict[str, OutputProfile]]:
+        workbench = self.data.get('output_workbench')
+        if workbench is None:
+            profiles = builtin_profiles()
+            return 'ssd1306_vlsb_c', {'ssd1306_vlsb_c': profiles['ssd1306_vlsb_c']}
+        profiles = {str(profile_id): normalize_profile(raw) for profile_id, raw in workbench['profiles'].items()}
+        return str(workbench['active_profile']), profiles
+
+    def upsert_output_profile(self, profile_id: str, profile, *, activate: bool = False) -> None:
+        profile_id = validate_profile_id(profile_id)
+        normalized = normalize_profile(profile)
+        previous = deepcopy(self.data)
+        workbench = self.data.setdefault('output_workbench', _default_output_workbench())
+        workbench.setdefault('profiles', {})[profile_id] = normalized.to_dict()
+        if activate:
+            workbench['active_profile'] = profile_id
+        try:
+            self.save()
+        except Exception:
+            self.data = previous
+            raise
+
+    def set_active_output_profile(self, profile_id: str) -> None:
+        profile_id = validate_profile_id(profile_id)
+        previous = deepcopy(self.data)
+        workbench = self.data.setdefault('output_workbench', _default_output_workbench())
+        if profile_id not in workbench['profiles']:
+            self.data = previous
+            raise KeyError(f'unknown output profile: {profile_id}')
+        workbench['active_profile'] = profile_id
+        try:
+            self.save()
+        except Exception:
+            self.data = previous
+            raise
+
+    def delete_output_profile(self, profile_id: str) -> None:
+        profile_id = validate_profile_id(profile_id)
+        previous = deepcopy(self.data)
+        workbench = self.data.setdefault('output_workbench', _default_output_workbench())
+        if profile_id not in workbench['profiles']:
+            self.data = previous
+            raise KeyError(f'unknown output profile: {profile_id}')
+        if len(workbench['profiles']) <= 1:
+            self.data = previous
+            raise ValueError('project must keep at least one output profile')
+        del workbench['profiles'][profile_id]
+        if workbench['active_profile'] == profile_id:
+            workbench['active_profile'] = sorted(workbench['profiles'])[0]
+        try:
+            self.save()
+        except Exception:
+            self.data = previous
             raise
 
     def screen(self, screen_id: str) -> ScreenRef:
@@ -325,6 +394,15 @@ def _blank_scene(product: str, width: int, height: int) -> dict:
     }
 
 
+def _default_output_workbench() -> dict:
+    default = builtin_profiles()['ssd1306_vlsb_c']
+    return {
+        'schema': 1,
+        'active_profile': 'ssd1306_vlsb_c',
+        'profiles': {'ssd1306_vlsb_c': default.to_dict()},
+    }
+
+
 def create_project(root: str | Path, *, name: str, canvas: tuple[int, int] = (128, 32)) -> ProjectWorkspace:
     root = Path(root).resolve()
     manifest = root / PROJECT_FILENAME
@@ -342,6 +420,7 @@ def create_project(root: str | Path, *, name: str, canvas: tuple[int, int] = (12
         'default_canvas': [int(canvas[0]), int(canvas[1])],
         'active_screen': 'main',
         'asset_dirs': ['assets'],
+        'output_workbench': _default_output_workbench(),
         'screens': [],
     }
     project = ProjectWorkspace(root / PROJECT_FILENAME, data)

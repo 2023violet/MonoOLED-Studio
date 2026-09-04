@@ -15,8 +15,9 @@ def test_all_production_select_factories_route_to_studio_select():
     assert len(re.findall(r'QComboBox\(\)',gui))==6
     # Theme Closure V10.1 removes the inert dark-palette selector.
     assert len(re.findall(r'QComboBox\(\)',prefs))==9
-    assert len(re.findall(r'StudioSelect\(\)',pixel))==3
-    assert 6+9+3==18
+    # Image import adds the explicit luma/RGB threshold-mode selector.
+    assert len(re.findall(r'StudioSelect\(\)',pixel))==4
+    assert 6+9+4==19
 
 
 def test_v82_select_foundation_has_explicit_state_and_opaque_surface_contract():

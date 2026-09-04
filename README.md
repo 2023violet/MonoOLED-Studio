@@ -1,4 +1,4 @@
-# MonoOLED Studio V1.0.1 — Maintenance Release
+# MonoOLED Studio V1.1.0 — Output Workbench Release
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -8,18 +8,18 @@ MonoOLED Studio is a Windows-focused, generic 1-bit OLED scene and pixel authori
 
 **Normal users do not need Python, Git, or any BAT file.** Open this repository's **GitHub Releases** page, download:
 
-`MonoOLEDStudio_v1.0.1_Windows_x64.zip`
+`MonoOLEDStudio_v1.1.0_Windows_x64.zip`
 
 Extract the ZIP, keep the extracted folder together, and double-click:
 
 `MonoOLEDStudio\MonoOLEDStudio.exe`
 
-The release also provides `MonoOLEDStudio_v1.0.1_Windows_x64.zip.sha256` for integrity verification. The Windows application is an onedir PyInstaller build for faster startup and more predictable Qt plugin loading.
+The release also provides `MonoOLEDStudio_v1.1.0_Windows_x64.zip.sha256` for integrity verification. The Windows application is an onedir PyInstaller build for faster startup and more predictable Qt plugin loading.
 
 ## Release model
 
 - Normal `push` / pull request → `.github/workflows/ci.yml` runs the fast Windows source gate.
-- Push a version tag such as `v1.0.1` → `.github/workflows/release-windows.yml` runs the full Windows GA, creates the EXE package, computes SHA-256, and publishes both files to GitHub Releases.
+- Push a version tag such as `v1.1.0` → `.github/workflows/release-windows.yml` runs the full Windows GA, creates the EXE package, computes SHA-256, and publishes both files to GitHub Releases.
 - `tools\BUILD_WINDOWS_QUICK.bat` → developer-only fast local EXE build.
 - `tools\BUILD_WINDOWS_GA.bat` → developer/CI full Windows certification and release package build.
 

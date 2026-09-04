@@ -7,13 +7,16 @@ ROOT = Path(__file__).resolve().parents[1]
 SIM = ROOT / 'src'
 
 
-def test_pixel_canvas_uses_oled_black_white_truth_not_theme_surface():
+def test_pixel_canvas_defaults_to_oled_truth_and_keeps_display_colors_out_of_encoding():
     source = (SIM / 'pixel_studio_qt.py').read_text(encoding='utf-8')
     assert "t['canvas.background']" not in source
     assert "PIXEL_OFF_COLOR = '#000000'" in source
     assert "PIXEL_ON_COLOR = '#FFFFFF'" in source
-    assert 'pix.fill(QColor(PIXEL_OFF_COLOR))' in source
-    assert 'painter.setBrush(QColor(PIXEL_ON_COLOR))' in source
+    assert 'self.background_color=PIXEL_OFF_COLOR' in source
+    assert 'self.fill_color=PIXEL_ON_COLOR' in source
+    assert 'pix.fill(QColor(self.background_color))' in source
+    assert 'painter.setBrush(QColor(self.fill_color))' in source
+    assert 'to_vlsb' not in source[source.index('def _base_pixmap'):source.index('def _stroke_bounds')]
 
 
 def test_github_root_markdown_is_curated():
@@ -28,6 +31,7 @@ def test_github_documentation_is_classified():
     required = {
         'README.md', 'USER_GUIDE_CN.md', 'USER_GUIDE_EN.md', 'SCENE_SCHEMA.md',
         'AUTOMATION_API_V1.md', 'DESIGN_SYSTEM.md', 'ENGINEERING_HISTORY.md', 'WINDOWS_BUILD.md',
+        'OUTPUT_WORKBENCH.md',
     }
     assert required <= {p.name for p in docs.iterdir() if p.is_file()}
     for legacy in ('design', 'releases', 'archive'):

@@ -153,7 +153,7 @@ def test_v841_font_methods_publish_real_parameter_contracts(tmp_path):
     expected = {
         'font.create_pack': {'path', 'name', 'cell', 'baseline', 'advance'},
         'font.get_pack': {'font_id'},
-        'font.generate_glyphs': {'font_id', 'characters', 'font_path', 'font_size', 'threshold', 'offset'},
+        'font.generate_glyphs': {'font_id', 'characters', 'font_path', 'font_size', 'threshold', 'offset', 'alignment', 'antialias_scale'},
         'font.get_glyph': {'font_id', 'char'},
         'font.update_glyph': {'font_id', 'char', 'pixels', 'metrics'},
         'font.set_metrics': {'font_id', 'baseline', 'advance'},

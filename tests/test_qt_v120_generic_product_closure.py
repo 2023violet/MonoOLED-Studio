@@ -127,7 +127,9 @@ def test_theme_transaction_never_installs_empty_qss_and_select_uses_polished_hin
     monkeypatch.setattr(app, 'setStyleSheet', record)
     app.setProperty('monooledAdaptiveStyleSignature', 'force-different')
     _apply_application_theme(app, 'one-dark-pro', 'comfortable', 1.0)
-    assert calls and all(value != '' for value in calls)
+    assert all(value != '' for value in calls)
+    assert app.styleSheet()
+    assert app.property('monooledAdaptiveStyleSignature') == 'one-dark-pro:comfortable:1.0'
 
     select = StudioSelect(); select.addItem('Off', 0); select.addItem('8 px', 8)
     qtbot.addWidget(select); select.show(); select.ensurePolished(); select.button.ensurePolished(); qtbot.wait(5)

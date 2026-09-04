@@ -16,7 +16,7 @@ REQUIRED_DIRS=('src','tests','tools','test_assets','docs','.github')
 OBSOLETE_ROOTS=('OLED模拟器','Developer_Tools','Curing_Lite光固化机产品 - UI设计初稿','scenes')
 CURRENT_DOCS={
     'README.md','USER_GUIDE_CN.md','USER_GUIDE_EN.md','SCENE_SCHEMA.md',
-    'AUTOMATION_API_V1.md','DESIGN_SYSTEM.md','ENGINEERING_HISTORY.md','WINDOWS_BUILD.md',
+    'AUTOMATION_API_V1.md','OUTPUT_WORKBENCH.md','DESIGN_SYSTEM.md','ENGINEERING_HISTORY.md','WINDOWS_BUILD.md',
 }
 
 

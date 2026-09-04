@@ -7,7 +7,7 @@ from font_pack import FontPack, GlyphMetrics, create_font_pack, rasterize_charac
 from i18n import DEFAULT_LANGUAGE, Translator
 from pixel_studio import PixelDocument
 from pixel_studio_qt import PixelCanvas
-from ui_controls import StudioButton, StudioNumericInput
+from ui_controls import StudioButton, StudioNumericInput, StudioSelect
 
 
 class _FontGenerateWorker(QObject):
@@ -17,8 +17,8 @@ class _FontGenerateWorker(QObject):
     finished=Signal()
     max_progress_updates=50
 
-    def __init__(self,*,root: Path,name: str,cell: tuple[int,int],baseline: int,advance: int,characters: str,font_path: str|None,font_size: int,threshold: int,resize: bool):
-        super().__init__(); self.root=root; self.name=name; self.cell=cell; self.baseline=baseline; self.advance=advance; self.characters=characters; self.font_path=font_path; self.font_size=font_size; self.threshold=threshold; self.resize=resize; self._last_progress=0
+    def __init__(self,*,root: Path,name: str,cell: tuple[int,int],baseline: int,advance: int,characters: str,font_path: str|None,font_size: int,threshold: int,alignment: str,antialias_scale: int,resize: bool):
+        super().__init__(); self.root=root; self.name=name; self.cell=cell; self.baseline=baseline; self.advance=advance; self.characters=characters; self.font_path=font_path; self.font_size=font_size; self.threshold=threshold; self.alignment=alignment; self.antialias_scale=antialias_scale; self.resize=resize; self._last_progress=0
 
     def _emit_progress(self,done: int,total: int):
         step=max(1,int(total)//self.max_progress_updates)
@@ -35,7 +35,7 @@ class _FontGenerateWorker(QObject):
                 pack=FontPack.load(self.root); pack.set_metrics(baseline=self.baseline,advance=self.advance)
             count=rasterize_characters(
                 pack,self.characters,font_path=self.font_path,font_size=self.font_size,threshold=self.threshold,
-                progress=self._emit_progress,
+                alignment=self.alignment,antialias_scale=self.antialias_scale,progress=self._emit_progress,
             )
             self.succeeded.emit(pack,count)
         except (OSError,ValueError) as exc:
@@ -77,9 +77,9 @@ class FontLabEditor(QWidget):
         left=QWidget();ll=QVBoxLayout(left);ll.setContentsMargins(4,4,4,4);self.glyphs=QListWidget();self.glyphs.currentTextChanged.connect(self._select_glyph);self.characters_label=QLabel();ll.addWidget(self.characters_label);ll.addWidget(self.glyphs,1);self.split.addWidget(left)
         center=QWidget();cl=QVBoxLayout(center);cl.setContentsMargins(4,4,4,4);self.canvas=PixelCanvas(self.document);self.canvas.zoom=24;self.canvas._sync_size();scroll=QScrollArea();scroll.setWidget(self.canvas);scroll.setWidgetResizable(False);cl.addWidget(scroll,1);self.split.addWidget(center)
         right=QWidget();rl=QVBoxLayout(right);rl.setContentsMargins(8,8,8,8);form=QFormLayout();self.chars=QLineEdit(DEFAULT_CHARACTERS);self.font_path=QLineEdit();self.font_path.setPlaceholderText(self.tr('font.source_builtin'));self.font_path.textChanged.connect(self._font_source_changed);self.browse_btn=StudioButton();self.browse_btn.clicked.connect(self._browse_font);fontrow=QWidget();fr=QHBoxLayout(fontrow);fr.setContentsMargins(0,0,0,0);fr.addWidget(self.font_path,1);fr.addWidget(self.browse_btn)
-        self.font_size=StudioNumericInput();self.font_size.setRange(4,96);self.font_size.setValue(recommended_font_size(self.pack.cell));self.font_size.editingFinished.connect(self._font_size_edited);self.cell_w=StudioNumericInput();self.cell_w.setRange(1,128);self.cell_w.setValue(self.pack.cell[0]);self.cell_h=StudioNumericInput();self.cell_h.setRange(1,128);self.cell_h.setValue(self.pack.cell[1]);self.baseline=StudioNumericInput();self.baseline.setRange(0,max(0,self.pack.cell[1]-1));self.baseline.setValue(self.pack.baseline);self.advance=StudioNumericInput();self.advance.setRange(1,128);self.advance.setValue(self.pack.advance);self.threshold=StudioNumericInput();self.threshold.setRange(0,255);self.threshold.setValue(128);self.cell_w.valueChanged.connect(self._cell_width_changed);self.cell_h.valueChanged.connect(self._cell_height_changed);self.baseline.valueChanged.connect(self._metrics_changed);self.baseline.editingFinished.connect(self._baseline_edited);self.advance.valueChanged.connect(self._metrics_changed);self.advance.editingFinished.connect(self._advance_edited)
+        self.font_size=StudioNumericInput();self.font_size.setRange(4,96);self.font_size.setValue(recommended_font_size(self.pack.cell));self.font_size.editingFinished.connect(self._font_size_edited);self.cell_w=StudioNumericInput();self.cell_w.setRange(1,128);self.cell_w.setValue(self.pack.cell[0]);self.cell_h=StudioNumericInput();self.cell_h.setRange(1,128);self.cell_h.setValue(self.pack.cell[1]);self.baseline=StudioNumericInput();self.baseline.setRange(0,max(0,self.pack.cell[1]-1));self.baseline.setValue(self.pack.baseline);self.advance=StudioNumericInput();self.advance.setRange(1,128);self.advance.setValue(self.pack.advance);self.threshold=StudioNumericInput();self.threshold.setRange(0,255);self.threshold.setValue(128);self.alignment=StudioSelect();self.alignment.addItem('相对于整体','font_set');self.alignment.addItem('相对于字宽','glyph_width');self.alignment.setCurrentIndex(self.alignment.findData('glyph_width'));self.antialias=StudioSelect();self.antialias.addItem('1×',1);self.antialias.addItem('2×',2);self.antialias.addItem('4×',4);self.cell_w.valueChanged.connect(self._cell_width_changed);self.cell_h.valueChanged.connect(self._cell_height_changed);self.baseline.valueChanged.connect(self._metrics_changed);self.baseline.editingFinished.connect(self._baseline_edited);self.advance.valueChanged.connect(self._metrics_changed);self.advance.editingFinished.connect(self._advance_edited)
         self._form_labels={}
-        for key,widget in (('font.characters',self.chars),('font.source',fontrow),('font.size',self.font_size),('font.cell_width',self.cell_w),('font.cell_height',self.cell_h),('font.baseline',self.baseline),('font.advance',self.advance),('font.threshold',self.threshold)):
+        for key,widget in (('font.characters',self.chars),('font.source',fontrow),('font.size',self.font_size),('font.cell_width',self.cell_w),('font.cell_height',self.cell_h),('font.baseline',self.baseline),('font.advance',self.advance),('font.threshold',self.threshold),('font.alignment',self.alignment),('font.antialias',self.antialias)):
             label=QLabel();self._form_labels[key]=label;form.addRow(label,widget)
         rl.addLayout(form);self.generate_btn=StudioButton();self.generate_btn.setObjectName('PrimaryButton');self.generate_btn.clicked.connect(self.generate);rl.addWidget(self.generate_btn)
         self.generation_status=QLabel();self.generation_status.setObjectName('Muted');self.generation_status.setWordWrap(True);rl.addWidget(self.generation_status);rl.addStretch(1);self.split.addWidget(right);self.split.setSizes([180,700,300]);self._sync_source_controls()
@@ -186,7 +186,7 @@ class FontLabEditor(QWidget):
         self._dirty=(self.baseline.value()!=self.pack.baseline or self.advance.value()!=self.pack.advance)
 
     def _set_generation_busy(self,busy: bool):
-        for widget in (self.glyphs,self.canvas,self.chars,self.font_path,self.browse_btn,self.font_size,self.cell_w,self.cell_h,self.baseline,self.advance,self.threshold,self.save_btn,self.generate_btn):
+        for widget in (self.glyphs,self.canvas,self.chars,self.font_path,self.browse_btn,self.font_size,self.cell_w,self.cell_h,self.baseline,self.advance,self.threshold,self.alignment,self.antialias,self.save_btn,self.generate_btn):
             widget.setEnabled(not busy)
         if not busy:self._sync_source_controls()
 
@@ -210,7 +210,7 @@ class FontLabEditor(QWidget):
         try:FontPack.validate_metrics(cell=new_cell,baseline=self.baseline.value(),advance=self.advance.value())
         except ValueError as exc:self._generation_failed(str(exc));return
         characters=self.chars.text();total=len(dict.fromkeys(characters));self._generation_error='';self._set_generation_busy(True);self._generation_progress(0,total)
-        thread=QThread(self);worker=_FontGenerateWorker(root=self.root,name=self.pack.name,cell=new_cell,baseline=self.baseline.value(),advance=self.advance.value(),characters=characters,font_path=self.font_path.text().strip() or None,font_size=self.font_size.value(),threshold=self.threshold.value(),resize=resize)
+        thread=QThread(self);worker=_FontGenerateWorker(root=self.root,name=self.pack.name,cell=new_cell,baseline=self.baseline.value(),advance=self.advance.value(),characters=characters,font_path=self.font_path.text().strip() or None,font_size=self.font_size.value(),threshold=self.threshold.value(),alignment=self.alignment.currentData(),antialias_scale=self.antialias.currentData(),resize=resize)
         worker.moveToThread(thread);thread.started.connect(worker.run);worker.progress.connect(self._generation_progress);worker.succeeded.connect(self._generation_succeeded);worker.failed.connect(self._generation_failed);worker.finished.connect(thread.quit);worker.finished.connect(worker.deleteLater);thread.finished.connect(self._generation_finished);thread.finished.connect(thread.deleteLater)
         self._generation_thread=thread;self._generation_worker=worker;thread.start()
 

@@ -54,7 +54,7 @@ class EditorTabsMixin:
                 if getattr(self.editor_tabs.widget(index), 'document_id', None) == doc_id:
                     self.editor_tabs.setCurrentIndex(index); self.workspace_mode = WorkspaceMode.PIXEL; self._sync_editor_chrome(); return self.editor_tabs.widget(index)
         try:
-            editor = PixelStudioWindow(path, language=self.tr.language, parent=self.editor_tabs, preferences=self.preferences, project_root=scene_root(self.scene))
+            editor = PixelStudioWindow(path, language=self.tr.language, parent=self.editor_tabs, preferences=self.preferences, project_root=scene_root(self.scene), project_workspace=self.project)
         except Exception as exc:
             self._show_error(str(exc)); return None
         editor.assetSaved.connect(lambda saved_path, current=editor: self._pixel_asset_saved(saved_path, current)); editor.documentIdentityChanged.connect(lambda changed_path, current=editor: self._pixel_editor_identity_changed(changed_path, current)); editor.document_id = doc_id

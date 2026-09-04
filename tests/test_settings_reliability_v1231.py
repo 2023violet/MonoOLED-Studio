@@ -99,7 +99,7 @@ def test_v1231_version_identity():
     version=(SRC / 'VERSION').read_text(encoding='utf-8').strip(); assert version.count('.')==2
     src = _read(SRC / 'preferences_qt.py')
     assert 'load_version' in src
-    assert 'Initial Release' in src
+    assert 'Output Workbench Release' in src
 
 
 def test_boolean_settings_use_the_same_left_label_right_control_baseline_as_other_rows():

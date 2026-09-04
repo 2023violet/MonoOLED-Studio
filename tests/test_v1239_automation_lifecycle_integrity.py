@@ -220,7 +220,7 @@ def test_domain_dispatchers_do_not_delegate_back_to_the_monolithic_command_handl
 
     service._dispatch_command = legacy_handler
 
-    assert service.call('automation.capabilities')['api_version'] == '1.2.0'
+    assert service.call('automation.capabilities')['api_version'] == '1.3.0'
     assert service.call('scene.get')['scene']['canvas'] == {'w': 128, 'h': 32}
     assert service.call('render.current')['framebuffer']['bytes'] == 512
     assert service.call('asset.create', {'path': 'assets/a.png', 'width': 4, 'height': 4})['bytes'] > 0

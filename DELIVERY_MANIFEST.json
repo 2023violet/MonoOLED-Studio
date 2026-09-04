@@ -1,7 +1,7 @@
 {
   "schema_version": 12,
-  "release_version": "1.0.1",
-  "release_name": "V1.0.1 Maintenance Release",
+  "release_version": "1.1.0",
+  "release_name": "V1.1.0 Output Workbench Release",
   "product": "MonoOLED Studio",
   "product_boundary": "generic-1bit-oled",
   "source_entry": "src/gui.py",
@@ -13,13 +13,13 @@
   "clinical_fixture": "test_assets/projects/curing_lite/project.oled.json",
   "default_scene": "src/scenes/main_scene.json",
   "root_launcher_policy": "obsolete-root-exe-forbidden",
-  "documentation_policy": "current-v1.0.1-only",
+  "documentation_policy": "current-v1.1.0-only",
   "ascii_paths_required": true,
   "frozen_asset_count": 464,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "delivery_profile": "source",
   "automation_api": {
-    "version": "1.2.0",
+    "version": "1.3.0",
     "contract": "src/AUTOMATION_API_V1.json"
   },
   "windows": {
@@ -30,8 +30,8 @@
     "root_launcher_shipped": false,
     "native_real_qt_gate": "tools/RUN_WINDOWS_TEST_GROUPS.py",
     "distribution": "github_releases",
-    "release_asset": "MonoOLEDStudio_v1.0.1_Windows_x64.zip",
-    "release_checksum": "MonoOLEDStudio_v1.0.1_Windows_x64.zip.sha256",
+    "release_asset": "MonoOLEDStudio_v1.1.0_Windows_x64.zip",
+    "release_checksum": "MonoOLEDStudio_v1.1.0_Windows_x64.zip.sha256",
     "quick_builder": "tools/BUILD_WINDOWS_QUICK.bat",
     "ga_builder": "tools/BUILD_WINDOWS_GA.bat",
     "end_user_requires_python": false,

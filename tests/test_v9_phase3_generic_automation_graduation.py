@@ -134,9 +134,9 @@ def _wait_job(service: StudioAutomationService, job_id: str, timeout: float = 10
 def test_generic_api_capabilities_are_discoverable_and_stable(tmp_path):
     _, service = _service(tmp_path)
     capabilities = service.call("automation.capabilities", {})
-    assert capabilities["api_version"] == "1.2.0"
+    assert capabilities["api_version"] == "1.3.0"
     methods = {item["method"] for item in capabilities["methods"]}
-    assert len(methods) == 84
+    assert len(methods) == 92
     assert REQUIRED_METHODS <= methods
     for method in REQUIRED_METHODS:
         description = service.call("automation.describe_method", {"method": method})

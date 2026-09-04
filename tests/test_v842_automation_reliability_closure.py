@@ -17,13 +17,13 @@ def test_v842_release_identity_and_docs():
     assert 'APP_VERSION = load_version()' in gui
     manifest = json.loads((ROOT / 'DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
     assert manifest['version'] == version
-    assert manifest['automation_api']['version'] == '1.2.0'
+    assert manifest['automation_api']['version'] == '1.3.0'
     assert manifest['delivery_profile'] == 'source'
     assert (ROOT / 'docs' / 'AUTOMATION_API_V1.md').is_file()
     assert (ROOT / 'docs' / 'ENGINEERING_HISTORY.md').is_file()
 
-def test_v842_api_contract_is_1_2_and_contains_reliability_methods():
-    assert AUTOMATION_API_VERSION == '1.2.0'
+def test_v842_api_contract_is_current_and_contains_reliability_methods():
+    assert AUTOMATION_API_VERSION == '1.3.0'
     contract = json.loads((SIM / 'AUTOMATION_API_V1.json').read_text(encoding='utf-8'))
     assert contract['api_version'] == AUTOMATION_API_VERSION
     assert set(contract['methods']) == set(METHOD_SPECS)

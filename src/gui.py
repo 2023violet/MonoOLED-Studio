@@ -108,33 +108,29 @@ def _log_dir(scene: dict) -> Path:
 def _apply_application_theme(app, theme: str, density: str, ui_scale: float) -> None:
     """Apply appearance as one deterministic application-wide transaction.
 
-    Qt can defer stylesheet invalidation until a later widget event.  Apply the
-    replacement QSS atomically, then repolish existing widgets so a theme switch
-    never exposes an intermediate unstyled native-Qt frame.
+    The adaptive QSS reads semantic colors from the application palette, so a
+    theme-only change must not reinstall the same stylesheet across every
+    widget.  Reinstall QSS only when density/scale changes; palette propagation
+    plus one event flush makes a theme switch visible immediately.
     """
     palette = build_theme_palette(theme)
-    signature = f'{density}:{ui_scale}'
+    signature = f'{theme}:{density}:{ui_scale}'
+    stylesheet = build_adaptive_stylesheet(density, ui_scale=ui_scale)
     app.setPalette(palette)
-    if app.property('monooledAdaptiveStyleSignature') != signature:
-        app.setStyleSheet(build_adaptive_stylesheet(density, ui_scale=ui_scale))
-        for widget in app.allWidgets():
-            try:
-                style = widget.style()
-                style.unpolish(widget)
-                style.polish(widget)
-                widget.update()
-            except RuntimeError:
-                # A widget can be queued for deletion while a modeless window closes.
-                continue
-        app.setProperty('monooledAdaptiveStyleSignature', signature)
-        app.processEvents()
+    if app.styleSheet() != stylesheet:
+        app.setStyleSheet(stylesheet)
+    app.setProperty('monooledAdaptiveStyleSignature', signature)
     for window in app.topLevelWidgets():
         try:
             window.setPalette(palette)
+            style = window.style()
+            style.unpolish(window)
+            style.polish(window)
             apply_windows_chrome(window, theme)
             window.update()
         except RuntimeError:
             continue
+    app.processEvents()
 
 
 

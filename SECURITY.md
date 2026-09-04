@@ -3,7 +3,7 @@
 ## Supported versions
 
 Security updates are provided for the latest published release on GitHub
-Releases (currently `v1.0.1`). Older versions may not receive fixes.
+Releases (currently `v1.1.0`). Older versions may not receive fixes.
 
 ## Reporting a vulnerability
 

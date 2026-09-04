@@ -359,6 +359,8 @@ def rasterize_characters(
     font_size: int = 12,
     threshold: int = 128,
     offset: tuple[int, int] = (0, 0),
+    alignment: str = 'glyph_width',
+    antialias_scale: int = 1,
     weight: str = 'normal',
     progress=None,
 ) -> int:
@@ -377,6 +379,11 @@ def rasterize_characters(
         raise ValueError('font_size must be greater than 0')
     if not 0 <= threshold <= 255:
         raise ValueError('threshold must be between 0 and 255')
+    if alignment not in {'font_set', 'glyph_width'}:
+        raise ValueError('alignment must be font_set or glyph_width')
+    antialias_scale = int(antialias_scale)
+    if antialias_scale not in {1, 2, 4}:
+        raise ValueError('antialias_scale must be 1, 2, or 4')
     try:
         ox, oy = offset
     except Exception as exc:
@@ -407,16 +414,25 @@ def rasterize_characters(
         return len(chars)
 
     fitted_size = fit_font_size_for_cell(font_path, pack.cell, pack.baseline + oy, ''.join(chars), font_size)
-    font = _load_truetype(font_path, fitted_size)
+    scale = antialias_scale
+    font = _load_truetype(font_path, fitted_size * scale)
     threshold_table = [0 if value < threshold else 255 for value in range(256)]
+    shared_left = shared_right = 0
+    if alignment == 'font_set':
+        boxes = [font.getbbox(ch, anchor='ls') for ch in chars]
+        shared_left = min(box[0] for box in boxes)
+        shared_right = max(box[2] for box in boxes)
     for index, ch in enumerate(chars, 1):
-        img = Image.new('L', (w, h), 0)
+        img = Image.new('L', (w * scale, h * scale), 0)
         draw = ImageDraw.Draw(img)
         bbox = draw.textbbox((0, 0), ch, font=font, anchor='ls')
-        tw = bbox[2] - bbox[0]
-        x = (w - tw) // 2 - bbox[0] + ox
-        y = pack.baseline + oy
+        left, right = (shared_left, shared_right) if alignment == 'font_set' else (bbox[0], bbox[2])
+        tw = right - left
+        x = (w * scale - tw) // 2 - left + ox * scale
+        y = (pack.baseline + oy) * scale
         draw.text((x, y), ch, font=font, fill=255, anchor='ls')
+        if scale > 1:
+            img = img.resize((w, h), Image.Resampling.LANCZOS)
         mask = img.point(threshold_table, mode='1')
         flat = [1 if value else 0 for value in _flattened_image_data(mask)]
         rows = [flat[row * w:(row + 1) * w] for row in range(h)]

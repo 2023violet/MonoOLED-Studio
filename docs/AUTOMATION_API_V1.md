@@ -1,14 +1,14 @@
-# MonoOLED Studio Automation API 1.2
+# MonoOLED Studio Automation API 1.3
 
 > Machine-readable source of truth: `AUTOMATION_API_V1.json`  
 > Transport: in-process `StudioAutomationService` or localhost token-authenticated JSON-RPC  
-> API version: `1.2.0`
+> API version: `1.3.0`
 
 ## Purpose
 
-Automation API 1.2 lets Code AI operate MonoOLED Studio by project/scene/state/pixel/font semantics rather than GUI coordinates. Canonical Renderer and Studio Exporter remain the only pixel/export truth.
+Automation API 1.3 lets Code AI operate MonoOLED Studio by project/scene/state/pixel/font/output semantics rather than GUI coordinates. Canonical Renderer and the shared bitmap encoder remain the only pixel/export truth.
 
-API 1.2 is backward-compatible with API 1.1 and closes the next real graduation gaps discovered by the Curing-Lite ORTHO task: fail-closed cross-screen persistence, complete transaction contracts, version-consistent bridge discovery, matrix-size awareness, summary responses, and bounded long-running jobs.
+API 1.3 is additive and retains API 1.2 methods and byte behavior. In particular, `export.c_header`, `export.current`, `export.all`, and Code AI handoff output are unchanged when no new parameters are supplied.
 
 ## Recommended blind-Agent bootstrap
 
@@ -84,8 +84,16 @@ Use Studio-owned export methods instead of reimplementing VLSB/C-header rules:
 - `export.current`
 - `export.all`
 - `export.c_header`
+- `export.bitmap_data`
+- `export.font_data`
 - `export.font_pack`
 - `export.code_ai_handoff`
+
+## Output profiles — API 1.3
+
+`output.list_profiles`, `output.get_profile`, `output.upsert_profile`, `output.delete_profile`, and `output.set_active_profile` manage the portable `output_workbench.schema=1` project section. `output.preview` accepts either `profile_id` or an unsaved `profile` draft and returns a byte count, SHA-256, bounded text/hex preview, truncation flags, and index summary without writing files.
+
+`export.bitmap_data` accepts `current_scene`, `pixel_document`, or `current_selection` sources. `export.font_data` applies the same encoder to FontPack glyphs and can return a sidecar index path and SHA-256. File writes remain confined to the project root. See `OUTPUT_WORKBENCH.md` for exact traversal and padding semantics.
 
 ## Revision / transaction contract
 

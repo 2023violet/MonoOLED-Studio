@@ -1,4 +1,4 @@
-# MonoOLED Studio 1.0.1 中文使用手册
+# MonoOLED Studio 1.1.0 中文使用手册
 
 MonoOLED Studio 是面向 Windows 的通用 1-bit OLED 场景、像素资源和 FontPack 字模工作台。默认项目保持通用，不把具体产品内容混入发布基线。
 
@@ -20,9 +20,11 @@ MonoOLED Studio 是面向 Windows 的通用 1-bit OLED 场景、像素资源和 
 
 Pixel Studio 在嵌入式 Tab 中编辑 1-bit 位图。左键拖动绘制，右键拖动擦除；支持 Fit 缩放、中键平移、九点锚定缩放、裁剪、旋转、翻转以及单步撤销/重做。导入 JPG/BMP 等非 PNG 文件后会另存为 PNG，不覆盖原文件。
 
+右侧“取模与输出工作台”可选择当前画布、当前选区、Designer 当前帧或 FontPack，并明确设置四种取模走向、首点写入 bit7/bit0、亮点编码为 1/0、十六/十进制、自定义包装和 FontPack 索引。底部可以直接生成、复制、保存或只清除输出；“清除输出”不会清空画布。取模动画直接读取实际编码器的采样轨迹。完整公式和项目配置见 `OUTPUT_WORKBENCH.md`。
+
 ## Font Lab
 
-FontPack 通常保存在项目的 `.oled/fonts/`。字库记录字宽字高、Baseline、Advance、字符集合和字模像素。需要时可从 TTF/OTF 批量生成字模，再逐字检查或修正。Scene 的 `bitmap_text` 与 Font Lab 使用同一份 FontPack 真源。
+FontPack 通常保存在项目的 `.oled/fonts/`。字库记录字宽字高、Baseline、Advance、字符集合和字模像素。需要时可从 TTF/OTF 批量生成字模，可选择相对于整个字体集合或相对于单字宽度的水平对齐，以及 1×/2×/4× 抗锯齿采样，再逐字检查或修正。Scene 的 `bitmap_text` 与 Font Lab 使用同一份 FontPack 真源。
 
 ## Automation API
 
@@ -36,6 +38,6 @@ FontPack 通常保存在项目的 `.oled/fonts/`。字库记录字宽字高、Ba
 
 ## Windows 发布
 
-普通用户下载 `MonoOLEDStudio_v1.0.1_Windows_x64.zip`，解压后运行 `MonoOLEDStudio\MonoOLEDStudio.exe`，不需要 Python。开发者可使用 `tools\BUILD_WINDOWS_QUICK.bat`；正式发布认证使用 `tools\BUILD_WINDOWS_GA.bat` 和 Real-Qt 分组测试。
+普通用户下载 `MonoOLEDStudio_v1.1.0_Windows_x64.zip`，解压后运行 `MonoOLEDStudio\MonoOLEDStudio.exe`，不需要 Python。开发者可使用 `tools\BUILD_WINDOWS_QUICK.bat`；正式发布认证使用 `tools\BUILD_WINDOWS_GA.bat` 和 Real-Qt 分组测试。
 
 日志、自动保存、预览和资产缓存等运行时数据位于 `.oled/`，源码交付包会排除该目录。

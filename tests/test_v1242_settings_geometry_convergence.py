@@ -10,11 +10,11 @@ VERSION = (SRC / 'VERSION').read_text(encoding='utf-8').strip()
 
 def test_v1242_release_identity_and_current_documentation_contract():
     version = VERSION
-    assert version == '1.0.1'
+    assert version == '1.1.0'
     manifest = json.loads((ROOT / 'DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
     assert manifest['version'] == version
     assert manifest['release_version'] == version
-    assert manifest['release_name'] == f'V{version} Maintenance Release'
+    assert manifest['release_name'] == f'V{version} Output Workbench Release'
     assert manifest['documentation_policy'] == f'current-v{version}-only'
     assert manifest['settings_information_architecture'].endswith('v100-initial-release')
     assert manifest['windows']['release_asset'] == f'MonoOLEDStudio_v{version}_Windows_x64.zip'
@@ -33,11 +33,12 @@ def test_current_windows_and_user_docs_reference_v100_public_asset():
         text = (ROOT / rel).read_text(encoding='utf-8')
         assert expected in text, rel
     assert f'# Windows Build and Release — V{VERSION}' in (ROOT / 'docs' / 'WINDOWS_BUILD.md').read_text(encoding='utf-8')
-    assert f'# V{VERSION} Maintenance Release Delivery' in (ROOT / 'DELIVERY_README.md').read_text(encoding='utf-8')
+    assert f'# V{VERSION} Output Workbench Release Delivery' in (ROOT / 'DELIVERY_README.md').read_text(encoding='utf-8')
 
 def test_current_root_readme_and_about_surface_use_v100_identity():
     readme = (ROOT / 'README.md').read_text(encoding='utf-8')
-    assert readme.startswith(f'# MonoOLED Studio V{VERSION} — Maintenance Release')
+    assert readme.startswith(f'# MonoOLED Studio V{VERSION} — Output Workbench Release')
     assert f'MonoOLEDStudio_v{VERSION}_Windows_x64.zip' in readme
     prefs = (SRC / 'preferences_qt.py').read_text(encoding='utf-8')
-    assert prefs.count('Initial Release') >= 2
+    assert '取模与输出工作台版本' in prefs
+    assert 'Output Workbench Release' in prefs

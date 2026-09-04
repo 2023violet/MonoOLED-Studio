@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip('PySide6')
 
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QImage, QPalette
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from gui import _apply_application_theme
@@ -35,4 +35,22 @@ def test_light_dark_switch_repaints_without_mouse_or_external_event_flush(qtbot)
 
     assert _luma(light_window) > 0.75
     assert _luma(dark_window) < 0.20
-    assert app.property('monooledAdaptiveStyleSignature') == 'comfortable:1.0'
+    assert app.property('monooledAdaptiveStyleSignature') == 'monooled-dark:comfortable:1.0'
+
+
+def test_dark_switch_changes_rendered_root_pixels_without_followup_input(qtbot) -> None:
+    app = QApplication.instance()
+    root = QWidget()
+    root.setObjectName('AppRoot')
+    root.resize(160, 100)
+    qtbot.addWidget(root)
+    root.show()
+    qtbot.waitExposed(root)
+
+    _apply_application_theme(app, 'monooled-light', 'comfortable', 1.0)
+    light = root.grab().toImage().convertToFormat(QImage.Format_RGBA8888).pixelColor(80, 50)
+    _apply_application_theme(app, 'monooled-dark', 'comfortable', 1.0)
+    dark = root.grab().toImage().convertToFormat(QImage.Format_RGBA8888).pixelColor(80, 50)
+
+    assert _luma(light) > 0.75
+    assert _luma(dark) < 0.20

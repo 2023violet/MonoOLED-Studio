@@ -12,12 +12,16 @@ import shutil
 
 from atomic_io import atomic_write_bytes
 from assets import load_bitmap
+from bitmap_encoding import MonoBitmap, bitmap_from_framebuffer, bitmap_from_pixel_document, encode_bitmap
+from bitmap_raster import rasterize_image
 from c_export import write_c_header
 from editor_model import EditorSession
 from exporter import export_scene
 from font_pack import FontPack, GlyphMetrics, create_font_pack, rasterize_characters
 from pixel_diff import diff_framebuffers
 from pixel_studio import PixelDocument
+from output_formatter import OutputItem, format_output
+from output_profiles import builtin_profiles, normalize_profile
 from project_workspace import resolve_under_root
 from scene import init_state
 from state_schema import apply_state_schema, schema_from_scene, validate_state, validate_state_schema
@@ -52,11 +56,138 @@ RESOURCE_PIXEL_FONT_EXPORT = frozenset({
     'pixel.flip', 'pixel.undo', 'pixel.redo', 'pixel.save', 'pixel.close',
     'font.list', 'font.create_pack', 'font.get_pack', 'font.generate_glyphs',
     'font.get_glyph', 'font.update_glyph', 'font.set_metrics', 'export.current',
-    'export.all', 'export.c_header', 'export.font_pack', 'export.code_ai_handoff',
+    'output.list_profiles', 'output.get_profile', 'output.upsert_profile',
+    'output.delete_profile', 'output.set_active_profile', 'output.preview',
+    'export.all', 'export.c_header', 'export.bitmap_data', 'export.font_data',
+    'export.font_pack', 'export.code_ai_handoff',
 })
 JOBS_EVENTS_DIAGNOSTICS = frozenset({
     'job.start', 'job.status', 'job.result', 'job.cancel', 'job.release', 'session.events',
 })
+
+
+def _project_profiles(service):
+    if service.project is None:
+        profiles = builtin_profiles()
+        return 'ssd1306_vlsb_c', profiles
+    active, saved = service.project.get_output_profiles()
+    return active, {**builtin_profiles(), **saved}
+
+
+def _resolve_output_profile(service, params):
+    has_draft = params.get('profile') is not None
+    has_id = params.get('profile_id') is not None
+    if has_draft and has_id:
+        raise ValueError('provide profile_id or profile, not both')
+    if has_draft:
+        return None, normalize_profile(params['profile'])
+    active, profiles = _project_profiles(service)
+    profile_id = str(params.get('profile_id') or active)
+    if profile_id not in profiles:
+        raise KeyError(f'unknown output profile: {profile_id}')
+    return profile_id, profiles[profile_id]
+
+
+def _bitmap_item(service, source, profile, *, state=None):
+    source = dict(source or {'kind': 'current_scene'})
+    kind = str(source.get('kind', 'current_scene'))
+    if kind == 'current_scene':
+        _, rendered, _ = service._render(source.get('state', state))
+        bitmap = bitmap_from_framebuffer(rendered.framebuffer)
+        name = str(source.get('name', 'current_frame'))
+    elif kind in {'pixel_document', 'current_selection'}:
+        document = service._pixel_doc(str(source['document_id']))
+        if kind == 'current_selection':
+            x, y, width, height = map(int, source['bounds'])
+            if width <= 0 or height <= 0 or x < 0 or y < 0 or x + width > document.width or y + height > document.height:
+                raise ValueError('selection bounds must be a non-empty region inside the PixelDocument')
+            bitmap = MonoBitmap.from_rows(row[x:x + width] for row in document.pixels[y:y + height])
+        else:
+            bitmap = bitmap_from_pixel_document(document)
+        name = str(source.get('name', 'pixel_bitmap'))
+    elif kind == 'image':
+        path = resolve_under_root(service.project_root, source['path'], label='bitmap source image')
+        from PIL import Image
+        with Image.open(path) as image:
+            bitmap = rasterize_image(image, profile.raster, output_size=source.get('output_size'))
+        name = str(source.get('name', path.stem))
+    else:
+        raise ValueError(f'unsupported bitmap source: {kind}')
+    encoded = encode_bitmap(bitmap, profile.encoding)
+    return OutputItem(name=name, encoded=encoded, width=bitmap.width, height=bitmap.height)
+
+
+def _font_items(service, params, profile):
+    root = service._font_root(params['font_id'])
+    pack = FontPack.load(root)
+    requested = params.get('characters')
+    if requested is None:
+        characters = sorted(pack.characters(), key=ord)
+    else:
+        characters = list(dict.fromkeys(str(requested)))
+    if not characters:
+        raise ValueError('font output requires at least one character')
+    missing = [char for char in characters if char not in pack.characters()]
+    if missing:
+        raise KeyError(f'missing glyphs: {missing}')
+    items = []
+    for char in characters:
+        glyph = pack.glyph(char)
+        bitmap = MonoBitmap.from_rows(glyph.pixels)
+        items.append(OutputItem(
+            name=char,
+            codepoint=ord(char),
+            encoded=encode_bitmap(bitmap, profile.encoding),
+            width=bitmap.width,
+            height=bitmap.height,
+            bearing_x=glyph.metrics.bearing_x,
+            bearing_y=glyph.metrics.bearing_y,
+            advance=glyph.metrics.advance,
+        ))
+    return items
+
+
+def _index_rows(formatted):
+    return [
+        {
+            'codepoint': entry.codepoint, 'offset': entry.offset,
+            'byte_length': entry.byte_length, 'width': entry.width,
+            'height': entry.height, 'bearing_x': entry.bearing_x,
+            'bearing_y': entry.bearing_y, 'advance': entry.advance,
+        }
+        for entry in formatted.index
+    ]
+
+
+def _formatted_result(service, profile_id, profile, formatted):
+    return service._result(
+        profile_id=profile_id,
+        profile=profile.to_dict(),
+        byte_count=len(formatted.data),
+        data_sha256=hashlib.sha256(formatted.data).hexdigest(),
+        data_hex=formatted.data[:256].hex(),
+        data_hex_truncated=len(formatted.data) > 256,
+        preview_text=formatted.preview_text,
+        preview_truncated=formatted.preview_truncated,
+        index=_index_rows(formatted),
+    )
+
+
+def _write_formatted(service, target_param, profile, formatted):
+    target = resolve_under_root(service.project_root, target_param, label='output data file')
+    raw = formatted.data if profile.text.container == 'binary' else formatted.text.encode('utf-8')
+    atomic_write_bytes(target, raw)
+    result = {
+        'path': str(target), 'sha256': hashlib.sha256(raw).hexdigest(),
+        'byte_count': len(formatted.data), 'index': _index_rows(formatted),
+    }
+    if profile.text.index_mode == 'sidecar' and formatted.sidecar_text:
+        sidecar = target.with_name(target.stem + '_index.h')
+        sidecar_raw = formatted.sidecar_text.encode('utf-8')
+        atomic_write_bytes(sidecar, sidecar_raw)
+        result['index_path'] = str(sidecar)
+        result['index_sha256'] = hashlib.sha256(sidecar_raw).hexdigest()
+    return service._result(**result)
 
 
 def dispatch_api_and_project(service, method, params, transaction, external_before):
@@ -255,6 +386,48 @@ def dispatch_render_validate_preview(service, method, params, transaction, exter
 def dispatch_resource_pixel_font_export(service, method, params, transaction, external_before):
     if method not in RESOURCE_PIXEL_FONT_EXPORT:
         return UNHANDLED
+    if method == 'output.list_profiles':
+        active, profiles = _project_profiles(service)
+        return service._result(
+            active_profile=active,
+            profiles=[{'id': profile_id, **profile.to_dict()} for profile_id, profile in sorted(profiles.items())],
+            temporary=service.project is None,
+        )
+    if method == 'output.get_profile':
+        active, profiles = _project_profiles(service)
+        profile_id = str(params.get('profile_id') or active)
+        if profile_id not in profiles:
+            raise KeyError(f'unknown output profile: {profile_id}')
+        return service._result(profile_id=profile_id, profile=profiles[profile_id].to_dict(), active=profile_id == active)
+    if method in {'output.upsert_profile', 'output.delete_profile', 'output.set_active_profile'}:
+        if service.project is None:
+            raise ValueError('output profile changes require an OLED project')
+        profile_id = str(params['profile_id'])
+        if method == 'output.upsert_profile':
+            service.project.upsert_output_profile(profile_id, params['profile'], activate=bool(params.get('activate', False)))
+        elif method == 'output.delete_profile':
+            service.project.delete_output_profile(profile_id)
+        else:
+            _, available = _project_profiles(service)
+            if profile_id not in available:
+                raise KeyError(f'unknown output profile: {profile_id}')
+            _, saved = service.project.get_output_profiles()
+            if profile_id not in saved:
+                service.project.upsert_output_profile(profile_id, available[profile_id], activate=True)
+            else:
+                service.project.set_active_output_profile(profile_id)
+        service._changed(method, transaction)
+        active, profiles = service.project.get_output_profiles()
+        return service._result(active_profile=active, profile_id=profile_id, profiles=sorted(profiles))
+    if method == 'output.preview':
+        profile_id, profile = _resolve_output_profile(service, params)
+        source = dict(params.get('source') or {'kind': 'current_scene'})
+        if source.get('kind') == 'font_pack':
+            items = _font_items(service, {'font_id': source['font_id'], 'characters': source.get('characters')}, profile)
+        else:
+            items = [_bitmap_item(service, source, profile, state=params.get('state'))]
+        formatted = format_output(items, profile.text, symbol=str(params.get('symbol', items[0].name)))
+        return _formatted_result(service, profile_id, profile, formatted)
     if method == 'asset.create':
         path = service._asset_path(params['path'], label='asset create'); doc = PixelDocument(int(params['width']), int(params['height']))
         if int(params.get('value', 0)): doc.clear(1)
@@ -308,7 +481,7 @@ def dispatch_resource_pixel_font_export(service, method, params, transaction, ex
     if method == 'font.get_pack':
         root = service._font_root(params['font_id']); pack = FontPack.load(root); return service._result(font_id=root.relative_to(service.project_root).as_posix(), name=pack.name, cell=pack.cell, baseline=pack.baseline, advance=pack.advance, characters=pack.characters())
     if method == 'font.generate_glyphs':
-        root = service._font_root(params['font_id']); pack = FontPack.load(root); count = rasterize_characters(pack, str(params.get('characters', '')), font_path=params.get('font_path'), font_size=int(params.get('font_size', 12)), threshold=int(params.get('threshold', 128)), offset=tuple(params.get('offset', (0, 0)))); service._changed(method, transaction); return service._result(font_id=root.relative_to(service.project_root).as_posix(), count=count)
+        root = service._font_root(params['font_id']); pack = FontPack.load(root); count = rasterize_characters(pack, str(params.get('characters', '')), font_path=params.get('font_path'), font_size=int(params.get('font_size', 12)), threshold=int(params.get('threshold', 128)), offset=tuple(params.get('offset', (0, 0))), alignment=str(params.get('alignment', 'glyph_width')), antialias_scale=int(params.get('antialias_scale', 1))); service._changed(method, transaction); return service._result(font_id=root.relative_to(service.project_root).as_posix(), count=count)
     if method == 'font.get_glyph':
         root = service._font_root(params['font_id']); pack = FontPack.load(root); char = str(params['char']); glyph = pack.glyph(char); return service._result(font_id=root.relative_to(service.project_root).as_posix(), char=char, pixels=deepcopy(glyph.pixels), metrics={'bearing_x': glyph.metrics.bearing_x, 'bearing_y': glyph.metrics.bearing_y, 'advance': glyph.metrics.advance})
     if method == 'font.update_glyph':
@@ -320,6 +493,21 @@ def dispatch_resource_pixel_font_export(service, method, params, transaction, ex
     if method == 'export.all': return service._result(**service._export_all_payload(service.scene, service.project_root, params))
     if method == 'export.c_header':
         target = resolve_under_root(service.project_root, params.get('path', 'exports/current.h'), label='C header'); _, result, _ = service._render(params.get('state')); write_c_header(result.framebuffer, target, name=str(params.get('symbol', 'oled_frame'))); return service._result(path=str(target), sha256=hashlib.sha256(target.read_bytes()).hexdigest())
+    if method == 'export.bitmap_data':
+        profile_id, profile = _resolve_output_profile(service, params)
+        item = _bitmap_item(service, params.get('source'), profile, state=params.get('state'))
+        formatted = format_output([item], profile.text, symbol=str(params.get('symbol', item.name)))
+        result = _write_formatted(service, params.get('path', 'exports/bitmap.h'), profile, formatted)
+        result.update(profile_id=profile_id)
+        return result
+    if method == 'export.font_data':
+        profile_id, profile = _resolve_output_profile(service, params)
+        items = _font_items(service, params, profile)
+        symbol = str(params.get('symbol', Path(str(params['font_id'])).name or 'font_data'))
+        formatted = format_output(items, profile.text, symbol=symbol)
+        result = _write_formatted(service, params.get('path', f'exports/{symbol}.h'), profile, formatted)
+        result.update(profile_id=profile_id)
+        return result
     if method == 'export.font_pack':
         root = service._font_root(params['font_id']); FontPack.load(root); target = resolve_under_root(service.project_root, params.get('path', f'exports/{root.name}.fontpack.zip'), label='font export')
         if target.suffix.lower() != '.zip': raise ValueError('font export must end in .zip')

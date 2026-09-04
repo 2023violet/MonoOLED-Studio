@@ -26,7 +26,7 @@ from selection_model import SelectionModel
 from validate import validate_scene
 
 
-AUTOMATION_API_VERSION = '1.2.0'
+AUTOMATION_API_VERSION = '1.3.0'
 
 
 class StaleRevisionError(RuntimeError):
@@ -119,7 +119,7 @@ def _method(permission: str, summary: str, params: dict | None = None, *, transa
 
 
 METHOD_SPECS = {
-    'automation.capabilities': _method('observe', 'List Automation API 1.2 methods and contracts.'),
+    'automation.capabilities': _method('observe', 'List Automation API 1.3 methods and contracts.'),
     'automation.describe_method': _method('observe', 'Describe one Automation API method.', {'method': 'string'}),
     'project.get': _method('observe', 'Observe the active project/scene identity.'),
     'project.get_contract': _method('observe', 'Return project coordinate/framebuffer/schema contract.'),
@@ -228,6 +228,8 @@ METHOD_SPECS = {
             'font_size': _param('int', required=False, minimum=1, default=12),
             'threshold': _param('int', required=False, minimum=0, maximum=255, default=128),
             'offset': _param('[x:int,y:int]', required=False, default=[0, 0]),
+            'alignment': _param('font_set|glyph_width', required=False, default='glyph_width'),
+            'antialias_scale': _param('1|2|4', required=False, default=1),
         },
         returns={'font_id': 'relative dir', 'count': 'int'},
     ),
@@ -255,9 +257,17 @@ METHOD_SPECS = {
         },
         returns={'font_id': 'relative dir', 'baseline': 'int', 'advance': 'int'},
     ),
+    'output.list_profiles': _method('observe', 'List project output profiles and the active profile.'),
+    'output.get_profile': _method('observe', 'Read one project output profile.', {'profile_id': 'string'}),
+    'output.upsert_profile': _method('edit', 'Create or replace one project output profile.', {'profile_id': 'string', 'profile': 'object', 'activate': 'bool?'}),
+    'output.delete_profile': _method('edit', 'Delete one project output profile.', {'profile_id': 'string'}),
+    'output.set_active_profile': _method('edit', 'Select the active project output profile.', {'profile_id': 'string'}),
+    'output.preview': _method('observe', 'Encode and format a source without writing files.', {'source': 'object', 'profile_id': 'string?', 'profile': 'object?', 'symbol': 'string?'}),
     'export.current': _method('edit', 'Export current state through the canonical Studio exporter.', {'output_dir': 'relative dir', 'state': 'object?'}),
     'export.all': _method('edit', 'Export deterministic state matrix through the canonical Studio exporter.', {'output_dir': 'relative dir', 'integer_policy': 'representative|boundaries|full', 'summary_only': 'bool?', 'include_hashes': 'bool?', 'max_cases': 'int?', 'allow_large_matrix': 'bool?'}),
     'export.c_header': _method('edit', 'Export current framebuffer C header.', {'path': 'relative path', 'symbol': 'string?'}),
+    'export.bitmap_data': _method('edit', 'Encode a scene or PixelDocument through an output profile.', {'source': 'object', 'profile_id': 'string?', 'profile': 'object?', 'path': 'relative path', 'symbol': 'string?'}),
+    'export.font_data': _method('edit', 'Encode FontPack glyphs and optional index through an output profile.', {'font_id': 'relative dir', 'characters': 'string?', 'profile_id': 'string?', 'profile': 'object?', 'path': 'relative path', 'symbol': 'string?'}),
     'export.font_pack': _method('edit', 'Create deterministic ZIP of a FontPack.', {'font_id': 'relative dir', 'path': 'relative zip path'}),
     'export.code_ai_handoff': _method('edit', 'Generate deterministic Code AI handoff from Studio truth.', {'path': 'relative zip path', 'integer_policy': 'representative|boundaries|full', 'summary_only': 'bool?', 'max_cases': 'int?', 'allow_large_matrix': 'bool?'}),
     'history.begin_transaction': _method('edit', 'Begin one undoable Agent scene transaction.'),

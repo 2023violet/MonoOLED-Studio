@@ -1,7 +1,7 @@
 {
   "product": "MonoOLED Studio",
   "api": "Automation API",
-  "api_version": "1.2.0",
+  "api_version": "1.3.0",
   "transport": "semantic service; localhost token-authenticated JSON-RPC adapter",
   "methods": {
     "asset.copy": {
@@ -57,7 +57,7 @@
     },
     "automation.capabilities": {
       "permission": "observe",
-      "summary": "List Automation API 1.2 methods and contracts.",
+      "summary": "List Automation API 1.3 methods and contracts.",
       "params": {},
       "returns": {},
       "transaction_supported": false
@@ -81,6 +81,19 @@
         "include_hashes": "bool?",
         "max_cases": "int?",
         "allow_large_matrix": "bool?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "export.bitmap_data": {
+      "permission": "edit",
+      "summary": "Encode a scene or PixelDocument through an output profile.",
+      "params": {
+        "source": "object",
+        "profile_id": "string?",
+        "profile": "object?",
+        "path": "relative path",
+        "symbol": "string?"
       },
       "returns": {},
       "transaction_supported": false
@@ -114,6 +127,20 @@
       "params": {
         "output_dir": "relative dir",
         "state": "object?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "export.font_data": {
+      "permission": "edit",
+      "summary": "Encode FontPack glyphs and optional index through an output profile.",
+      "params": {
+        "font_id": "relative dir",
+        "characters": "string?",
+        "profile_id": "string?",
+        "profile": "object?",
+        "path": "relative path",
+        "symbol": "string?"
       },
       "returns": {},
       "transaction_supported": false
@@ -196,6 +223,16 @@
             0,
             0
           ]
+        },
+        "alignment": {
+          "type": "font_set|glyph_width",
+          "required": false,
+          "default": "glyph_width"
+        },
+        "antialias_scale": {
+          "type": "1|2|4",
+          "required": false,
+          "default": 1
         }
       },
       "returns": {
@@ -421,6 +458,63 @@
       "summary": "Measure selected elements.",
       "params": {
         "ids": "string[]?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "output.delete_profile": {
+      "permission": "edit",
+      "summary": "Delete one project output profile.",
+      "params": {
+        "profile_id": "string"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "output.get_profile": {
+      "permission": "observe",
+      "summary": "Read one project output profile.",
+      "params": {
+        "profile_id": "string"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "output.list_profiles": {
+      "permission": "observe",
+      "summary": "List project output profiles and the active profile.",
+      "params": {},
+      "returns": {},
+      "transaction_supported": false
+    },
+    "output.preview": {
+      "permission": "observe",
+      "summary": "Encode and format a source without writing files.",
+      "params": {
+        "source": "object",
+        "profile_id": "string?",
+        "profile": "object?",
+        "symbol": "string?"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "output.set_active_profile": {
+      "permission": "edit",
+      "summary": "Select the active project output profile.",
+      "params": {
+        "profile_id": "string"
+      },
+      "returns": {},
+      "transaction_supported": false
+    },
+    "output.upsert_profile": {
+      "permission": "edit",
+      "summary": "Create or replace one project output profile.",
+      "params": {
+        "profile_id": "string",
+        "profile": "object",
+        "activate": "bool?"
       },
       "returns": {},
       "transaction_supported": false

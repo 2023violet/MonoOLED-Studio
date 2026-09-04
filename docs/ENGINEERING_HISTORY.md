@@ -1,6 +1,6 @@
 # Engineering History
 
-MonoOLED Studio 1.0.1 is the current generic 1-bit OLED authoring product.
+MonoOLED Studio 1.1.0 is the current generic 1-bit OLED authoring product.
 
 The former V12 engineering notes were consolidated here when the release and
 documentation baseline moved to 1.0. They recorded delivery hardening rather

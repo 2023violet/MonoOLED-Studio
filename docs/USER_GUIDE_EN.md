@@ -1,4 +1,4 @@
-# MonoOLED Studio 1.0.1 User Guide
+# MonoOLED Studio 1.1.0 User Guide
 
 MonoOLED Studio is a Windows-focused workbench for designing generic 1-bit OLED scenes, pixel assets, and FontPack glyphs. The default project is generic; product-specific assets remain in test fixtures.
 
@@ -20,9 +20,11 @@ Use the scene list to add, duplicate, rename, or remove screens. Opening another
 
 Pixel Studio edits 1-bit assets in an embedded tab. Left-drag paints and right-drag erases. Fit zoom, middle-button panning, anchored resize, crop, rotate, flip, and one-step undo/redo are available. Imported non-PNG files are saved as a new PNG so the source file is never overwritten.
 
+The Output Workbench selects the current canvas, selection, active Designer frame, or a FontPack. It exposes the four traversal formulas, first-point bit placement, lit-point polarity, hexadecimal/decimal and custom wrappers, plus FontPack indexes. Generate, copy, save, and clear-output are available directly below the canvas; clearing output never clears pixels. See `OUTPUT_WORKBENCH.md` for exact formulas and the portable project profile format.
+
 ## Font Lab
 
-FontPack assets live inside the project, normally under `.oled/fonts/`. A pack stores cell size, baseline, advance, characters, and glyph pixels. Generate glyphs from a TTF/OTF when needed, then inspect or edit individual glyphs. Scene `bitmap_text` elements use the same FontPack data used by Font Lab.
+FontPack assets live inside the project, normally under `.oled/fonts/`. A pack stores cell size, baseline, advance, characters, and glyph pixels. Generate glyphs from a TTF/OTF with shared font-set or per-glyph-width horizontal alignment and 1×/2×/4× supersampling, then inspect or edit individual glyphs. Scene `bitmap_text` elements use the same FontPack data used by Font Lab.
 
 ## Automation API
 
@@ -36,6 +38,6 @@ Use `python src/validate.py <scene>` for a direct scene check, `python src/expor
 
 ## Windows Distribution
 
-End users download `MonoOLEDStudio_v1.0.1_Windows_x64.zip`, extract it, and run `MonoOLEDStudio\MonoOLEDStudio.exe`. Python is not required. Developers can use `tools\BUILD_WINDOWS_QUICK.bat`; native release certification uses `tools\BUILD_WINDOWS_GA.bat` and the Real-Qt test groups.
+End users download `MonoOLEDStudio_v1.1.0_Windows_x64.zip`, extract it, and run `MonoOLEDStudio\MonoOLEDStudio.exe`. Python is not required. Developers can use `tools\BUILD_WINDOWS_QUICK.bat`; native release certification uses `tools\BUILD_WINDOWS_GA.bat` and the Real-Qt test groups.
 
 Runtime data such as logs, autosaves, previews, and asset caches is kept under `.oled/` and is excluded from source delivery packages.
