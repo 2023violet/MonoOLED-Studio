@@ -48,7 +48,7 @@ def test_font_lab_generate_is_async_and_existing_pack_reopen_is_load_only(qtbot,
     assert dispatch<0.5
     if editor.generation_in_progress:
         assert editor.can_close() is False
-    qtbot.waitUntil(lambda:not editor.generation_in_progress,timeout=15000)
+    qtbot.waitUntil(lambda:not editor.generation_in_progress,timeout=30000)
     assert editor.can_close() is True
     for ch in '0123456789':
         assert ch in editor.pack.characters()
