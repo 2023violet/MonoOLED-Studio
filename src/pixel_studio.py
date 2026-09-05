@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from collections import deque
-from copy import deepcopy
 from pathlib import Path
 from io import BytesIO
 from typing import Iterable
 
 from PIL import Image
 from atomic_io import atomic_write_bytes, atomic_write_text
+
+# Undo snapshots are bit-packed (8 pixels per byte); this budget bounds how many
+# packed snapshots large canvases may keep before the oldest entries are pruned.
+MAX_UNDO_BYTES = 64 * 1024 * 1024
 
 
 class PixelDocument:
@@ -55,17 +58,46 @@ class PixelDocument:
         if before != self._state():
             self._push_undo(before); self._redo.clear(); self.dirty=True
 
-    def _state(self) -> tuple[int, int, list[list[int]]]:
-        return self.width, self.height, deepcopy(self.pixels)
+    def _state(self) -> tuple[int, int, bytes]:
+        return self.width, self.height, self._pack_pixels(self.pixels)
 
-    def _restore_state(self, state: tuple[int, int, list[list[int]]]) -> None:
-        self.width, self.height, pixels = state
-        self.pixels = deepcopy(pixels)
+    @staticmethod
+    def _pack_pixels(pixels: list[list[int]]) -> bytes:
+        """Pack rows row-major into bits, 8 pixels per byte."""
+        total = sum(len(row) for row in pixels)
+        out = bytearray((total + 7) // 8)
+        i = 0
+        for row in pixels:
+            for value in row:
+                if value:
+                    out[i >> 3] |= 1 << (i & 7)
+                i += 1
+        return bytes(out)
 
-    def _push_undo(self, state: tuple[int, int, list[list[int]]]) -> None:
+    @staticmethod
+    def _unpack_pixels(data: bytes, width: int, height: int) -> list[list[int]]:
+        rows: list[list[int]] = []
+        base = 0
+        for _y in range(height):
+            rows.append([(data[(base + x) >> 3] >> ((base + x) & 7)) & 1 for x in range(width)])
+            base += width
+        return rows
+
+    def _restore_state(self, state: tuple[int, int, bytes]) -> None:
+        self.width, self.height, packed = state
+        self.pixels = self._unpack_pixels(packed, self.width, self.height)
+
+    def _effective_limit(self) -> int:
+        """Cap undo depth so packed snapshots stay within the memory budget."""
+        snapshot_bytes = max(1, (self.width * self.height + 7) // 8)
+        budget_steps = max(1, MAX_UNDO_BYTES // snapshot_bytes)
+        return max(1, min(self.max_undo, budget_steps))
+
+    def _push_undo(self, state: tuple[int, int, bytes]) -> None:
         self._undo.append(state)
-        if len(self._undo) > self.max_undo:
-            del self._undo[:len(self._undo) - self.max_undo]
+        limit = self._effective_limit()
+        if len(self._undo) > limit:
+            del self._undo[:len(self._undo) - limit]
 
     def _snapshot(self):
         if self._gesture_before is not None:
@@ -75,10 +107,11 @@ class PixelDocument:
 
     def set_max_undo(self, limit: int) -> None:
         self.max_undo = max(1, int(limit))
-        if len(self._undo) > self.max_undo:
-            del self._undo[:len(self._undo) - self.max_undo]
-        if len(self._redo) > self.max_undo:
-            del self._redo[:len(self._redo) - self.max_undo]
+        cap = self._effective_limit()
+        if len(self._undo) > cap:
+            del self._undo[:len(self._undo) - cap]
+        if len(self._redo) > cap:
+            del self._redo[:len(self._redo) - cap]
 
     def stroke_segment(self, x0: int, y0: int, x1: int, y1: int, value: int = 1) -> None:
         """Rasterize a continuous mouse stroke segment with integer Bresenham.
@@ -173,6 +206,13 @@ class PixelDocument:
         self._snapshot()
         for ry,row in enumerate(region):
             for rx,value in enumerate(row): self._set_raw(x+rx,y+ry,int(value))
+
+    def clear_region(self, x: int, y: int, w: int, h: int) -> None:
+        """Clear a rectangle as one undoable edit."""
+        self._snapshot()
+        for yy in range(y, y + h):
+            for xx in range(x, x + w):
+                self._set_raw(xx, yy, 0)
 
     def move_region(self, x: int, y: int, w: int, h: int, dx: int, dy: int) -> None:
         if w <= 0 or h <= 0 or (dx == 0 and dy == 0):
