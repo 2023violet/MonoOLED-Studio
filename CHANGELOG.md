@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.2.0 - 2026-09-06
+
+### Features
+
+- Add an image file output source to the workbench: color images are thresholded to 1-bit with luma/RGB thresholds and inversion; raster controls activate only for this source.
+- Add viewport-edge pixel rulers to Pixel Studio with adaptive tick steps, togglable from preferences.
+- Add keyboard painting: arrow keys place a canvas cursor, Enter lights, Delete/Backspace clears, Esc hides.
+- Add a deterministic studio icon registry; inspector, command bar, and workbench actions recolor with the theme.
+- Add a color-swatch picker for canvas background, grid, pixel fill, and pixel border colors.
+
+### Performance
+
+- Rebuild the pixel canvas base cache through C-level bytes expansion and an indexed QImage color table (~3x faster on large canvases); wheel zoom no longer stalls.
+- Skip set_zoom work for unchanged values so Fit-mode refits stop invalidating the pixel cache.
+- Patch the output preview per stroke damage instead of full rebuilds.
+- Defer the theme-switch paint flush to the next event-loop frame (theme p95 at 2.5x DPI: 126ms -> 46ms).
+
+### Fixes
+
+- Hold the in-flight generation task until its queued completion event is delivered; busy UI threads no longer drop completions and stall the output panel.
+- Theme switches now repolish every widget (Qt 6.11 keeps stale palette() rules on palette swaps alone).
+- Standalone Pixel Studio windows resolve their own theme instead of inheriting a stale one.
+- Clean corrupted shortcut preferences (nested dicts / 'None' values), store shortcut bindings flat, and reset the default ui_scale to 100%.
+- Remove the permanently disabled raster decoration controls; pixel borders render from the visible-region pass.
+
+### Compatibility
+
+- Preserve the existing export.c_header, legacy Pixel C header, project schema version, Code AI handoff outputs, and the Automation API surface; RasterProfile fields remain in persisted profiles.
+
 ## 1.1.0 - 2026-09-04
 
 ### Features

@@ -27,22 +27,22 @@ MonoOLED Studio 是面向 Windows 的通用单色 OLED 工作台，主要服务�
 
 当前产品边界是 `generic-1bit-oled`。`test_assets/projects/curing_lite/` 是产品回归夹具，不代表发布版只服务 Curing-Lite，也不能把其中的医疗或业务规则提升为通用产品默认值。
 
-V1.1.0 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。不要把测试夹具、规划中的功能或仅由 host 测试证明的行为写成已完成的硬件能力。
+V1.2.0 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。不要把测试夹具、规划中的功能或仅由 host 测试证明的行为写成已完成的硬件能力。
 
 ## 3. 当前可信基线
 
 | 项目 | 当前基线 | 真源或验证方法 |
 | --- | --- | --- |
-| 产品版本 | `1.1.0` | `src/VERSION` |
-| 正式标签 | `v1.1.0` → `a250547` | `git show-ref -d refs/tags/v1.1.0` |
+| 产品版本 | `1.2.0` | `src/VERSION` |
+| 正式标签 | `v1.2.0` → 本次发布提交 | `git show-ref -d refs/tags/v1.2.0` |
 | 编写时 `main` | `8c84370` | 必须用 `git rev-parse HEAD` 重新确认 |
 | Automation API | `1.3.0` | `src/AUTOMATION_API_V1.json`、`docs/AUTOMATION_API_V1.md` |
 | 顶层项目 schema | `1` | `src/project_workspace.py` |
 | `output_workbench` schema | `1` | `src/project_workspace.py`、`docs/OUTPUT_WORKBENCH.md` |
-| Windows 发行物 | `MonoOLEDStudio_v1.1.0_Windows_x64.zip` | GitHub Release `v1.1.0` |
+| Windows 发行物 | `MonoOLEDStudio_v1.2.0_Windows_x64.zip` | GitHub Release `v1.2.0` |
 | 发布 ZIP SHA-256 | `30bab895adc8107e3fc6ebb431d159c15849729a848bd9338126c147d5300188` | Release sidecar 与附件 digest |
 
-发布页：<https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.1.0>
+发布页：<https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.0>
 
 必须区分两个状态：
 

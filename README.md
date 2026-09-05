@@ -1,7 +1,7 @@
-# MonoOLED Studio V1.1.0 — Output Workbench Release
+# MonoOLED Studio V1.2.0 — Pixel Studio Experience Release
 
 [![Release](https://img.shields.io/github/v/release/2023violet/MonoOLED-Studio?display_name=tag&sort=semver)](https://github.com/2023violet/MonoOLED-Studio/releases/latest)
-[![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows)](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.1.0)
+[![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows)](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.0)
 [![CI](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -9,22 +9,16 @@
 
 ## 下载与启动
 
-普通用户请从 **[GitHub Releases](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.1.0)** 下载 [`MonoOLEDStudio_v1.1.0_Windows_x64.zip`](https://github.com/2023violet/MonoOLED-Studio/releases/download/v1.1.0/MonoOLEDStudio_v1.1.0_Windows_x64.zip)。
+普通用户请从 **[GitHub Releases](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.0)** 下载 [`MonoOLEDStudio_v1.2.0_Windows_x64.zip`](https://github.com/2023violet/MonoOLED-Studio/releases/download/v1.2.0/MonoOLEDStudio_v1.2.0_Windows_x64.zip)。
 
 1. 解压 ZIP，保持文件夹内的文件结构不变。
 2. 双击 `MonoOLEDStudio\MonoOLEDStudio.exe`。
 3. 新建或打开项目，进入 Designer、Pixel Studio 或 Font Lab 开始工作。
 
-Windows 发布包无需安装 Python、Git 或运行 BAT 文件。可同时下载 [SHA-256 校验文件](https://github.com/2023violet/MonoOLED-Studio/releases/download/v1.1.0/MonoOLEDStudio_v1.1.0_Windows_x64.zip.sha256) 验证文件完整性：
+Windows 发布包无需安装 Python、Git 或运行 BAT 文件。每个 Release 附带 `.sha256` 校验文件（见发布页附件），下载后验证文件完整性：
 
 ```powershell
-Get-FileHash .\MonoOLEDStudio_v1.1.0_Windows_x64.zip -Algorithm SHA256
-```
-
-当前发布包的 SHA-256：
-
-```text
-30bab895adc8107e3fc6ebb431d159c15849729a848bd9338126c147d5300188
+Get-FileHash .\MonoOLEDStudio_v1.2.0_Windows_x64.zip -Algorithm SHA256
 ```
 
 ## 它解决什么问题
@@ -33,7 +27,7 @@ Get-FileHash .\MonoOLEDStudio_v1.1.0_Windows_x64.zip -Algorithm SHA256
 
 典型流程如下：
 
-`创建项目 → 编排场景/制作素材 → 配置取模规则 → 检查真实编码动画 → 复制数组或保存文件 → 接入固件`
+`创建项目 → 编排场景/制作素材 → 配置取模规则 → 生成数组并核对预览 → 复制数组或保存文件 → 接入固件`
 
 ## 核心能力
 
@@ -77,7 +71,7 @@ Get-FileHash .\MonoOLEDStudio_v1.1.0_Windows_x64.zip -Algorithm SHA256
 - 原始 BIN、C Header、C51、自定义前后缀和每行字节数；
 - Font Pack 索引顺序以及内联或独立索引文件。
 
-底部操作区可以直接执行“生成字模、复制数组、保存字模、清除输出”。取模动画读取生产编码器的真实采样轨迹，会显示当前 8 个采样点、位映射和字节值，不使用只供演示的另一套算法。
+底部操作区可以直接执行“生成字模、复制数组、保存字模、清除输出”。
 
 ### Font Lab：制作可复现字库
 
@@ -95,7 +89,7 @@ Get-FileHash .\MonoOLEDStudio_v1.1.0_Windows_x64.zip -Algorithm SHA256
 
 ## 输出配置与项目复现
 
-取模配置可以随项目保存，包括栅格化、遍历方式、位序、极性和文本格式。显示颜色、缩放比例、输出区字体与动画速度只属于本机显示偏好，不会改变导出字节。
+取模配置可以随项目保存，包括栅格化、遍历方式、位序、极性和文本格式。显示颜色（支持调色盘拾色）、缩放比例和输出区字体只属于本机显示偏好，不会改变导出字节。
 
 对于已经是 1-bit 的 Pixel 画布、Framebuffer 和 Font Pack 字形，软件不会再次执行颜色阈值处理。彩色图片可使用亮度阈值或 RGB 联合阈值转换，并将完全透明像素固定视为熄灭。
 
@@ -105,7 +99,7 @@ Get-FileHash .\MonoOLEDStudio_v1.1.0_Windows_x64.zip -Algorithm SHA256
 
 - 当前以 **Windows x64** 桌面体验和发布验证为主。
 - 输出目标是单色 `1-bit` 位图，不是通用彩色图片编辑器。
-- V1.1.0 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。
+- V1.2.0 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。
 - 内置取模模板是确定性编码预设；目标硬件是否匹配，仍应使用已知正确数组和实际屏幕结果验证。
 - 旧版 `export.c_header`、Pixel C Header、项目 schema 和 Code AI 交接包继续保持兼容。
 
