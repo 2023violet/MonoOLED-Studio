@@ -4,11 +4,11 @@ import weakref
 from dataclasses import dataclass
 
 try:
-    from PySide6.QtCore import QEvent, QPoint, QRectF, QSize, QTimer, Qt, QVariantAnimation
+    from PySide6.QtCore import QEvent, QPoint, QRectF, QSize, Signal, QTimer, Qt, QVariantAnimation
     from PySide6.QtGui import QColor, QCursor, QFontMetrics, QGuiApplication, QPainter, QPainterPath, QRegion
     from PySide6.QtWidgets import (
-        QAbstractSpinBox, QFrame, QHBoxLayout, QLabel, QListWidget,
-        QListWidgetItem, QPushButton as _QPushButton, QSpinBox,
+        QAbstractSpinBox, QColorDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
+        QListWidget, QListWidgetItem, QPushButton as _QPushButton, QSpinBox,
         QToolButton as _QToolButton, QStyledItemDelegate, QVBoxLayout, QWidget,
     )
     PYSIDE_AVAILABLE = True
@@ -789,11 +789,58 @@ if PYSIDE_AVAILABLE:
             self.currentIndexChanged.emit(index)
         def clearSelection(self):
             self.setCurrentIndex(-1)
+
+    class ColorSwatchEdit(QWidget):
+        """Hex color entry with a live swatch chip that opens a color dialog.
+
+        ``text()``/``setText()``/``textChanged`` forward to the inner hex edit,
+        so the composite is a drop-in replacement for a plain QLineEdit bound to
+        a ``#RRGGBB`` value.  The swatch always previews the last valid color.
+        """
+        textChanged = Signal(str)
+
+        def __init__(self, value: str = '#000000', title: str = '', parent=None):
+            super().__init__(parent)
+            self._dialog_title = title or '选择颜色'
+            layout = QHBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(6)
+            self.swatch = _QPushButton(); self.swatch.setObjectName('ColorSwatch')
+            self.swatch.setFixedSize(34, 22); self.swatch.setCursor(Qt.PointingHandCursor)
+            self.edit = QLineEdit(str(value)); self.edit.setObjectName('ColorHexEdit')
+            layout.addWidget(self.swatch); layout.addWidget(self.edit, 1)
+            self.swatch.clicked.connect(self._pick_color)
+            self.edit.textChanged.connect(self._on_text_changed)
+            self._refresh_swatch(str(value))
+
+        def text(self) -> str: return self.edit.text()
+        def setText(self, value: str) -> None: self.edit.setText(str(value))
+        def set_invalid(self, invalid: bool) -> None:
+            self.edit.setProperty('validationState', 'error' if invalid else '')
+            _repolish(self.edit)
+
+        def _pick_color(self):
+            current = QColor(self.text())
+            chosen = QColorDialog.getColor(
+                current if current.isValid() else QColor('#000000'), self, self._dialog_title)
+            if chosen.isValid(): self.edit.setText(chosen.name())
+
+        def _on_text_changed(self, text: str):
+            self._refresh_swatch(text)
+            self.textChanged.emit(text)
+
+        def _refresh_swatch(self, text: str):
+            color = QColor(text)
+            if color.isValid():
+                self.swatch.setStyleSheet(
+                    'QPushButton { background: ' + color.name() + ';'
+                    ' border: 1px solid rgba(128,128,128,0.55); border-radius: 4px; }')
+                self.swatch.setToolTip(color.name().upper() + '（点击选择颜色）')
+            else:
+                self.swatch.setToolTip('无效的颜色值（点击选择颜色）')
 else:
     class _MissingQt:
         def __init__(self, *args, **kwargs):
             raise RuntimeError('PySide6 is required for Studio UI controls')
-    StudioButton = StudioToolButton = StudioPopover = StudioNumericInput = StudioSelect = StudioSegmentedControl = StudioStateDot = StudioMarkedLabel = _MissingQt
+    StudioButton = StudioToolButton = StudioPopover = StudioNumericInput = StudioSelect = StudioSegmentedControl = StudioStateDot = StudioMarkedLabel = ColorSwatchEdit = _MissingQt
     class PopupManager:
         @classmethod
         def visible_count(cls): return 0

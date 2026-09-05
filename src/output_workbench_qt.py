@@ -13,12 +13,14 @@ from PySide6.QtWidgets import (
 )
 
 from atomic_io import atomic_write_bytes
+from PIL import Image
 from bitmap_encoding import MonoBitmap, encode_bitmap
+from bitmap_raster import rasterize_image
 from font_pack import FontPack
 from output_formatter import OutputItem, format_output
 from output_profiles import EncodingProfile, OutputProfile, RasterProfile, TextFormatProfile, builtin_profiles
 from project_workspace import PROJECT_FILENAME, ProjectWorkspace
-from ui_controls import StudioSelect
+from ui_controls import ColorSwatchEdit, StudioSelect
 
 QComboBox = StudioSelect
 
@@ -63,7 +65,7 @@ class _GenerationTask(QRunnable):
 
 
 class OutputWorkbench(QWidget):
-    """Pixel Studio's deterministic encoding, preview, animation and save surface."""
+    """Pixel Studio's deterministic encoding, preview and save surface."""
 
     def __init__(self, window, inspector_layout, root_layout):
         super().__init__(window)
@@ -79,7 +81,7 @@ class OutputWorkbench(QWidget):
         self._last_items = ()
         self._last_valid_profile = None
         self._applying_profile = False
-        self._trace_index = 0
+        self._inflight = None
         self._pool = QThreadPool(self)
         self._pool.setMaxThreadCount(1)
         self._generate_timer = QTimer(self)
@@ -90,8 +92,6 @@ class OutputWorkbench(QWidget):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(300)
         self._save_timer.timeout.connect(self._persist_profile)
-        self._animation_timer = QTimer(self)
-        self._animation_timer.timeout.connect(self.next_step)
         self._build_controls(inspector_layout)
         self._build_output(root_layout)
         self._canvas_display_changed(); self._display_changed()
@@ -129,7 +129,7 @@ class OutputWorkbench(QWidget):
     def _build_controls(self, layout):
         self._groups = []
         source = self._group('来源', layout)
-        self.source_combo = self._combo((('当前 Pixel 画布', 'canvas'), ('当前选区', 'selection'), ('当前 Designer 场景帧', 'scene'), ('项目 Font Pack', 'font')))
+        self.source_combo = self._combo((('当前 Pixel 画布', 'canvas'), ('当前选区', 'selection'), ('当前 Designer 场景帧', 'scene'), ('项目 Font Pack', 'font'), ('图片文件', 'image')))
         self.profile_combo = QComboBox()
         self.font_combo = QComboBox()
         self.characters = QLineEdit()
@@ -143,18 +143,19 @@ class OutputWorkbench(QWidget):
         source.addRow('', self.temporary_label)
         self._populate_sources()
 
-        raster = self._group('字模与图片', layout)
-        self.alignment_combo = self._combo((('相对于整体', 'font_set'), ('相对于字宽', 'glyph_width')))
+        raster = self._group('图片栅格化', layout)
+        self.image_path = QLineEdit(); self.image_path.setPlaceholderText('选择图片文件后，用下方阈值把彩色图转成 1-bit')
+        self.image_browse = QPushButton('浏览…')
+        image_row = QHBoxLayout(); image_row.addWidget(self.image_path, 1); image_row.addWidget(self.image_browse)
         self.threshold_mode = self._combo((('亮度阈值', 'luma'), ('RGB 全部达到阈值', 'rgb_all')))
         self.threshold = QSpinBox(); self.threshold.setRange(0, 255); self.threshold.setValue(128)
         self.red = QSpinBox(); self.green = QSpinBox(); self.blue = QSpinBox()
         for control in (self.red, self.green, self.blue): control.setRange(0, 255); control.setValue(255)
         self.invert_source = QCheckBox('反转栅格结果')
-        self.antialias = self._combo((('1×', 1), ('2×', 2), ('4×', 4)))
-        raster.addRow('对齐方式', self.alignment_combo); raster.addRow('阈值模式', self.threshold_mode)
+        raster.addRow('图片文件', image_row); raster.addRow('阈值模式', self.threshold_mode)
         raster.addRow('亮度', self.threshold); raster.addRow('R', self.red); raster.addRow('G', self.green); raster.addRow('B', self.blue)
-        raster.addRow('', self.invert_source); raster.addRow('抗锯齿', self.antialias)
-        self.raster_hint = QLabel('1-bit 素材不再次阈值化'); self.raster_hint.setWordWrap(True); raster.addRow('', self.raster_hint)
+        raster.addRow('', self.invert_source)
+        self.raster_hint = QLabel('仅图片源需要栅格化；画布/选区/场景/FontPack 已经是 1-bit'); self.raster_hint.setWordWrap(True); raster.addRow('', self.raster_hint)
 
         encoding = self._group('点阵', layout)
         self.mode_combo = self._combo(tuple((name, name) for name in _MODE_VALUES))
@@ -182,24 +183,26 @@ class OutputWorkbench(QWidget):
             edit = QLineEdit(); self.template_fields[name] = edit; formatting.addRow(label, edit)
 
         display = self._group('显示', layout)
-        self.background_color = QLineEdit(str(self.preferences.get('pixel_studio.canvas_background', '#000000')))
-        self.grid_color = QLineEdit(str(self.preferences.get('pixel_studio.grid_color', '#495028')))
-        self.fill_color = QLineEdit(str(self.preferences.get('pixel_studio.pixel_fill', '#FFFFFF')))
-        self.border_color = QLineEdit(str(self.preferences.get('pixel_studio.pixel_border', '#FFFF00')))
+        self.background_color = ColorSwatchEdit(str(self.preferences.get('pixel_studio.canvas_background', '#000000')), '选择画布背景颜色')
+        self.grid_color = ColorSwatchEdit(str(self.preferences.get('pixel_studio.grid_color', '#495028')), '选择网格线颜色')
+        self.fill_color = ColorSwatchEdit(str(self.preferences.get('pixel_studio.pixel_fill', '#FFFFFF')), '选择像素填充颜色')
+        self.border_color = ColorSwatchEdit(str(self.preferences.get('pixel_studio.pixel_border', '#FFFF00')), '选择像素边框颜色')
         self.pixel_size = QSpinBox(); self.pixel_size.setRange(1, 40); self.pixel_size.setValue(self.window.canvas.zoom)
         self.output_font = QFontComboBox(); self.output_font_size = QSpinBox(); self.output_font_size.setRange(8, 32); self.output_font_size.setValue(14)
-        self.animation_speed = self._combo((('0.5×', 0.5), ('1×', 1.0), ('2×', 2.0)))
         self.reset_display_button = QPushButton('重置显示')
         display.addRow('画布背景', self.background_color); display.addRow('网格线', self.grid_color)
         display.addRow('像素填充', self.fill_color); display.addRow('像素边框', self.border_color); display.addRow('像素大小', self.pixel_size)
         display.addRow('输出字体', self.output_font); display.addRow('字体大小', self.output_font_size)
-        display.addRow('动画速度', self.animation_speed); display.addRow('', self.reset_display_button)
+        display.addRow('', self.reset_display_button)
 
         self.validation_label = QLabel(); self.validation_label.setWordWrap(True); layout.addWidget(self.validation_label)
         for control in self._configuration_controls():
             signal = getattr(control, 'currentIndexChanged', None) or getattr(control, 'valueChanged', None) or getattr(control, 'toggled', None) or getattr(control, 'textChanged', None)
             signal.connect(self._configuration_changed)
         self.source_combo.currentIndexChanged.connect(self._source_changed)
+        self.image_browse.clicked.connect(self._browse_image)
+        self.image_path.textChanged.connect(self._configuration_changed)
+        self.threshold_mode.currentIndexChanged.connect(self._sync_threshold_mode_controls)
         self.profile_combo.currentIndexChanged.connect(self._profile_selected)
         self.new_profile_button.clicked.connect(self._save_as_profile);self.delete_profile_button.clicked.connect(self._delete_profile)
         self.new_profile_button.setEnabled(not self.temporary);self.delete_profile_button.setEnabled(not self.temporary)
@@ -207,7 +210,6 @@ class OutputWorkbench(QWidget):
         self.output_font_size.valueChanged.connect(self._display_changed)
         for edit in (self.background_color,self.grid_color,self.fill_color,self.border_color): edit.textChanged.connect(self._canvas_display_changed)
         self.pixel_size.valueChanged.connect(self._pixel_size_changed)
-        self.animation_speed.currentIndexChanged.connect(self._speed_changed)
         self.reset_display_button.clicked.connect(self._reset_display)
         saved_font=str(self.preferences.get('pixel_studio.output_font',''))
         if saved_font:self.output_font.setCurrentFont(QFont(saved_font))
@@ -215,12 +217,7 @@ class OutputWorkbench(QWidget):
 
     def _build_output(self, root_layout):
         panel = QWidget(); self.bottom_panel=panel; panel.setObjectName('OutputWorkbenchBottom')
-        body = QHBoxLayout(panel)
-        animation = QVBoxLayout(); self.animation_label = QLabel('尚未生成字模'); self.animation_label.setMinimumWidth(260); self.animation_label.setWordWrap(True); animation.addWidget(self.animation_label)
-        animation_actions = QHBoxLayout()
-        self.previous_button = QPushButton('上一步'); self.play_button = QPushButton('播放'); self.next_button = QPushButton('下一步')
-        for button in (self.previous_button, self.play_button, self.next_button): animation_actions.addWidget(button)
-        animation.addLayout(animation_actions); body.addLayout(animation)
+        body = QVBoxLayout(panel)
         self.output_text = QPlainTextEdit(); self.output_text.setReadOnly(True); self.output_text.setObjectName('OutputText'); body.addWidget(self.output_text, 1)
         root_layout.addWidget(panel)
         actions = QHBoxLayout(); self.collapse_button=QPushButton('收起输出');actions.addWidget(self.collapse_button);actions.addStretch(1)
@@ -232,16 +229,19 @@ class OutputWorkbench(QWidget):
         root_layout.addLayout(actions)
         self.generate_button.clicked.connect(self.generate_now); self.copy_button.clicked.connect(self.copy_output)
         self.save_button.clicked.connect(self.save_output); self.clear_button.clicked.connect(self.clear_output)
-        self.previous_button.clicked.connect(self.previous_step); self.next_button.clicked.connect(self.next_step); self.play_button.clicked.connect(self.toggle_play)
         self.collapse_button.clicked.connect(self._toggle_bottom_panel)
+        for button, icon_name in ((self.generate_button, 'generate'), (self.copy_button, 'copy'),
+                                  (self.save_button, 'save'), (self.clear_button, 'clear'),
+                                  (self.collapse_button, 'collapse')):
+            self.window._bind_button_icon(button, icon_name)
 
     def _toggle_bottom_panel(self):
         visible=not self.bottom_panel.isVisible();self.bottom_panel.setVisible(visible);self.collapse_button.setText('收起输出' if visible else '展开输出')
 
     def _configuration_controls(self):
         return (
-            self.alignment_combo, self.threshold_mode, self.threshold, self.red, self.green, self.blue,
-            self.invert_source, self.antialias, self.mode_combo, self.bit_order, self.polarity,
+            self.threshold_mode, self.threshold, self.red, self.green, self.blue,
+            self.invert_source, self.mode_combo, self.bit_order, self.polarity,
             self.container, self.radix, self.bytes_per_line, self.index_entries_per_line, self.index_mode, self.minimal,
             self.compact, *self.template_fields.values(), self.characters, self.font_combo,
         )
@@ -268,8 +268,8 @@ class OutputWorkbench(QWidget):
         axis = profile.encoding.bit_axis; order = profile.encoding.group_order
         mode = next(name for name, values in _MODE_VALUES.items() if values == (axis, order))
         controls = (
-            (self.alignment_combo, profile.raster.alignment), (self.threshold_mode, profile.raster.threshold_mode),
-            (self.antialias, profile.raster.antialias_scale), (self.mode_combo, mode),
+            (self.threshold_mode, profile.raster.threshold_mode),
+            (self.mode_combo, mode),
             (self.bit_order, profile.encoding.bit_order), (self.polarity, profile.encoding.polarity),
             (self.container, profile.text.container), (self.radix, profile.text.radix),
             (self.index_mode, profile.text.index_mode),
@@ -285,9 +285,9 @@ class OutputWorkbench(QWidget):
     def _profile(self):
         bit_axis, group_order = _MODE_VALUES[self.mode_combo.currentData()]
         raster = RasterProfile(
-            alignment=self.alignment_combo.currentData(), threshold_mode=self.threshold_mode.currentData(),
+            threshold_mode=self.threshold_mode.currentData(),
             luma_threshold=self.threshold.value(), red_threshold=self.red.value(), green_threshold=self.green.value(),
-            blue_threshold=self.blue.value(), invert_source=self.invert_source.isChecked(), antialias_scale=self.antialias.currentData(),
+            blue_threshold=self.blue.value(), invert_source=self.invert_source.isChecked(),
         )
         defaults = asdict(TextFormatProfile())
         defaults.update(
@@ -342,12 +342,31 @@ class OutputWorkbench(QWidget):
         try:self.project.delete_output_profile(profile_id);self._load_active_profile()
         except Exception as exc:self.validation_label.setText(str(exc))
 
+    def _browse_image(self):
+        path, _ = QFileDialog.getOpenFileName(self, '选择图片', str(self.project_root),
+                                              '图片 (*.png *.jpg *.jpeg *.bmp *.webp)')
+        if path: self.image_path.setText(path)
+
+    def _sync_raster_controls(self, is_image: bool):
+        """Raster controls only mean something for the image source; the
+        threshold-mode combo additionally gates the R/G/B channels."""
+        luma = self.threshold_mode.currentData() == 'luma'
+        self.threshold_mode.setEnabled(is_image)
+        self.threshold.setEnabled(is_image and luma)
+        for control in (self.red, self.green, self.blue):
+            control.setEnabled(is_image and not luma)
+        self.invert_source.setEnabled(is_image)
+
+    def _sync_threshold_mode_controls(self, *_):
+        self._sync_raster_controls(self.source_combo.currentData() == 'image')
+
     def _source_changed(self, *_):
         kind = self.source_combo.currentData()
         is_font = kind == 'font'
+        is_image = kind == 'image'
         self.font_combo.setEnabled(is_font); self.characters.setEnabled(is_font)
-        for control in (self.alignment_combo, self.threshold_mode, self.threshold, self.red, self.green, self.blue, self.invert_source, self.antialias): control.setEnabled(False)
-        self.raster_hint.setText('当前来源已经是 1-bit，不会再次阈值化')
+        self._sync_raster_controls(is_image)
+        self.raster_hint.setText('彩色图片将按下方阈值转换为 1-bit' if is_image else '当前来源已经是 1-bit，不会再次阈值化')
         self.index_mode.setEnabled(is_font)
         if not is_font: self.index_mode.setCurrentIndex(self.index_mode.findData('none'))
         self._validate_source(); self._generate_timer.start()
@@ -358,6 +377,10 @@ class OutputWorkbench(QWidget):
         if kind == 'selection' and not self.window.canvas.selection: error = '当前没有选区，无法生成选区字模'
         elif kind == 'font' and self.font_combo.count() == 0: error = '项目中没有可用的 Font Pack'
         elif kind == 'scene' and self.project is None: error = '当前不是项目，无法读取 Designer 场景'
+        elif kind == 'image':
+            image_path = self.image_path.text().strip()
+            if not image_path: error = '请先选择图片文件'
+            elif not Path(image_path).is_file(): error = f'图片文件不存在：{image_path}'
         self.validation_label.setText(error)
         self.generate_button.setEnabled(not error)
         return not error
@@ -370,6 +393,15 @@ class OutputWorkbench(QWidget):
             x, y, width, height = self.window.canvas.selection
             rows = [row[x:x + width] for row in self.window.document.pixels[y:y + height]]
             return [{'name': 'selection', 'bitmap': MonoBitmap.from_rows(rows)}]
+        if kind == 'image':
+            path = Path(self.image_path.text().strip())
+            with Image.open(path) as source:
+                bitmap = rasterize_image(source, RasterProfile(
+                    threshold_mode=self.threshold_mode.currentData(), luma_threshold=self.threshold.value(),
+                    red_threshold=self.red.value(), green_threshold=self.green.value(), blue_threshold=self.blue.value(),
+                    invert_source=self.invert_source.isChecked(),
+                ))
+            return [{'name': path.stem, 'bitmap': MonoBitmap.from_rows(bitmap.rows)}]
         if kind == 'font':
             pack = FontPack.load(self.project_root / str(self.font_combo.currentData()))
             requested = self.characters.text()
@@ -406,9 +438,16 @@ class OutputWorkbench(QWidget):
         task = _GenerationTask(generation_id, bitmaps, profile, symbol)
         task.signals.completed.connect(self._generation_completed)
         task.signals.failed.connect(self._generation_failed)
+        # QThreadPool deletes the runnable as soon as run() returns; without a
+        # Python-side reference the signals object dies with it and the queued
+        # completion event is dropped before the UI thread can deliver it.
+        self._inflight = task
         self._pool.start(task)
 
     def _finish_request(self):
+        # Runs on the UI thread after the queued completion/failed event was
+        # delivered; only now is it safe to release the in-flight task.
+        self._inflight = None
         self._running = False
         if self._pending:
             request, self._pending = self._pending, None
@@ -416,38 +455,16 @@ class OutputWorkbench(QWidget):
 
     def _generation_completed(self, generation_id, formatted, items):
         if generation_id == self._generation_id:
-            self._last_formatted = formatted; self._last_items = tuple(items); self._trace_index = 0
+            self._last_formatted = formatted; self._last_items = tuple(items)
             text = formatted.preview_text
             if formatted.preview_truncated: text += '\n\n[预览已截断；保存仍会写入完整结果]'
             if not text and formatted.data: text = formatted.data.hex(' ')
-            self.output_text.setPlainText(text); self._show_trace()
+            self.output_text.setPlainText(text)
         self._finish_request()
 
     def _generation_failed(self, generation_id, message):
         if generation_id == self._generation_id: self.validation_label.setText(message)
         self._finish_request()
-
-    def _show_trace(self):
-        if not self._last_items: self.animation_label.setText('尚未生成字模'); return
-        encoded = self._last_items[0].encoded
-        self._trace_index %= max(1, encoded.byte_count)
-        step = encoded.trace_step(self._trace_index)
-        points=step.coordinates
-        if self.source_combo.currentData()=='selection' and self.window.canvas.selection:
-            ox,oy,_,_=self.window.canvas.selection;points=tuple(None if point is None else (point[0]+ox,point[1]+oy) for point in points)
-        self.window.canvas.trace_points=points if self.source_combo.currentData() in {'canvas','selection'} else ();self.window.canvas.update()
-        coords = ', '.join('补位' if point is None else f'({point[0]},{point[1]})' for point in step.coordinates)
-        bit_names = 'bit7 → bit0' if self.bit_order.currentData() == 'msb_first' else 'bit0 → bit7'
-        self.animation_label.setText(f'第 {step.index + 1}/{encoded.byte_count} 字节 · {bit_names}\n{coords}\n当前字节：0x{step.value:02X}')
-
-    def previous_step(self): self._trace_index -= 1; self._show_trace()
-    def next_step(self): self._trace_index += 1; self._show_trace()
-
-    def toggle_play(self):
-        if self._animation_timer.isActive(): self._animation_timer.stop(); self.play_button.setText('播放')
-        else: self._speed_changed(); self._animation_timer.start(); self.play_button.setText('暂停')
-
-    def _speed_changed(self, *_): self._animation_timer.setInterval(int(800 / float(self.animation_speed.currentData() or 1)))
 
     def copy_output(self):
         if self._last_formatted:
@@ -470,7 +487,7 @@ class OutputWorkbench(QWidget):
         return True
 
     def clear_output(self):
-        self._animation_timer.stop(); self.play_button.setText('播放'); self.output_text.clear(); self.animation_label.setText('尚未生成字模'); self._last_formatted = None; self._last_items = ();self.window.canvas.trace_points=();self.window.canvas.update()
+        self.output_text.clear(); self._last_formatted = None; self._last_items = ()
 
     def _display_changed(self, *_):
         if not hasattr(self,'output_text'):return
@@ -480,14 +497,14 @@ class OutputWorkbench(QWidget):
 
     def _reset_display(self):
         self.background_color.setText('#000000');self.grid_color.setText('#495028');self.fill_color.setText('#FFFFFF');self.border_color.setText('#FFFF00');self.pixel_size.setValue(10)
-        self.output_font_size.setValue(14); self.animation_speed.setCurrentIndex(self.animation_speed.findData(1.0)); self._display_changed()
+        self.output_font_size.setValue(14); self._display_changed()
 
     def _canvas_display_changed(self, *_):
         fields=(('背景',self.background_color),('线条',self.grid_color),('填充',self.fill_color),('边框',self.border_color))
         invalid=[]
         for label,edit in fields:
             valid=QColor(edit.text()).isValid()
-            edit.setStyleSheet('' if valid else 'border: 1px solid #D93F3F;')
+            edit.set_invalid(not valid)
             if not valid:invalid.append(label)
         if invalid:
             self.validation_label.setText('颜色格式无效：'+ '、'.join(invalid));return
