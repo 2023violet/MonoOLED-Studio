@@ -14,8 +14,12 @@ class ShortcutConflictError(ValueError):
     pass
 
 
-def normalize_shortcut(value: str) -> str:
-    return str(value or '').strip()
+def normalize_shortcut(value) -> str:
+    if not isinstance(value, str):
+        # Corrupted preference files can carry dicts or other types where a
+        # key sequence belongs; coercing them to a string would store garbage.
+        return ''
+    return value.strip()
 
 
 class CommandRegistry:
@@ -81,6 +85,12 @@ class CommandRegistry:
                 if ignore_unknown:
                     continue
                 rejected[command_id] = 'unknown command'
+                continue
+            if not isinstance(shortcut, str):
+                # Non-string bindings (nested dicts, numbers) can never be key
+                # sequences; report them so the startup repair path rewrites
+                # the preferences file instead of keeping the corruption.
+                rejected[command_id] = 'invalid binding value'
                 continue
             try:
                 self.bind(command_id, shortcut)

@@ -56,6 +56,7 @@ RUNTIME_EFFECTS = {
     'pixel_studio.stroke_interpolation': 'PixelCanvas Bresenham interpolation gate',
     'pixel_studio.pixel_grid': 'PixelCanvas grid visibility',
     'pixel_studio.actual_preview': 'Pixel Studio actual-size preview visibility',
+    'pixel_studio.rulers': 'Pixel Studio canvas ruler strip visibility',
     'autosave.enabled': 'Designer autosave timer enable gate',
     'autosave.interval_minutes': 'Designer autosave timer interval',
     'autosave.snapshots': 'AutoSaveManager retention limit',
@@ -105,6 +106,7 @@ class RuntimeSettings:
     stroke_interpolation: bool
     pixel_grid: bool
     actual_preview: bool
+    pixel_rulers: bool
     autosave_enabled: bool
     autosave_interval_ms: int
     autosave_snapshots: int
@@ -133,7 +135,7 @@ class RuntimeSettings:
             middle_pan=p['input']['middle_drag'] == 'pan',
             space_pan=p['input']['space_drag'] == 'pan',
             grid=bool(p['canvas']['grid']), bounds=bool(p['canvas']['bounds']), rulers=bool(p['canvas']['rulers']), zones=bool(p['canvas']['zones']), snap=int(p['canvas']['snap']),
-            brush_size=int(p['pixel_studio']['brush_size']), stroke_interpolation=bool(p['pixel_studio']['stroke_interpolation']), pixel_grid=bool(p['pixel_studio']['pixel_grid']), actual_preview=bool(p['pixel_studio']['actual_preview']),
+            brush_size=int(p['pixel_studio']['brush_size']), stroke_interpolation=bool(p['pixel_studio']['stroke_interpolation']), pixel_grid=bool(p['pixel_studio']['pixel_grid']), actual_preview=bool(p['pixel_studio']['actual_preview']), pixel_rulers=bool(p['pixel_studio']['rulers']),
             autosave_enabled=bool(p['autosave']['enabled']), autosave_interval_ms=int(p['autosave']['interval_minutes']) * 60_000, autosave_snapshots=int(p['autosave']['snapshots']), prompt_recovery=bool(p['autosave']['prompt_recovery']),
             drag_preview=str(p['performance']['drag_preview']), validation_mode=str(p['performance']['validation_mode']), undo_history=int(p['performance']['undo_history']), asset_cache_mb=int(p['performance']['asset_cache_mb']), performance_overlay=bool(p['performance']['overlay']),
             shortcuts=dict(p['shortcuts']),

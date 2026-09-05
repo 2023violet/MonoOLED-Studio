@@ -23,7 +23,7 @@ def _defaults() -> dict[str, Any]:
             # Legacy compatibility only; hidden from Preferences and ignored by Theme Closure V10.1.
             'color_theme': 'monooled-light',
             'density': 'comfortable',
-            'ui_scale': 'auto',
+            'ui_scale': '100%',
             'reduced_motion': False,
         },
         'input': {'wheel_action': 'zoom', 'middle_drag': 'pan', 'space_drag': 'pan'},
@@ -33,6 +33,7 @@ def _defaults() -> dict[str, Any]:
             # These legacy keys remain for backward compatibility but are normalized.
             'left_button': 'draw', 'right_button': 'erase', 'brush_size': 1,
             'stroke_interpolation': True, 'pixel_grid': True, 'actual_preview': True,
+            'rulers': True,
         },
         'autosave': {'enabled': True, 'interval_minutes': 3, 'snapshots': 10, 'prompt_recovery': True},
         'performance': {
@@ -127,7 +128,11 @@ def _shortcut_validator(value: Any, default: Any) -> str:
     if not isinstance(value, str):
         return str(default)
     value = value.strip()
-    return value if value else str(default)
+    if not value or value.casefold() in {'none', 'null'}:
+        # Historical writers emitted str(None); a shortcut can never be that
+        # string, so treat it as the untouched default binding.
+        return str(default)
+    return value
 
 
 _VALIDATORS: dict[str, Callable[[Any, Any], Any]] = {
@@ -153,6 +158,7 @@ _VALIDATORS: dict[str, Callable[[Any, Any], Any]] = {
     'pixel_studio.stroke_interpolation': _bool_validator,
     'pixel_studio.pixel_grid': _bool_validator,
     'pixel_studio.actual_preview': _bool_validator,
+    'pixel_studio.rulers': _bool_validator,
     'autosave.enabled': _bool_validator,
     'autosave.interval_minutes': _int_range(1, 60),
     'autosave.snapshots': _int_range(1, 100),
@@ -171,6 +177,46 @@ for _shortcut_key in _defaults()['shortcuts']:
 PUBLIC_PREFERENCE_KEYS = tuple(_VALIDATORS)
 
 
+def _sanitize_shortcuts_section(merged: dict[str, Any]) -> None:
+    """Keep the shortcuts section flat with one entry per known command.
+
+    The preferences UI writes dotted command ids (``shortcuts.designer.undo``),
+    which the generic dotted setter stores as nested dicts, and historical
+    writers emitted literal ``'None'`` strings.  Resolve both spellings into
+    flat keys, prefer the nested spelling when it carries a usable value (it is
+    what the UI last wrote), drop unknown commands, and reset junk values to
+    the default binding.  The "retain future keys" promise applies to unknown
+    top-level fields, not to this closed command namespace.
+    """
+    shortcuts = merged.get('shortcuts')
+    if not isinstance(shortcuts, dict):
+        return
+    known = _defaults()['shortcuts']
+    junk_markers = {'', 'none', 'null'}
+
+    def usable(candidate: Any) -> bool:
+        return isinstance(candidate, str) and bool(candidate.strip()) and candidate.strip().casefold() not in junk_markers
+
+    cleaned: dict[str, Any] = {}
+    for command_id, default_value in known.items():
+        nested: Any = shortcuts
+        for part in command_id.split('.'):
+            if isinstance(nested, dict) and part in nested:
+                nested = nested[part]
+            else:
+                nested = None
+                break
+        if usable(nested):
+            value = nested
+        elif usable(shortcuts.get(command_id)):
+            value = shortcuts[command_id]
+        else:
+            value = default_value
+        value = value.strip()
+        cleaned[command_id] = value if value else default_value
+    merged['shortcuts'] = cleaned
+
+
 def normalize_preferences(raw: Any) -> dict[str, Any]:
     """Merge and semantically validate preferences without deleting future keys.
 
@@ -185,6 +231,7 @@ def normalize_preferences(raw: Any) -> dict[str, Any]:
         default = _path_get(defaults, dotted)
         value = _path_get(merged, dotted, default)
         _path_set(merged, dotted, validator(value, default))
+    _sanitize_shortcuts_section(merged)
     # Fixed product semantics cannot be reconfigured by stale/future files.
     _path_set(merged, 'pixel_studio.left_button', 'draw')
     _path_set(merged, 'pixel_studio.right_button', 'erase')
@@ -249,20 +296,45 @@ class PreferencesStore:
                 tmp.unlink(missing_ok=True)
         return self.path
 
+    @staticmethod
+    def _shortcut_command_id(dotted: str) -> str | None:
+        prefix = 'shortcuts.'
+        if not dotted.startswith(prefix):
+            return None
+        return dotted[len(prefix):]
+
     def get(self, dotted: str, default=None):
+        command_id = self._shortcut_command_id(dotted)
+        if command_id is not None:
+            # Shortcut bindings live as flat keys inside the shortcuts section;
+            # the dotted path spells the command id, not a nested dict.
+            section = self.data.get('shortcuts')
+            if isinstance(section, dict) and command_id in section:
+                return section[command_id]
+            return default
         return _path_get(self.data, dotted, default)
 
     def set(self, dotted: str, value: Any, *, save: bool = True) -> None:
         previous = deepcopy(self.data) if save else None
-        _path_set(self.data, dotted, value)
-        # Normalize only known fields immediately; future keys are untouched.
-        if dotted in _VALIDATORS:
-            default = _path_get(_defaults(), dotted)
-            _path_set(self.data, dotted, _VALIDATORS[dotted](value, default))
-        if dotted == 'pixel_studio.left_button':
-            _path_set(self.data, dotted, 'draw')
-        elif dotted == 'pixel_studio.right_button':
-            _path_set(self.data, dotted, 'erase')
+        command_id = self._shortcut_command_id(dotted)
+        if command_id is not None:
+            known = _defaults()['shortcuts']
+            validated = _shortcut_validator(value, known.get(command_id, ''))
+            section = self.data.get('shortcuts')
+            if not isinstance(section, dict):
+                section = {}
+                self.data['shortcuts'] = section
+            section[command_id] = validated
+        else:
+            _path_set(self.data, dotted, value)
+            # Normalize only known fields immediately; future keys are untouched.
+            if dotted in _VALIDATORS:
+                default = _path_get(_defaults(), dotted)
+                _path_set(self.data, dotted, _VALIDATORS[dotted](value, default))
+            if dotted == 'pixel_studio.left_button':
+                _path_set(self.data, dotted, 'draw')
+            elif dotted == 'pixel_studio.right_button':
+                _path_set(self.data, dotted, 'erase')
         if save:
             try:
                 self.save()

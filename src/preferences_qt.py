@@ -49,7 +49,7 @@ _TEXT = {
         'label.wheel': '鼠标滚轮', 'label.middle': '中键拖动', 'check.space_pan': 'Space + 左键拖动平移画布',
         'label.snap': '吸附', 'check.grid': '显示像素网格', 'check.bounds': '显示边界', 'check.rulers': '显示标尺', 'check.zones': '显示区域',
         'label.left': '鼠标左键', 'label.right': '鼠标右键', 'value.draw': '绘制 / 置 1', 'value.erase': '擦除 / 置 0',
-        'label.brush': '画笔大小', 'check.interpolation': '连续笔划插值', 'check.pixel_grid': '显示像素网格', 'check.actual_preview': '显示 1:1 实际尺寸预览',
+        'label.brush': '画笔大小', 'check.interpolation': '连续笔划插值', 'check.pixel_grid': '显示像素网格', 'check.actual_preview': '显示 1:1 实际尺寸预览', 'check.pixel_rulers': '画布标尺',
         'check.autosave': '启用自动保存', 'label.autosave_interval': '间隔（分钟）', 'label.snapshots': '恢复快照数量', 'check.prompt_recovery': '发现更新恢复数据时提示',
         'label.drag_preview': '拖拽预览', 'label.validation': '校验时机', 'label.undo': '撤销历史', 'label.cache': '资产缓存（MB）', 'check.overlay': '显示性能信息',
         'button.clear_cache': '清除资产缓存', 'button.reset_workspace': '重置工作区布局', 'button.reset_all': '重置全部偏好设置',
@@ -109,7 +109,7 @@ _TEXT = {
         'label.wheel': 'Mouse wheel', 'label.middle': 'Middle drag', 'check.space_pan': 'Space + left drag pans canvas',
         'label.snap': 'Snap', 'check.grid': 'Show pixel grid', 'check.bounds': 'Show bounds', 'check.rulers': 'Show rulers', 'check.zones': 'Show zones',
         'label.left': 'Left mouse', 'label.right': 'Right mouse', 'value.draw': 'Draw / Set 1', 'value.erase': 'Erase / Set 0',
-        'label.brush': 'Brush size', 'check.interpolation': 'Stroke interpolation', 'check.pixel_grid': 'Show pixel grid', 'check.actual_preview': 'Actual-size preview',
+        'label.brush': 'Brush size', 'check.interpolation': 'Stroke interpolation', 'check.pixel_grid': 'Show pixel grid', 'check.actual_preview': 'Actual-size preview', 'check.pixel_rulers': 'Canvas rulers',
         'check.autosave': 'Enable autosave', 'label.autosave_interval': 'Interval (minutes)', 'label.snapshots': 'Recovery snapshots', 'check.prompt_recovery': 'Prompt when newer recovery data is found',
         'label.drag_preview': 'Drag preview', 'label.validation': 'Validation', 'label.undo': 'Undo history', 'label.cache': 'Asset cache (MB)', 'check.overlay': 'Performance overlay',
         'button.clear_cache': 'Clear asset cache', 'button.reset_workspace': 'Reset workspace layout', 'button.reset_all': 'Reset all preferences',
@@ -495,7 +495,7 @@ class PreferencesView(QWidget):
         self.snap=QComboBox(); [self.snap.addItem(label,data) for label,data in (('Off',0),('1 px',1),('2 px',2),('4 px',4),('8 px',8))]
         self.left_action=self._label('value.draw'); self.right_action=self._label('value.erase')
         self.brush_size=QSpinBox(); self.brush_size.setRange(1,8)
-        self.interpolation=self._check('check.interpolation'); self.pixel_grid=self._check('check.pixel_grid'); self.actual_preview=self._check('check.actual_preview')
+        self.interpolation=self._check('check.interpolation'); self.pixel_grid=self._check('check.pixel_grid'); self.actual_preview=self._check('check.actual_preview'); self.pixel_rulers=self._check('check.pixel_rulers')
         self.autosave=self._check('check.autosave'); self.autosave_minutes=QSpinBox(); self.autosave_minutes.setRange(1,60)
         self.snapshots=QSpinBox(); self.snapshots.setRange(1,100); self.prompt_recovery=self._check('check.prompt_recovery')
         self.validation=QComboBox(); [self.validation.addItem('',data) for data in ('edit_complete','idle','continuous')]
@@ -541,7 +541,7 @@ class PreferencesView(QWidget):
         ])
         layout.addSpacing(self.section_gap)
         self._add_section(scroll,layout,'pixel','group.pixel_view',[
-            ('',self.pixel_grid,'help.pixel_view'),('',self.actual_preview,None)
+            ('',self.pixel_grid,'help.pixel_view'),('',self.actual_preview,None),('',self.pixel_rulers,None)
         ])
         self.stack.addWidget(scroll)
 
@@ -581,7 +581,7 @@ class PreferencesView(QWidget):
         self.nav.currentRowChanged.connect(self._nav_changed); self.nav.setCurrentRow(0)
         self.search.textChanged.connect(self._search_changed)
         for widget in (self.language,self.theme_mode,self.density,self.ui_scale,self.wheel,self.middle,self.snap,self.drag_preview,self.validation): widget.currentIndexChanged.connect(self._controls_changed)
-        for widget in (self.start_last,self.reduced_motion,self.space_pan,self.grid,self.bounds,self.rulers,self.zones,self.interpolation,self.pixel_grid,self.actual_preview,self.autosave,self.prompt_recovery,self.perf_overlay): widget.toggled.connect(self._controls_changed)
+        for widget in (self.start_last,self.reduced_motion,self.space_pan,self.grid,self.bounds,self.rulers,self.zones,self.interpolation,self.pixel_grid,self.actual_preview,self.pixel_rulers,self.autosave,self.prompt_recovery,self.perf_overlay): widget.toggled.connect(self._controls_changed)
         for widget in (self.brush_size,self.autosave_minutes,self.snapshots,self.undo_history,self.asset_cache): widget.valueChanged.connect(self._controls_changed)
         for edit in self.shortcut_edits.values(): edit.editingFinished.connect(self._shortcuts_changed)
         self._apply_responsive_layout()
@@ -757,10 +757,10 @@ class PreferencesView(QWidget):
     def _load_values(self):
         self._loading=True
         self._set_combo(self.language,self.store.get('language','zh_CN')); self.start_last.setChecked(bool(self.store.get('startup.reopen_last_project',False)))
-        self._set_combo(self.theme_mode,self.store.get('appearance.theme_mode','system')); self._set_combo(self.density,self.store.get('appearance.density','comfortable')); self._set_combo(self.ui_scale,self.store.get('appearance.ui_scale','auto')); self.reduced_motion.setChecked(bool(self.store.get('appearance.reduced_motion',False)))
+        self._set_combo(self.theme_mode,self.store.get('appearance.theme_mode','system')); self._set_combo(self.density,self.store.get('appearance.density','comfortable')); self._set_combo(self.ui_scale,self.store.get('appearance.ui_scale','100%')); self.reduced_motion.setChecked(bool(self.store.get('appearance.reduced_motion',False)))
         self._set_combo(self.wheel,self.store.get('input.wheel_action','zoom')); self._set_combo(self.middle,self.store.get('input.middle_drag','pan')); self.space_pan.setChecked(self.store.get('input.space_drag','pan')=='pan')
         self.grid.setChecked(bool(self.store.get('canvas.grid',True))); self.bounds.setChecked(bool(self.store.get('canvas.bounds',True))); self.rulers.setChecked(bool(self.store.get('canvas.rulers',True))); self.zones.setChecked(bool(self.store.get('canvas.zones',False))); self._set_combo(self.snap,int(self.store.get('canvas.snap',0)))
-        self.brush_size.setValue(int(self.store.get('pixel_studio.brush_size',1))); self.interpolation.setChecked(bool(self.store.get('pixel_studio.stroke_interpolation',True))); self.pixel_grid.setChecked(bool(self.store.get('pixel_studio.pixel_grid',True))); self.actual_preview.setChecked(bool(self.store.get('pixel_studio.actual_preview',True)))
+        self.brush_size.setValue(int(self.store.get('pixel_studio.brush_size',1))); self.interpolation.setChecked(bool(self.store.get('pixel_studio.stroke_interpolation',True))); self.pixel_grid.setChecked(bool(self.store.get('pixel_studio.pixel_grid',True))); self.actual_preview.setChecked(bool(self.store.get('pixel_studio.actual_preview',True))); self.pixel_rulers.setChecked(bool(self.store.get('pixel_studio.rulers',True)))
         self.autosave.setChecked(bool(self.store.get('autosave.enabled',True))); self.autosave_minutes.setValue(int(self.store.get('autosave.interval_minutes',3))); self.snapshots.setValue(int(self.store.get('autosave.snapshots',10))); self.prompt_recovery.setChecked(bool(self.store.get('autosave.prompt_recovery',True)))
         self._set_combo(self.drag_preview,self.store.get('performance.drag_preview','fast')); self._set_combo(self.validation,self.store.get('performance.validation_mode','edit_complete')); self.undo_history.setValue(int(self.store.get('performance.undo_history',200))); self.asset_cache.setValue(int(self.store.get('performance.asset_cache_mb',512))); self.perf_overlay.setChecked(bool(self.store.get('performance.overlay',False)))
         for command_id,edit in self.shortcut_edits.items(): edit.setText(str(self.store.get(f'shortcuts.{command_id}',default_preferences()['shortcuts'][command_id])))
@@ -785,7 +785,7 @@ class PreferencesView(QWidget):
         self.store.set('appearance.theme_mode',self.theme_mode.currentData(),save=False); self.store.set('appearance.density',self.density.currentData(),save=False); self.store.set('appearance.ui_scale',self.ui_scale.currentData(),save=False); self.store.set('appearance.reduced_motion',self.reduced_motion.isChecked(),save=False)
         self.store.set('input.wheel_action',self.wheel.currentData(),save=False); self.store.set('input.middle_drag',self.middle.currentData(),save=False); self.store.set('input.space_drag','pan' if self.space_pan.isChecked() else 'none',save=False)
         self.store.set('canvas.grid',self.grid.isChecked(),save=False); self.store.set('canvas.bounds',self.bounds.isChecked(),save=False); self.store.set('canvas.rulers',self.rulers.isChecked(),save=False); self.store.set('canvas.zones',self.zones.isChecked(),save=False); self.store.set('canvas.snap',self.snap.currentData(),save=False)
-        self.store.set('pixel_studio.brush_size',self.brush_size.value(),save=False); self.store.set('pixel_studio.stroke_interpolation',self.interpolation.isChecked(),save=False); self.store.set('pixel_studio.pixel_grid',self.pixel_grid.isChecked(),save=False); self.store.set('pixel_studio.actual_preview',self.actual_preview.isChecked(),save=False)
+        self.store.set('pixel_studio.brush_size',self.brush_size.value(),save=False); self.store.set('pixel_studio.stroke_interpolation',self.interpolation.isChecked(),save=False); self.store.set('pixel_studio.pixel_grid',self.pixel_grid.isChecked(),save=False); self.store.set('pixel_studio.actual_preview',self.actual_preview.isChecked(),save=False); self.store.set('pixel_studio.rulers',self.pixel_rulers.isChecked(),save=False)
         self.store.set('autosave.enabled',self.autosave.isChecked(),save=False); self.store.set('autosave.interval_minutes',self.autosave_minutes.value(),save=False); self.store.set('autosave.snapshots',self.snapshots.value(),save=False); self.store.set('autosave.prompt_recovery',self.prompt_recovery.isChecked(),save=False)
         self.store.set('performance.drag_preview',self.drag_preview.currentData(),save=False); self.store.set('performance.validation_mode',self.validation.currentData(),save=False); self.store.set('performance.undo_history',self.undo_history.value(),save=False); self.store.set('performance.asset_cache_mb',self.asset_cache.value(),save=False); self.store.set('performance.overlay',self.perf_overlay.isChecked(),save=False)
         self._schedule_save()

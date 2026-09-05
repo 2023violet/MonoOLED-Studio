@@ -15,7 +15,7 @@ class PreferenceDelta:
         if before.theme_mode!=after.theme_mode: effects.add('theme')
         if (before.density,before.ui_scale)!=(after.density,after.ui_scale): effects.add('metrics')
         if (before.grid,before.bounds,before.rulers,before.zones,before.snap)!=(after.grid,after.bounds,after.rulers,after.zones,after.snap): effects.add('canvas')
-        if (before.wheel_action,before.middle_pan,before.space_pan,before.brush_size,before.stroke_interpolation,before.pixel_grid,before.actual_preview)!=(after.wheel_action,after.middle_pan,after.space_pan,after.brush_size,after.stroke_interpolation,after.pixel_grid,after.actual_preview): effects.add('pixel')
+        if (before.wheel_action,before.middle_pan,before.space_pan,before.brush_size,before.stroke_interpolation,before.pixel_grid,before.actual_preview,before.pixel_rulers)!=(after.wheel_action,after.middle_pan,after.space_pan,after.brush_size,after.stroke_interpolation,after.pixel_grid,after.actual_preview,after.pixel_rulers): effects.add('pixel')
         if (before.autosave_enabled,before.autosave_interval_ms,before.autosave_snapshots,before.prompt_recovery)!=(after.autosave_enabled,after.autosave_interval_ms,after.autosave_snapshots,after.prompt_recovery): effects.add('autosave')
         if (before.drag_preview,before.validation_mode,before.undo_history,before.asset_cache_mb,before.performance_overlay)!=(after.drag_preview,after.validation_mode,after.undo_history,after.asset_cache_mb,after.performance_overlay): effects.add('performance')
         if before.shortcuts!=after.shortcuts: effects.add('shortcuts')
