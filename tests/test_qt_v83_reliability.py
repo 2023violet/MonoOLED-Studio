@@ -21,6 +21,10 @@ def test_real_main_window_constructs_and_initial_font_scan_matches_package(qtbot
     from scene import scene_root
     w=OLEDDesignerWindow('main_scene','zh_CN'); qtbot.addWidget(w); w.show(); QApplication.processEvents()
     expected=sum(1 for _ in scene_root(w.scene).rglob('fontpack.json'))
+    # the initial font scan is deferred ~35ms after show (startup trace
+    # 'fonts_ready'); wait for it instead of assuming a synchronous pass
+    qtbot.waitUntil(lambda: w.font_list.count()==expected, timeout=2000)
+    QApplication.processEvents()
     assert w.font_list.count()==expected
     w.session.document.dirty=False; w.close(); QApplication.processEvents()
 
