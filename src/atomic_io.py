@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,17 @@ def unique_temp_path(path: str | Path) -> Path:
     return Path(name)
 
 
+def _cleanup_temp(path: Path) -> None:
+    for attempt in range(5):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt == 4:
+                return
+            time.sleep(0.02 * (attempt + 1))
+
+
 def atomic_write_bytes(path: str | Path, data: bytes) -> Path:
     target=Path(path); target.parent.mkdir(parents=True,exist_ok=True); tmp=unique_temp_path(target)
     try:
@@ -22,7 +34,7 @@ def atomic_write_bytes(path: str | Path, data: bytes) -> Path:
             fp.write(data); fp.flush(); os.fsync(fp.fileno())
         os.replace(tmp,target)
     finally:
-        if tmp.exists(): tmp.unlink(missing_ok=True)
+        if tmp.exists(): _cleanup_temp(tmp)
     return target
 
 

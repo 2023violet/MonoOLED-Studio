@@ -128,6 +128,31 @@ def test_atomic_write_uses_unique_temp_files_for_same_target(tmp_path, monkeypat
     assert all(name.endswith('.tmp') for name in seen)
 
 
+def test_atomic_write_retries_transient_windows_temp_cleanup_lock(tmp_path, monkeypatch):
+    import atomic_io
+
+    target = tmp_path / 'locked.bin'
+    original_unlink = atomic_io.Path.unlink
+    original_exists = atomic_io.Path.exists
+    attempts = {'count': 0}
+
+    def flaky_unlink(path, *args, **kwargs):
+        if path.suffix == '.tmp' and attempts['count'] < 2:
+            attempts['count'] += 1
+            raise PermissionError('transient sharing violation')
+        return original_unlink(path, *args, **kwargs)
+
+    def sticky_exists(path):
+        return True if path.suffix == '.tmp' else original_exists(path)
+
+    monkeypatch.setattr(atomic_io.Path, 'unlink', flaky_unlink)
+    monkeypatch.setattr(atomic_io.Path, 'exists', sticky_exists)
+    atomic_io.atomic_write_bytes(target, b'payload')
+
+    assert target.read_bytes() == b'payload'
+    assert attempts['count'] == 2
+
+
 def _function_body(source: str, name: str) -> str:
     marker = f'def {name}('
     start = source.index(marker)
