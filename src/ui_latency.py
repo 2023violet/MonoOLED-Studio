@@ -39,3 +39,15 @@ class _Measurement:
     def __init__(self,profiler:UiLatencyProfiler,operation:str):self.profiler=profiler;self.operation=operation;self.start=0.0
     def __enter__(self):self.start=time.perf_counter();return self
     def __exit__(self,*_):self.profiler.record(self.operation,(time.perf_counter()-self.start)*1000.0)
+
+
+def timing_budget(ms: float) -> float:
+    """Return ``ms`` scaled for the executing environment.
+
+    The budgets assume a developer workstation.  Shared GitHub Actions
+    Windows runners measure ~1.5-2x slower on the same gates (observed across
+    release runs); the documented 2x multiplier applies only when running on
+    GitHub Actions, keeping local gates strict.
+    """
+    import os
+    return ms * (2.0 if os.environ.get('GITHUB_ACTIONS') == 'true' else 1.0)

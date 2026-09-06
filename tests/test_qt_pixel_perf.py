@@ -14,6 +14,7 @@ from PySide6.QtTest import QSignalSpy, QTest
 
 from pixel_studio import PixelDocument
 from pixel_studio_qt import PixelCanvas, PixelStudioWindow
+from ui_latency import timing_budget
 from preferences import PreferencesStore, default_preferences
 
 
@@ -49,7 +50,7 @@ def test_base_pixmap_rebuild_budget_large_canvas(qtbot):
     canvas._base_pixmap()
     elapsed = (perf_counter() - started) * 1000.0
 
-    assert elapsed <= 20.0, f'base cache rebuild took {elapsed:.1f}ms (budget 20ms)'
+    assert elapsed <= timing_budget(20.0), f'base cache rebuild took {elapsed:.1f}ms (budget 20ms)'
 
 
 def test_set_zoom_same_value_skips_invalidation_and_signal(tmp_path, qtbot):

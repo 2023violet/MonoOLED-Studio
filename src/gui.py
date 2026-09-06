@@ -1540,7 +1540,7 @@ def run_font_smoke(source: str) -> int:
             editor.chars.setText('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'+''.join(chr(code) for code in range(0x400,0x500)))
             started=perf_counter(); editor.generate(); dispatch=perf_counter()-started
             if dispatch>0.5: failures.append(f'generate-dispatch-blocked:{dispatch:.3f}s')
-            deadline=perf_counter()+15.0; event_passes=0
+            deadline=perf_counter()+timing_budget(15.0); event_passes=0
             while editor.generation_in_progress and perf_counter()<deadline:
                 app.processEvents(); event_passes+=1; QThread.msleep(5)
             app.processEvents()

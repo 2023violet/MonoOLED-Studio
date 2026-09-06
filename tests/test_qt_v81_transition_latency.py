@@ -12,7 +12,7 @@ from gui import OLEDDesignerWindow
 from qt_theme import SEMANTIC_PALETTE_ROLES, build_adaptive_stylesheet, build_stylesheet, build_theme_palette
 from theme_system import THEME_NAMES, get_theme
 from ui_controls import StudioSelect
-from ui_latency import LATENCY_BUDGET_MS,percentile
+from ui_latency import LATENCY_BUDGET_MS,timing_budget,percentile
 
 
 def _elapsed_ms(fn):
@@ -53,8 +53,8 @@ def test_v81_popup_open_and_close_latency_budget(qtbot):
         opens.append(_elapsed_ms(combo.showPopup));assert combo.popup.isVisible()
         item=combo.list.item(i%combo.list.count());rect=combo.list.visualItemRect(item)
         t=time.perf_counter();QTest.mouseClick(combo.list.viewport(),Qt.LeftButton,Qt.NoModifier,rect.center());assert not combo.popup.isVisible();QApplication.processEvents();commits.append((time.perf_counter()-t)*1000.0)
-    assert percentile(opens,.95)<=LATENCY_BUDGET_MS['popup_open'],opens
-    assert percentile(commits,.95)<=LATENCY_BUDGET_MS['popup_select_close'],commits
+    assert percentile(opens,.95)<=timing_budget(LATENCY_BUDGET_MS['popup_open']),opens
+    assert percentile(commits,.95)<=timing_budget(LATENCY_BUDGET_MS['popup_select_close']),commits
 
 
 def test_theme_only_switch_keeps_application_stylesheet_identity(qtbot,tmp_path,monkeypatch):
@@ -77,5 +77,5 @@ def test_v81_language_and_theme_switch_latency_budget(qtbot,tmp_path,monkeypatch
     for i in range(20):
         name='one-dark-pro' if i%2 else 'monooled-light';mode='dark' if i%2 else 'light'
         theme.append(_elapsed_ms(lambda n=name,m=mode:(w.preferences.set('appearance.color_theme',n,save=False),w.preferences.set('appearance.theme_mode',m,save=False),w.apply_preferences())))
-    assert percentile(language,.95)<=LATENCY_BUDGET_MS['language_switch'],language
-    assert percentile(theme,.95)<=LATENCY_BUDGET_MS['theme_switch'],theme
+    assert percentile(language,.95)<=timing_budget(LATENCY_BUDGET_MS['language_switch']),language
+    assert percentile(theme,.95)<=timing_budget(LATENCY_BUDGET_MS['theme_switch']),theme

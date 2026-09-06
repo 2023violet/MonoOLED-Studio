@@ -13,6 +13,7 @@ pytest.importorskip('pytestqt')
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
+from ui_latency import timing_budget
 from PySide6.QtWidgets import QApplication
 
 SIM = Path(__file__).resolve().parents[1] / 'src'
@@ -51,7 +52,7 @@ def test_dark_mode_is_one_dark_pro_and_settings_is_embedded(qtbot, tmp_path, mon
     # Headless offscreen rendering (software, no GPU) is far slower than a real
     # Windows desktop, so use a CI-appropriate ceiling that still catches severe
     # regressions instead of a real-desktop millisecond floor.
-    assert elapsed < 2000.0
+    assert elapsed < timing_budget(2000.0)
     assert isinstance(view, PreferencesView)
     assert window.editor_tabs.currentWidget() is view
     assert view.window() is window

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication
 
 from pixel_studio import PixelDocument
 from pixel_studio_qt import PixelCanvas, PixelStudioWindow, _document_pixmap
+from ui_latency import timing_budget
 from preferences import PreferencesStore, default_preferences
 
 
@@ -78,7 +79,7 @@ def test_incremental_128x64_stroke_p95_stays_within_budget(qtbot, zoom, budget_m
     document.end_gesture()
 
     p95 = quantiles(timings, n=20, method='inclusive')[18]
-    assert p95 <= budget_ms, f'zoom={zoom} p95={p95:.2f}ms budget={budget_ms}ms'
+    assert p95 <= timing_budget(budget_ms), f'zoom={zoom} p95={p95:.2f}ms budget={budget_ms}ms'
     assert canvas._base_cache_builds == initial_builds
 
 
