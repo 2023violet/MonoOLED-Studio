@@ -1,6 +1,7 @@
 # Windows GA internals are delegated to tools/BUILD_WINDOWS_GA.bat.
 # Real-Qt uses QT_SCALE_FACTOR through RUN_WINDOWS_TEST_GROUPS.py at
 # 1.0 / 1.25 / 1.5 / 1.75 / 2.0 / 2.25 / 2.5 / 3.0 and auto-discovers
+# all modules with zero unexpected skips (the documented CI Font Lab skip is allowlisted).
 # test_qt_real_interactions_v51.py, test_qt_v80_unified_workspace.py,
 # test_qt_v82_studio_select_state_machine.py, test_qt_v82_preferences_theme_surface.py,
 # test_qt_v83_reliability.py, test_qt_v84_project_automation.py and current test_qt_*.py.

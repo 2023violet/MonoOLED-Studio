@@ -76,6 +76,18 @@ def test_windows_runner_preserves_explicit_qpa_override():
     assert env['QT_QPA_PLATFORM'] == 'minimal'
 
 
+def test_windows_runner_allows_only_the_documented_ci_font_lab_skip(monkeypatch):
+    runner = _load_windows_runner()
+    v1240 = Path('tests/test_qt_v1240_windows_critical_paths.py')
+
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    assert runner._allowed_ci_skips([v1240], os.environ.copy()) == 1
+    assert runner._allowed_ci_skips([Path('tests/test_qt_theme.py')], os.environ.copy()) == 0
+
+    monkeypatch.delenv('GITHUB_ACTIONS', raising=False)
+    assert runner._allowed_ci_skips([v1240], os.environ.copy()) == 0
+
+
 def test_v844_release_identity_and_closure_artifacts_are_current():
     sim = ROOT / 'src'
     version=(sim / 'VERSION').read_text(encoding='utf-8').strip()
