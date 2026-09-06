@@ -35,7 +35,6 @@ class _FontGenerateWorker(QObject):
         # loaded machines).  Settle pending collections, then suppress cyclic
         # GC for the render window; re-enable it in the finally block.
         import gc
-        gc.collect()
         gc.disable()
         try:
             if self.resize:

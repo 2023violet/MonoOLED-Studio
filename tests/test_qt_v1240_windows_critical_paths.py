@@ -41,6 +41,8 @@ def test_settings_560_700_980_widths_all_pages_and_languages_have_no_violations(
 
 
 def test_font_lab_generate_is_async_and_existing_pack_reopen_is_load_only(qtbot,tmp_path):
+    import faulthandler, sys as _sys
+    faulthandler.dump_traceback_later(120, exit=True, file=_sys.stderr)
     root=tmp_path/'font'
     editor=FontLabEditor(root,name='Critical',cell=(16,16),language='en_US');qtbot.addWidget(editor);editor.show();qtbot.wait(10)
     editor.chars.setText('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'+''.join(chr(code) for code in range(0x400,0x600)))
