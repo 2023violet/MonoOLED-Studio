@@ -45,6 +45,7 @@ from runtime_settings import RuntimeSettings
 from preference_delta import PreferenceDelta
 from commands import CommandRegistry
 from theme_system import resolve_theme_name
+from ui_latency import timing_budget
 from micro_signature import modified_geometry_fields
 from state_schema import schema_from_scene
 from state_preview import build_state_editor_specs, coerce_editor_value
