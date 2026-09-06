@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 - 2026-09-06
+
+### Fixes
+
+- Keep the Windows GA Real-Qt gate strict while allowing only the documented CI-only Font Lab skip in `test_qt_v1240_windows_critical_paths.py`.
+
 ## 1.2.0 - 2026-09-06
 
 ### Features
