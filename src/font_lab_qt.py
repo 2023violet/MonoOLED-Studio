@@ -28,6 +28,15 @@ class _FontGenerateWorker(QObject):
 
     @Slot()
     def run(self):
+        # PIL/FreeType rendering is not thread-safe against font-object
+        # finalization: a cyclic GC triggered by allocations on the UI thread
+        # can free stale font objects while this worker is inside
+        # ImageDraw.text (observed as worker segfaults / silent deaths on
+        # loaded machines).  Settle pending collections, then suppress cyclic
+        # GC for the render window; re-enable it in the finally block.
+        import gc
+        gc.collect()
+        gc.disable()
         try:
             if self.resize:
                 pack=create_font_pack(self.root,self.name,cell=self.cell,baseline=self.baseline,advance=self.advance)
@@ -44,6 +53,7 @@ class _FontGenerateWorker(QObject):
             self.failed.emit(str(exc))
         finally:
             self.finished.emit()
+            gc.enable()
 
 
 class FontLabEditor(QWidget):
