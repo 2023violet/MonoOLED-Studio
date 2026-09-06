@@ -10,7 +10,7 @@ VERSION = (SRC / 'VERSION').read_text(encoding='utf-8').strip()
 
 def test_v1242_release_identity_and_current_documentation_contract():
     version = VERSION
-    assert version == '1.2.1'
+    assert version == '1.2.2'
     manifest = json.loads((ROOT / 'DELIVERY_MANIFEST.json').read_text(encoding='utf-8'))
     assert manifest['version'] == version
     assert manifest['release_version'] == version

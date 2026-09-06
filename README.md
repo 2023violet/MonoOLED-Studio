@@ -1,7 +1,7 @@
-# MonoOLED Studio V1.2.1 — Pixel Studio Experience Release
+# MonoOLED Studio V1.2.2 — Pixel Studio Experience Release
 
 [![Release](https://img.shields.io/github/v/release/2023violet/MonoOLED-Studio?display_name=tag&sort=semver)](https://github.com/2023violet/MonoOLED-Studio/releases/latest)
-[![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows)](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.1)
+[![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows)](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.2)
 [![CI](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -9,7 +9,7 @@
 
 ## 下载与启动
 
-普通用户请从 **[GitHub Releases](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.1)** 下载 [`MonoOLEDStudio_v1.2.1_Windows_x64.zip`](https://github.com/2023violet/MonoOLED-Studio/releases/download/v1.2.1/MonoOLEDStudio_v1.2.1_Windows_x64.zip)。
+普通用户请从 **[GitHub Releases](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.2)** 下载 [`MonoOLEDStudio_v1.2.2_Windows_x64.zip`](https://github.com/2023violet/MonoOLED-Studio/releases/download/v1.2.2/MonoOLEDStudio_v1.2.2_Windows_x64.zip)。
 
 1. 解压 ZIP，保持文件夹内的文件结构不变。
 2. 双击 `MonoOLEDStudio\MonoOLEDStudio.exe`。
@@ -18,7 +18,7 @@
 Windows 发布包无需安装 Python、Git 或运行 BAT 文件。每个 Release 附带 `.sha256` 校验文件（见发布页附件），下载后验证文件完整性：
 
 ```powershell
-Get-FileHash .\MonoOLEDStudio_v1.2.1_Windows_x64.zip -Algorithm SHA256
+Get-FileHash .\MonoOLEDStudio_v1.2.2_Windows_x64.zip -Algorithm SHA256
 ```
 
 ## 它解决什么问题
@@ -99,7 +99,7 @@ Get-FileHash .\MonoOLEDStudio_v1.2.1_Windows_x64.zip -Algorithm SHA256
 
 - 当前以 **Windows x64** 桌面体验和发布验证为主。
 - 输出目标是单色 `1-bit` 位图，不是通用彩色图片编辑器。
-- V1.2.1 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。
+- V1.2.2 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。
 - 内置取模模板是确定性编码预设；目标硬件是否匹配，仍应使用已知正确数组和实际屏幕结果验证。
 - 旧版 `export.c_header`、Pixel C Header、项目 schema 和 Code AI 交接包继续保持兼容。
 

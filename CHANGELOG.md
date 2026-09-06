@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2 - 2026-09-06
+
+### Fixes
+
+- Set the first-run and corrupted-preference defaults to Simplified Chinese, Light appearance, and 100% UI scale.
+
 ## 1.2.1 - 2026-09-06
 
 ### Fixes

@@ -1,4 +1,4 @@
-# MonoOLED Studio 1.2.1 中文使用手册
+# MonoOLED Studio 1.2.2 中文使用手册
 
 MonoOLED Studio 是面向 Windows 的通用 1-bit OLED 场景、像素资源和 FontPack 字模工作台。默认项目保持通用，不把具体产品内容混入发布基线。
 
@@ -38,6 +38,6 @@ FontPack 通常保存在项目的 `.oled/fonts/`。字库记录字宽字高、Ba
 
 ## Windows 发布
 
-普通用户下载 `MonoOLEDStudio_v1.2.1_Windows_x64.zip`，解压后运行 `MonoOLEDStudio\MonoOLEDStudio.exe`，不需要 Python。开发者可使用 `tools\BUILD_WINDOWS_QUICK.bat`；正式发布认证使用 `tools\BUILD_WINDOWS_GA.bat` 和 Real-Qt 分组测试。
+普通用户下载 `MonoOLEDStudio_v1.2.2_Windows_x64.zip`，解压后运行 `MonoOLEDStudio\MonoOLEDStudio.exe`，不需要 Python。开发者可使用 `tools\BUILD_WINDOWS_QUICK.bat`；正式发布认证使用 `tools\BUILD_WINDOWS_GA.bat` 和 Real-Qt 分组测试。
 
 日志、自动保存、预览和资产缓存等运行时数据位于 `.oled/`，源码交付包会排除该目录。

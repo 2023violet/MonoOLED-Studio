@@ -1,4 +1,4 @@
-# MonoOLED Studio 1.2.1 User Guide
+# MonoOLED Studio 1.2.2 User Guide
 
 MonoOLED Studio is a Windows-focused workbench for designing generic 1-bit OLED scenes, pixel assets, and FontPack glyphs. The default project is generic; product-specific assets remain in test fixtures.
 
@@ -38,6 +38,6 @@ Use `python src/validate.py <scene>` for a direct scene check, `python src/expor
 
 ## Windows Distribution
 
-End users download `MonoOLEDStudio_v1.2.1_Windows_x64.zip`, extract it, and run `MonoOLEDStudio\MonoOLEDStudio.exe`. Python is not required. Developers can use `tools\BUILD_WINDOWS_QUICK.bat`; native release certification uses `tools\BUILD_WINDOWS_GA.bat` and the Real-Qt test groups.
+End users download `MonoOLEDStudio_v1.2.2_Windows_x64.zip`, extract it, and run `MonoOLEDStudio\MonoOLEDStudio.exe`. Python is not required. Developers can use `tools\BUILD_WINDOWS_QUICK.bat`; native release certification uses `tools\BUILD_WINDOWS_GA.bat` and the Real-Qt test groups.
 
 Runtime data such as logs, autosaves, previews, and asset caches is kept under `.oled/` and is excluded from source delivery packages.
