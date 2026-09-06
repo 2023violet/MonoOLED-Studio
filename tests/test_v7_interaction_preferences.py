@@ -23,6 +23,16 @@ def test_preferences_defaults_migrate_and_persist(tmp_path):
     assert json.loads(p.read_text(encoding='utf-8'))['schema_version']==1
 
 
+def test_new_preferences_use_chinese_light_theme_and_100_percent_scale(tmp_path):
+    from preferences import PreferencesStore
+
+    store = PreferencesStore.load(tmp_path / 'preferences.json')
+
+    assert store.get('language') == 'zh_CN'
+    assert store.get('appearance.theme_mode') == 'light'
+    assert store.get('appearance.ui_scale') == '100%'
+
+
 def test_all_themes_have_complete_semantic_tokens():
     from theme_system import THEME_NAMES, REQUIRED_TOKENS, get_theme
     assert set(THEME_NAMES)=={'monooled-light','monooled-dark','one-dark-pro','high-contrast'}

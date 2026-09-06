@@ -26,7 +26,7 @@ def test_preferences_semantic_corruption_is_normalized_without_losing_future_key
     }), encoding='utf-8')
     store = PreferencesStore.load(p)
     assert store.get('language') == 'zh_CN'
-    assert store.get('appearance.theme_mode') == 'system'
+    assert store.get('appearance.theme_mode') == 'light'
     assert store.get('appearance.color_theme') == 'monooled-light'
     assert store.get('appearance.density') == 'comfortable'
     assert store.get('appearance.ui_scale') == '100%'

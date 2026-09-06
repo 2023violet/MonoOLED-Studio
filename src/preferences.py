@@ -19,7 +19,7 @@ def _defaults() -> dict[str, Any]:
         'language': 'zh_CN',
         'startup': {'reopen_last_project': False, 'last_project': ''},
         'appearance': {
-            'theme_mode': 'system',
+            'theme_mode': 'light',
             # Legacy compatibility only; hidden from Preferences and ignored by Theme Closure V10.1.
             'color_theme': 'monooled-light',
             'density': 'comfortable',
