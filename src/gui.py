@@ -111,7 +111,8 @@ def _apply_application_theme(app, theme: str, density: str, ui_scale: float) -> 
 
     With an application stylesheet active, Qt does not re-resolve ``palette()``
     rules of already-polished child widgets on a palette swap alone (Qt 6.11),
-    so a theme-only change repolishes every widget once, here.  Top-level
+    so a theme-only change repolishes every visible widget once, here.  Hidden
+    pages resolve the current palette when Qt polishes them on show.  Top-level
     windows are covered by that pass; this loop only re-chromes them.  Paints
     are intentionally NOT flushed synchronously (``processEvents`` measured
     ~80ms extra at 2.5x DPI inside the switch); the next event-loop frame
@@ -129,6 +130,8 @@ def _apply_application_theme(app, theme: str, density: str, ui_scale: float) -> 
     app.setProperty('monooledAdaptiveStyleSignature', signature)
     if theme_changed:
         for widget in app.allWidgets():
+            if not widget.isVisible():
+                continue
             try:
                 style = widget.style()
                 style.unpolish(widget)

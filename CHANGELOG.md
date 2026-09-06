@@ -6,6 +6,10 @@
 
 - Set the first-run and corrupted-preference defaults to Simplified Chinese, Light appearance, and 100% UI scale.
 
+### Performance
+
+- Re-polish only visible widgets during appearance switches, keeping the application-wide theme change within the interactive latency budget at every supported DPI scale.
+
 ## 1.2.1 - 2026-09-06
 
 ### Fixes

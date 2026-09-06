@@ -63,14 +63,16 @@ def test_preferences_change_handler_does_not_persist_legacy_palette() -> None:
     assert 'appearance.color_theme' not in body
 
 
-def test_application_theme_transaction_repolishes_all_widgets_without_sync_flush() -> None:
+def test_application_theme_transaction_repolishes_visible_widgets_without_sync_flush() -> None:
     source = (SIM / 'gui.py').read_text(encoding='utf-8')
     body = _function_body(source, '_apply_application_theme')
     assert "app.setStyleSheet('')" not in body
-    # A theme-only change must repolish every widget: with an application
+    # A theme-only change must repolish visible widgets: with an application
     # stylesheet active, Qt 6.11 does not re-resolve palette() rules of
-    # already-polished child widgets on a palette swap alone.
+    # already-polished child widgets on a palette swap alone. Hidden pages
+    # receive the current palette when Qt polishes them on show.
     assert 'app.allWidgets()' in body
+    assert 'if not widget.isVisible()' in body
     assert '.unpolish(widget)' in body
     assert '.polish(widget)' in body
     # The synchronous processEvents() flush measured ~80ms extra at 2.5x DPI
