@@ -142,3 +142,52 @@ def test_designer_window_theme_switch_repaints_real_window(qtbot, tmp_path, monk
     assert dark_fraction > 0.5, f'dark theme not painted: dark_frac={dark_fraction:.3f}'
     assert light_fraction < 0.2, f'light theme not painted: dark_frac={light_fraction:.3f}'
     assert back_fraction > 0.5, f'dark theme not restored: dark_frac={back_fraction:.3f}'
+
+
+def test_theme_switch_covers_hidden_tab_pages_in_both_directions(qtbot) -> None:
+    """A tab page polished before the switch but hidden during it must follow
+    the theme when revealed.
+
+    Qt 6.11 never re-polishes an already-polished widget on show
+    (``ensurePolished`` is first-show-only), so the theme transaction itself
+    must repolish hidden-but-created widgets; otherwise every inactive tab
+    page, closed panel, or dropdown menu keeps the previous theme until
+    something else forces a repolish.
+    """
+    from PySide6.QtWidgets import QListWidget, QTabWidget
+
+    app = QApplication.instance()
+    tabs = QTabWidget()
+    visited = QListWidget()
+    visited.addItems(['alpha', 'beta', 'gamma'])
+    tabs.addTab(visited, 'visited')
+    filler = QListWidget()
+    filler.addItems(['one', 'two'])
+    tabs.addTab(filler, 'filler')
+    qtbot.addWidget(tabs)
+    tabs.resize(360, 240)
+    tabs.show()
+    qtbot.waitExposed(tabs)
+
+    def _page_center_luma() -> float:
+        image = visited.grab().toImage()
+        return _luma(image.pixelColor(image.width() - 12, image.height() // 2))
+
+    _apply_application_theme(app, 'monooled-light', 'comfortable', 1.0)
+    tabs.setCurrentIndex(0)
+    qtbot.wait(30)          # visit the page once -> polished while light
+    tabs.setCurrentIndex(1)  # hide it again, exactly like switching tabs
+
+    _apply_application_theme(app, 'one-dark-pro', 'comfortable', 1.0)
+    tabs.setCurrentIndex(0)  # reveal after the switch
+    qtbot.wait(30)
+    dark_luma = _page_center_luma()
+    assert dark_luma < 0.35, f'revealed page kept the light theme: luma={dark_luma:.3f}'
+
+    _apply_application_theme(app, 'monooled-light', 'comfortable', 1.0)
+    tabs.setCurrentIndex(1)  # hide again before the reverse switch
+    qtbot.wait(30)
+    tabs.setCurrentIndex(0)  # reveal after switching back to light
+    qtbot.wait(30)
+    light_luma = _page_center_luma()
+    assert light_luma > 0.6, f'revealed page kept the dark theme: luma={light_luma:.3f}'

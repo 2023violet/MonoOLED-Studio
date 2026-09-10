@@ -111,8 +111,11 @@ def _apply_application_theme(app, theme: str, density: str, ui_scale: float) -> 
 
     With an application stylesheet active, Qt does not re-resolve ``palette()``
     rules of already-polished child widgets on a palette swap alone (Qt 6.11),
-    so a theme-only change repolishes every visible widget once, here.  Hidden
-    pages resolve the current palette when Qt polishes them on show.  Top-level
+    and ``ensurePolished()`` is first-show-only, so hidden-but-created pages
+    would keep the previous theme forever if skipped here.  Visible widgets
+    repolish synchronously; the hidden remainder repolishes from a queued
+    zero-timer callback because an unpolish/polish of a hidden widget cannot
+    paint anything and must not spend interaction-budget latency.  Top-level
     windows are covered by that pass; this loop only re-chromes them.  Paints
     are intentionally NOT flushed synchronously (``processEvents`` measured
     ~80ms extra at 2.5x DPI inside the switch); the next event-loop frame
@@ -129,15 +132,28 @@ def _apply_application_theme(app, theme: str, density: str, ui_scale: float) -> 
         app.setStyleSheet(stylesheet)
     app.setProperty('monooledAdaptiveStyleSignature', signature)
     if theme_changed:
+        hidden = []
         for widget in app.allWidgets():
-            if not widget.isVisible():
-                continue
             try:
-                style = widget.style()
-                style.unpolish(widget)
-                style.polish(widget)
+                if widget.isVisible():
+                    style = widget.style()
+                    style.unpolish(widget)
+                    style.polish(widget)
+                else:
+                    hidden.append(widget)
             except RuntimeError:
                 continue
+
+        def _repolish_hidden_widgets() -> None:
+            for widget in hidden:
+                try:
+                    style = widget.style()
+                    style.unpolish(widget)
+                    style.polish(widget)
+                except RuntimeError:
+                    continue
+
+        QTimer.singleShot(0, _repolish_hidden_widgets)
     for window in app.topLevelWidgets():
         try:
             window.setPalette(palette)
