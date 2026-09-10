@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.3 - 2026-09-11
+
+### Fixes
+
+- Repolish hidden-but-created widgets during appearance switches (deferred, paint-free) so inactive tab pages, closed panels, and dropdown menus no longer keep the previous theme when shown again.
+
 ## 1.2.2 - 2026-09-06
 
 ### Fixes

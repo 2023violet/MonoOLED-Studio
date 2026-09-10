@@ -1,8 +1,8 @@
-# Windows Build and Release — V1.2.2 Pixel Studio Experience Release
+# Windows Build and Release — V1.2.3 Pixel Studio Experience Release
 
 ## End users
 
-Do not build locally. Download `MonoOLEDStudio_v1.2.2_Windows_x64.zip` from the repository's **GitHub Releases**, extract it, and double-click `MonoOLEDStudio\MonoOLEDStudio.exe`. Python is not required.
+Do not build locally. Download `MonoOLEDStudio_v1.2.3_Windows_x64.zip` from the repository's **GitHub Releases**, extract it, and double-click `MonoOLEDStudio\MonoOLEDStudio.exe`. Python is not required.
 
 ## Developer Quick Build
 
@@ -22,4 +22,4 @@ GA runs the current source regression groups, native Real-Qt tests across the co
 
 ## GitHub Release
 
-Push a semver tag matching `src/VERSION`, for example `v1.2.2`. `.github/workflows/release-windows.yml` validates the tag, executes the full GA builder on `windows-latest`, preserves evidence as a workflow artifact, and publishes the Windows ZIP plus checksum to GitHub Releases.
+Push a semver tag matching `src/VERSION`, for example `v1.2.3`. `.github/workflows/release-windows.yml` validates the tag, executes the full GA builder on `windows-latest`, preserves evidence as a workflow artifact, and publishes the Windows ZIP plus checksum to GitHub Releases.

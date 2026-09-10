@@ -27,22 +27,22 @@ MonoOLED Studio 是面向 Windows 的通用单色 OLED 工作台，主要服务�
 
 当前产品边界是 `generic-1bit-oled`。`test_assets/projects/curing_lite/` 是产品回归夹具，不代表发布版只服务 Curing-Lite，也不能把其中的医疗或业务规则提升为通用产品默认值。
 
-V1.2.2 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。不要把测试夹具、规划中的功能或仅由 host 测试证明的行为写成已完成的硬件能力。
+V1.2.3 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。不要把测试夹具、规划中的功能或仅由 host 测试证明的行为写成已完成的硬件能力。
 
 ## 3. 当前可信基线
 
 | 项目 | 当前基线 | 真源或验证方法 |
 | --- | --- | --- |
-| 产品版本 | `1.2.2` | `src/VERSION` |
-| 正式标签 | `v1.2.2` → 待 GA 后发布 | `git show-ref -d refs/tags/v1.2.2` |
+| 产品版本 | `1.2.3` | `src/VERSION` |
+| 正式标签 | `v1.2.3` → 待 GA 后发布 | `git show-ref -d refs/tags/v1.2.3` |
 | 编写时 `main` | `8c84370` | 必须用 `git rev-parse HEAD` 重新确认 |
 | Automation API | `1.3.0` | `src/AUTOMATION_API_V1.json`、`docs/AUTOMATION_API_V1.md` |
 | 顶层项目 schema | `1` | `src/project_workspace.py` |
 | `output_workbench` schema | `1` | `src/project_workspace.py`、`docs/OUTPUT_WORKBENCH.md` |
-| Windows 发行物 | `MonoOLEDStudio_v1.2.2_Windows_x64.zip` | GA 后 GitHub Release `v1.2.2` |
+| Windows 发行物 | `MonoOLEDStudio_v1.2.3_Windows_x64.zip` | GA 后 GitHub Release `v1.2.3` |
 | 发布 ZIP SHA-256 | 待 GA 产物生成 | Release sidecar 与附件 digest |
 
-发布页：<https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.2>
+发布页：<https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.3>
 
 必须区分两个状态：
 
@@ -337,7 +337,7 @@ CI 使用 Windows x64 与 Python 3.13。`requirements.txt` 是运行时依赖，
 - `_apply_application_theme` 不再在切换内 `processEvents()` 同步刷画（2.5× DPI 下实测 ~80ms，曾把主题切换 p95 推到 126ms 超过 120ms 预算）；绘制推迟到下一事件循环帧，grab() 类调用方会强制同步绘制。优化后 8 档 DPI 的 Real-Qt 阶段 264 个模块运行零失败。
 - CI 专属挂死（诊断中）：`test_qt_v1240_windows_critical_paths.py` 的 Font Lab 异步测试在 GitHub Actions 上于 qt 1.5/2.25 档死锁一个持有 GIL 的 worker 线程（faulthandler 无法 dump、整组 600s 超时）；本地每个缩放档均通过。该测试已在 CI 环境跳过（GITHUB_ACTIONS 检测），同路径由各档 FONT SMOKE 覆盖。
 - 已知测试基建问题（v1.1.0 预存在，已用 git stash 在 v1.1.0 源码上复现证实）：把 `test_qt_micro_signature_v103.py`、`test_qt_output_workbench.py`、`test_qt_pixel_incremental_paint.py` 与 `test_qt_v1240_windows_critical_paths.py` 放进同一 pytest 进程时，v1240 的 Font Lab worker 线程在 PIL `ImageDraw.text` 内发生堆损坏（0xc0000374/access violation），主线程 GC 踩雷。单文件与两两组合均干净。因此**全量回归请使用 `tools/RUN_WINDOWS_TEST_GROUPS.py --phase source|qt` 的分组隔离运行**（GA/CI 的官方方式，264 个隔离进程全部通过），不要把整个 tests/ 塞进单个 pytest 进程；强行单进程全量会在 ~30% 处段错误退出，且这是预存在问题，不要归因于当轮改动。
-- `_apply_application_theme` 主题契约已演进：主题变化时 repolish `app.allWidgets()`，且不再在切换内 `processEvents()` 同步刷画（2.5× DPI 下 ~80ms 曾致 p95 126ms 超预算；现 8 档 DPI p95 ≈46ms）。源码形状契约见 `tests/test_theme_model_v101.py::test_application_theme_transaction_repolishes_all_widgets_without_sync_flush`。独立 Pixel Studio 窗口的 `_host_theme` 不再继承自身缓存（此前独立模式主题永不更新）。
+- `_apply_application_theme` 主题契约已演进：主题变化时 repolish `app.allWidgets()`，且不再在切换内 `processEvents()` 同步刷画（2.5× DPI 下 ~80ms 曾致 p95 126ms 超预算；现 8 档 DPI p95 ≈46ms）。可见控件同步 repolish；隐藏控件经 `QTimer.singleShot(0, _repolish_hidden_widgets)` 零延迟补齐——**Qt 6.11 的 `ensurePolished()` 只在首次显示生效，隐藏页再次显示不会重新解析 `palette()` 规则**（v1.2.2 曾以 `isVisible()` 跳过隐藏控件，导致“访问过→隐藏→切主题→再显示”的界面永久保留旧配色；已实测复现并修复，行为回归见 `tests/test_qt_theme_transaction_v101.py::test_theme_switch_covers_hidden_tab_pages_in_both_directions`）。源码形状契约见 `tests/test_theme_model_v101.py::test_application_theme_transaction_repolishes_all_widgets_without_sync_flush`。独立 Pixel Studio 窗口的 `_host_theme` 不再继承自身缓存（此前独立模式主题永不更新）。
 - Pixel Studio 控件整治：工作台“字模与图片”组（alignment/antialias 等 8 个永久禁用控件）重构为“图片栅格化”组——新增“图片文件”输出源（image kind），栅格控件（阈值模式/亮度/RGB/反相）仅图片源可用；alignment/antialias 永死控件已删除（RasterProfile 字段保留持久化兼容）。`profile.raster` 从“持久化往返”变为 image 源真实消费。
 - Pixel Studio 性能：`PixelCanvas._base_pixmap` 全量重建改为 C 层字节扩展（`bytes.replace` 横向 z 倍 + 行重复纵向 z 倍）+ `Format_Indexed8` 颜色表直读，256×128 全亮点重建从 ~45ms 降至 ~15ms；`set_zoom` 同值早退（fit 模式反复重置缩放不再整缓存失效）；像素边框从缓存层移至 `paintEvent` 可见区（QPainterPath 批量描边）。
 - 输出工作台关键缺陷修复（v1.1.0 起的潜在竞态，实机高负载下必现）：`_GenerationTask` 的完成信号是跨线程排队事件，而 `QThreadPool` 在 `run()` 返回后立刻删除 runnable——没有 Python 侧引用时 `_GenerationSignals` 随之销毁，**排队的完成事件在主线程处理前被丢弃**，`_running` 永久卡 True、后续生成全部饿死（表现为输出面板卡住不更新）。修复：`OutputWorkbench._inflight` 持有在途任务，`_finish_request`（主线程处理完回调后）才释放。
