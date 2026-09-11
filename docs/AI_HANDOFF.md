@@ -1,8 +1,8 @@
 # MonoOLED Studio AI 开发交接
 
 > 面向接手本仓库维护、修复、功能开发和发布工作的 AI。
-> 更新日期：2026-09-06（Asia/Shanghai）
-> 编写起点：`main` 位于 `8c84370`；正式发布 `v1.1.0` 解引用到 `a250547`。
+> 更新日期：2026-09-12（Asia/Shanghai）
+> 编写起点：`main` 位于 `28b3060`；正式发布 `v1.2.3` 解引用到 `28b3060`。
 
 ## 1. 如何使用这份文档
 
@@ -34,13 +34,13 @@ V1.2.3 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。不要把测试�
 | 项目 | 当前基线 | 真源或验证方法 |
 | --- | --- | --- |
 | 产品版本 | `1.2.3` | `src/VERSION` |
-| 正式标签 | `v1.2.3` → 待 GA 后发布 | `git show-ref -d refs/tags/v1.2.3` |
-| 编写时 `main` | `8c84370` | 必须用 `git rev-parse HEAD` 重新确认 |
+| 正式标签 | `v1.2.3` → 已发布（CI run `34504661785`，2026-09-10 UTC） | `git show-ref -d refs/tags/v1.2.3` |
+| 编写时 `main` | `28b3060` | 必须用 `git rev-parse HEAD` 重新确认 |
 | Automation API | `1.3.0` | `src/AUTOMATION_API_V1.json`、`docs/AUTOMATION_API_V1.md` |
 | 顶层项目 schema | `1` | `src/project_workspace.py` |
 | `output_workbench` schema | `1` | `src/project_workspace.py`、`docs/OUTPUT_WORKBENCH.md` |
-| Windows 发行物 | `MonoOLEDStudio_v1.2.3_Windows_x64.zip` | GA 后 GitHub Release `v1.2.3` |
-| 发布 ZIP SHA-256 | 待 GA 产物生成 | Release sidecar 与附件 digest |
+| Windows 发行物 | `MonoOLEDStudio_v1.2.3_Windows_x64.zip` | GitHub Release `v1.2.3` 附件 |
+| 发布 ZIP SHA-256 | `95eaa80330f9f1c970173d2ca1566bc136e1977caa36d54583d31d08db914f71` | Release sidecar 与附件 digest |
 
 发布页：<https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.3>
 
@@ -323,8 +323,9 @@ CI 使用 Windows x64 与 Python 3.13。`requirements.txt` 是运行时依赖，
 
 ## 11. 当前工作状态
 
-截至本轮更新（v1.1.0 发布之后、下一轮改动未提交时）：
+截至本轮更新（v1.2.3 已发布之后）：
 
+- v1.2.3 已于 2026-09-10 UTC 由 CI run `34504661785` 完整 GA 构建并发布：修复主题切换遗漏隐藏控件的问题（见下方主题契约条目），ZIP 与 SHA-256 已上传并核对。默认界面密度核实为已是 `comfortable`，本轮未改动；
 - 方向 B“统一取模与输出工作台”已经进入 v1.1.0；v1.1.0 Windows Release 已公开，ZIP 与 SHA-256 已上传并核对；
 - 中文产品型 README 已提交到 `main`；
 - 已修复：主题切换不重绘子控件（`_apply_application_theme` 现在在主题变化时 repolish 全部控件——Qt 6.11 下仅换调色板不会让已 polish 的子控件重新解析 `palette()` 规则）；取模动画演示区已按用户要求移除（画布不再有 trace 叠加，`EncodedOutput.trace_step()` API 保留）；输出工作台“显示”组四色改为 `ColorSwatchEdit` 色块+拾色器；
@@ -343,7 +344,7 @@ CI 使用 Windows x64 与 Python 3.13。`requirements.txt` 是运行时依赖，
 - 输出工作台关键缺陷修复（v1.1.0 起的潜在竞态，实机高负载下必现）：`_GenerationTask` 的完成信号是跨线程排队事件，而 `QThreadPool` 在 `run()` 返回后立刻删除 runnable——没有 Python 侧引用时 `_GenerationSignals` 随之销毁，**排队的完成事件在主线程处理前被丢弃**，`_running` 永久卡 True、后续生成全部饿死（表现为输出面板卡住不更新）。修复：`OutputWorkbench._inflight` 持有在途任务，`_finish_request`（主线程处理完回调后）才释放。
 - Pixel Studio 控件整治：`src/studio_icons.py` 确定性线稿图标注册表（27 个，1.5px 圆头、主题色参数、零字体依赖），应用于检查器全部按钮/命令栏撤销重做保存/工作台操作行；`_tool_icon` 已委托注册表；按钮重着色表 `PixelStudioWindow._icon_buttons` 由 `_refresh_tool_icons` 统一刷新。
 - 已知测试抖动（非回归，用 stash 对照法甄别）：`test_qt_v81_transition_latency` 主题延迟预算与 `test_qt_v80_unified_workspace` 弹窗契约在同进程多文件运行下偶发失败，单独运行通过。
-- 已知测试基建问题（v1.1.0 预存在，已用 git stash 在 v1.1.0 源码上复现证实）：把 `test_qt_micro_signature_v103.py`、`test_qt_output_workbench.py`、`test_qt_pixel_incremental_paint.py` 与 `test_qt_v1240_windows_critical_paths.py` 放进同一 pytest 进程时，v1240 的 Font Lab worker 线程在 PIL `ImageDraw.text` 内发生堆损坏（0xc0000374/access violation），主线程 GC 踩雷。单文件与两两组合均干净。因此**全量回归请使用 `tools/RUN_WINDOWS_TEST_GROUPS.py --phase source|qt` 的分组隔离运行**（GA/CI 的官方方式，264 个隔离进程全部通过），不要把整个 tests/ 塞进单个 pytest 进程；强行单进程全量会在 ~30% 处段错误退出，且这是预存在问题，不要归因于当轮改动。
+- 已知门禁腐化（v1.2.3 交付时确认，未修复）：`tools/VERIFY_THEME_SWITCH_V101.py` 在干净 `main` 上即失败——第 74 行仍期望旧 signature 格式 `f'{density}:{ui_scale}'`，而 `_apply_application_theme` 早已写入 `f'{theme}:{density}:{ui_scale}'`。该脚本不在 GA/CI 流水线中，不阻塞发布；修复时需同步其视觉与延迟断言，不要直接降低门槛。
 - 这不等于“仓库没有缺陷”，新任务仍需重新诊断和验证。
 
 ## 12. 下一位 AI 的任务协议

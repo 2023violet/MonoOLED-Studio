@@ -21,9 +21,9 @@ def test_pixel_canvas_defaults_to_oled_truth_and_keeps_display_colors_out_of_enc
 
 def test_github_root_markdown_is_curated():
     root_markdown = sorted(p.name for p in ROOT.glob('*.md'))
-    # Allow the core docs plus standard open-source support files; reject
-    # stray/placeholder markdown at the repository root.
-    assert root_markdown == ['CHANGELOG.md', 'CONTRIBUTING.md', 'DELIVERY_README.md', 'README.md', 'SECURITY.md']
+    # Allow the core docs, the agent entry point, and standard open-source
+    # support files; reject stray/placeholder markdown at the repository root.
+    assert root_markdown == ['AGENTS.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'DELIVERY_README.md', 'README.md', 'SECURITY.md']
 
 
 def test_github_documentation_is_classified():

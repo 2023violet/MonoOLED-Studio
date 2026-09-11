@@ -32,3 +32,8 @@ release/
 MonoOLED-Studio-*.zip
 MonoOLED-Studio.zip
 *.zip.sha256
+
+# Local agent tool state and generated evidence
+.claude/
+.zcode/
+src/reports/
