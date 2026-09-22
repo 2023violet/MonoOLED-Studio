@@ -36,7 +36,25 @@ VERIFY
 - 产品业务代码、测试、构建、发布、依赖或打包规则修改；
 - 新建 `PROJECT_CONTEXT.md`；
 - 创建 TASK-002 或开始后续产品任务；
-- Git staging、commit、push、PR、tag、release、force push、rebase、stash、clean。
+- Initial implementation boundary：Git staging、commit、push、PR、tag、release、force push、rebase、stash、clean 均未获授权。
+
+## Review-baseline Publication Authorization
+
+本地实施完成并停在 `VERIFY` / `PENDING` 后，用户随后单独授权建立 GitHub Independent Review Baseline：
+
+- 只暂存 5 个 Workflow 文件；
+- 创建 commit：`chore(ai-workflow): adopt ChatGPT-Codex workflow`；
+- 正常 fast-forward push 到 `origin/main`；
+- 不使用 force push、force-with-lease、rebase、PR、tag、release 或 history rewrite；
+- 用户已有主题工作不得进入该 commit。
+
+稳定的 Review Baseline 为：
+
+```text
+d1903e1a42cbdaa0b01cd27db1b4b958f66c0d56
+```
+
+这段记录描述本地实施完成后的独立授权发布历史，不改变初始实施阶段的 scope，也不属于 `CURRENT_STATE.md` 的瞬时 Git 状态。
 
 ## Protected Existing Work
 
@@ -79,7 +97,7 @@ VERIFY
 8. `.ai/tasks/TASK-001.md` 定义本次 Workflow Adoption，最终状态为 `VERIFY`，Review 状态为 `PENDING`。
 9. 所有受保护文件 before / after hash 完全一致，并保持未暂存。
 10. 没有修改产品业务代码、主题代码、主题测试、构建或发布配置。
-11. 没有新增依赖、提交、推送、PR、tag 或 release。
+11. 没有未经授权的 commit、push、PR、tag 或 release；Review-baseline publication 仅在用户后续明确授权后执行，且该 commit 只包含 `AGENTS.md`、`.ai/README.md`、`.ai/DECISIONS.md`、`.ai/CURRENT_STATE.md` 和 `.ai/tasks/TASK-001.md`，用户已有主题工作没有进入该 commit，也没有使用 PR、tag、release、force push、rebase 或 history rewrite。
 12. 新 Codex 会话能够识别 active TASK、受保护工作、权威层级、验证方式和独立 Review 责任。
 
 ## Verification Plan
@@ -104,7 +122,7 @@ VERIFY
 
 ## Result
 
-TASK-001 的 workflow control plane 已在授权范围内建立。现有产品主题工作保持为独立的用户工作区，未被本任务决策或修改。等待 ChatGPT 独立 Review。
+TASK-001 的 local implementation 已先在授权范围内完成，并停在 `VERIFY` / `PENDING`。随后用户单独授权建立 GitHub Independent Review Baseline；Review baseline 为 `d1903e1a42cbdaa0b01cd27db1b4b958f66c0d56`，已使用指定 commit message 正常 fast-forward push 到 `origin/main`。现有产品主题工作保持为独立的用户工作区，未被本任务决策、修改或提交。当前任务仍等待 ChatGPT 独立 Review。
 
 ## Review Status
 
