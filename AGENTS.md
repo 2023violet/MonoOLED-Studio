@@ -38,3 +38,18 @@ python src/gui.py
 
 - `v1.2.3` 已发布：修复主题切换遗漏隐藏控件（可见同步 repolish + 隐藏零延迟补齐）。
 - 已知未修复：`tools/VERIFY_THEME_SWITCH_V101.py` 门禁脚本 signature 断言腐化（不在 CI 中）；详见 `docs/AI_HANDOFF.md` 第 11 节。
+
+## AI Workflow Control Plane
+
+长期架构、兼容性和验证规则继续以 `docs/AI_HANDOFF.md` 为导航真源。
+
+跨 ChatGPT / Codex 的任务状态、已确认决策和 TASK Contract 位于 `.ai/`：
+
+- `.ai/README.md`
+- `.ai/DECISIONS.md`
+- `.ai/CURRENT_STATE.md`
+- `.ai/tasks/`
+
+开始实施任务前必须读取 active TASK。TASK 只定义当前 scope，不得覆盖本文件、实时代码/测试事实或兼容性契约。
+
+Codex 完成实现后只能推进到 `VERIFY`；`DONE` / `PASS` 必须由独立 Review 确认。
