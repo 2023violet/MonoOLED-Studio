@@ -2,7 +2,7 @@
 
 ## Status
 
-VERIFY
+DONE
 
 ## Goal
 
@@ -94,7 +94,7 @@ d1903e1a42cbdaa0b01cd27db1b4b958f66c0d56
 5. `.ai/README.md` 定义 User、ChatGPT、Codex 职责和独立 Review 闭环。
 6. `.ai/DECISIONS.md` 只包含已确认工作流决定，不包含暗色主题 A/B/C 未决方案。
 7. `.ai/CURRENT_STATE.md` 不持久化瞬时 Git 状态。
-8. `.ai/tasks/TASK-001.md` 定义本次 Workflow Adoption，最终状态为 `VERIFY`，Review 状态为 `PENDING`。
+8. `.ai/tasks/TASK-001.md` 定义本次 Workflow Adoption；本地实施阶段停在 `VERIFY` / `PENDING`，独立 Review 通过后闭合为 `DONE` / `PASS`。
 9. 所有受保护文件 before / after hash 完全一致，并保持未暂存。
 10. 没有修改产品业务代码、主题代码、主题测试、构建或发布配置。
 11. 没有未经授权的 commit、push、PR、tag 或 release；Review-baseline publication 仅在用户后续明确授权后执行，且该 commit 只包含 `AGENTS.md`、`.ai/README.md`、`.ai/DECISIONS.md`、`.ai/CURRENT_STATE.md` 和 `.ai/tasks/TASK-001.md`，用户已有主题工作没有进入该 commit，也没有使用 PR、tag、release、force push、rebase 或 history rewrite。
@@ -122,8 +122,8 @@ d1903e1a42cbdaa0b01cd27db1b4b958f66c0d56
 
 ## Result
 
-TASK-001 的 local implementation 已先在授权范围内完成，并停在 `VERIFY` / `PENDING`。随后用户单独授权建立 GitHub Independent Review Baseline；Review baseline 为 `d1903e1a42cbdaa0b01cd27db1b4b958f66c0d56`，已使用指定 commit message 正常 fast-forward push 到 `origin/main`。现有产品主题工作保持为独立的用户工作区，未被本任务决策、修改或提交。当前任务仍等待 ChatGPT 独立 Review。
+TASK-001 的 local implementation 已先在授权范围内完成，并在第一阶段停在 `VERIFY` / `PENDING`。随后用户单独授权建立 GitHub Independent Review Baseline；第一阶段 Review baseline 为 `d1903e1a42cbdaa0b01cd27db1b4b958f66c0d56`，已使用指定 commit message 正常 fast-forward push 到 `origin/main`。第一次独立 Review 返回 `REWORK REQUIRED` 后，本任务只修复了 Git scope 历史记录，并建立最终 Review baseline `99502c214c5627e9ca88cd389a0ae9dab09fa14b`。第二次独立 Review 结果为 `PASS`，Acceptance Criteria 为 `12 / 12 PASS`。现有产品主题工作保持为独立的用户工作区，未被本任务决策、修改或提交。
 
 ## Review Status
 
-PENDING
+PASS
