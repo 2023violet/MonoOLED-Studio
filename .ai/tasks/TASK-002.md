@@ -2,7 +2,7 @@
 
 ## Status
 
-VERIFY
+DONE
 
 ## Goal
 
@@ -159,6 +159,14 @@ TASK-002 local implementation 首先完成并停在 `VERIFY / PENDING`。第一�
 
 随后用户单独授权建立 GitHub Review Baseline。该 publication 严格包含批准的 10 个文件，排除了 `BLOCKED.md` / `PROGRESS.md`，并使用 normal fast-forward push 发布到 `origin/main`。第一次稳定 Review Baseline 为 `d7641e7097bd7d94873936912cc5ddefef47603e`。当前仍等待最终 Independent Re-review。
 
+第二次正式 Review 发现两个 control-plane 合同问题：TASK publication history 未记录，以及 `.ai/DECISIONS.md` 的 scope definition 过窄。两项已完成 control-plane rework，并以 `67cb510db9c88d6bdd77b1370fb34d5a2f1c670a` 建立新的 Review Baseline。
+
+Final Independent Review: PASS
+Acceptance Criteria: 11 / 11 PASS
+Final Review Baseline: `67cb510db9c88d6bdd77b1370fb34d5a2f1c670a`
+
+TASK-002 已完成完整的 ChatGPT × Codex Workflow Phase 2 — Real Product TASK E2E Validation：用户产品决定、TASK Contract、Codex implementation、failure evidence、targeted verification、VERIFY、Independent Review、REWORK、explicit scope authorization、GitHub Review Baseline、control-plane rework、final Independent Review PASS 和 Closure。
+
 ## Review Status
 
-PENDING
+PASS
