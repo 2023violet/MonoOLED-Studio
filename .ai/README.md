@@ -2,6 +2,10 @@
 
 `.ai/` 是 MonoOLED Studio 的 repository-maintenance control plane。它保存跨会话的任务契约、已确认决定和长期工作状态，不替代产品文档、架构导航或实时代码事实。
 
+## Generated Context
+
+`tools/BUILD_AI_CONTEXT.py` 可生成 `.ai/GENERATED_CONTEXT.md` 作为冷启动导航索引。该文件由权威源派生、已被 Git 忽略、可删除并可重建，可能因仓库状态变化而过期；它不是 authority，重要决定前必须重新生成并读取 live Git、active TASK、源码、测试和控制面文件。生成器只读，不会自动修改 `DECISIONS.md`、`CURRENT_STATE.md` 或 `docs/AI_HANDOFF.md`，也不应创建第二份项目上下文真源。
+
 产品架构、兼容性、验证和发布导航继续以 [`docs/AI_HANDOFF.md`](../docs/AI_HANDOFF.md) 为真源。`.ai/` 不建立 `PROJECT_CONTEXT.md`，也不进入 `docs/README.md` 的产品文档索引。
 
 ## Authority and read order

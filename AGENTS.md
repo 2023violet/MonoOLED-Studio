@@ -53,3 +53,5 @@ python src/gui.py
 开始实施任务前必须读取 active TASK。TASK 只定义当前 scope，不得覆盖本文件、实时代码/测试事实或兼容性契约。
 
 Codex 完成实现后只能推进到 `VERIFY`；`DONE` / `PASS` 必须由独立 Review 确认。
+
+冷启动导航可运行 `python tools/BUILD_AI_CONTEXT.py` 生成 `.ai/GENERATED_CONTEXT.md`；该文件是可删除、可重建的派生索引，不替代 active TASK、实时 Git、源码/测试或权威文档的读取顺序。

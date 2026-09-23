@@ -37,3 +37,6 @@ MonoOLED-Studio.zip
 .claude/
 .zcode/
 src/reports/
+
+# Disposable AI navigation packet
+.ai/GENERATED_CONTEXT.md
