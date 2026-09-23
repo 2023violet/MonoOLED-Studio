@@ -1,6 +1,6 @@
-# Confirmed Workflow Decisions
+# Confirmed Decisions
 
-本文件只保存用户已经确认、适合跨任务复用的工作流决定。建议、猜测、未决方案、TODO、brainstorming 和瞬时 Git 状态不属于本文件。
+本文件只保存用户已经确认、适合跨任务复用的工作流、产品或工程决定。建议、猜测、未决方案、TODO、brainstorming 和瞬时 Git 状态不属于本文件。
 
 ## ADR-001 — Existing governance remains authoritative
 

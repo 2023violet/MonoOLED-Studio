@@ -96,6 +96,7 @@ TASK-002 开始前已存在并受保护的用户工作：
 8. PRE-TASK-002 user work 与 TASK-002 changes 可审计区分，`BLOCKED.md` / `PROGRESS.md` 不被清理或提交。
 9. `.ai/CURRENT_STATE.md`、`.ai/DECISIONS.md` 和本 TASK contract 准确记录方案 B 与 deferred conflict。
 10. 不发生无关代码重构；本阶段停在 `VERIFY / PENDING`。
+11. TASK-002 没有任何未经授权的 staging、commit、push、PR、tag 或 release；Review Baseline publication 仅在用户后续明确授权后执行，并严格限制为批准的 10 文件，未包含 `BLOCKED.md` / `PROGRESS.md`，也未执行 force/rebase/PR/tag/release/history rewrite。
 
 ## Out of Scope
 
@@ -103,7 +104,43 @@ TASK-002 开始前已存在并受保护的用户工作：
 - 修改 high-contrast、Preferences 架构、主题选择 UI、Automation API、schema、构建或发布；
 - 修改 `ui_controls.py` 以绕过 popup mask 冲突；
 - 清理、删除或提交 `BLOCKED.md`、`PROGRESS.md`；
-- `git add`、commit、push、PR、tag、release、rebase、stash、reset、clean。
+
+## Initial Implementation Boundary
+
+TASK-002 本地 implementation / verification 阶段最初未授权 staging、commit、push、PR、tag、release、rebase、stash、reset、clean。
+
+## Review-baseline Publication Authorization
+
+TASK-002 在 `VERIFY / PENDING` 阶段后，用户单独授权建立 GitHub Independent Review Baseline。该 publication 只允许以下 10 个文件：
+
+```text
+.ai/CURRENT_STATE.md
+.ai/DECISIONS.md
+.ai/tasks/TASK-002.md
+docs/DESIGN_SYSTEM.md
+src/qt_theme.py
+src/theme_system.py
+src/ui_metrics.py
+tests/test_qt_theme.py
+tests/test_v10_ui_craft_contract.py
+tests/test_qt_v81_transition_latency.py
+```
+
+Review Baseline 使用 commit message：
+
+```text
+feat(theme): apply approved MonoOLED dark visual system
+```
+
+并以 normal fast-forward push 发布到 `origin/main`。`BLOCKED.md` 与 `PROGRESS.md` 明确排除。该授权不包括 force push、force-with-lease、amend、rebase、merge、PR、tag、release 或 history rewrite。
+
+第一次稳定 Review Baseline 为：
+
+```text
+d7641e7097bd7d94873936912cc5ddefef47603e
+```
+
+该 SHA 是 TASK-002 的 Review Evidence，不属于 `.ai/CURRENT_STATE.md` 的瞬时 Git 状态。
 
 ## Verification Plan
 
@@ -118,7 +155,9 @@ TASK-002 开始前已存在并受保护的用户工作：
 
 ## Result
 
-已将批准的暗色 token 应用到实际可达的 `one-dark-pro`，routing 保持不变。第一次 Independent Review 的两个合同问题已按本节完成 rework：v81 测试文件的 scope expansion 获得明确授权，popup native mask 冲突已 carve out 为 deferred follow-up candidate。等待再次 Independent Review。
+TASK-002 local implementation 首先完成并停在 `VERIFY / PENDING`。第一轮 contract review 发现两个问题：v81 scope expansion 与 popup radius conflict。两项已完成 rework：v81 测试文件获得后续明确授权，popup native mask 冲突 carve out 为 `DEFERRED FOLLOW-UP CANDIDATE`。
+
+随后用户单独授权建立 GitHub Review Baseline。该 publication 严格包含批准的 10 个文件，排除了 `BLOCKED.md` / `PROGRESS.md`，并使用 normal fast-forward push 发布到 `origin/main`。第一次稳定 Review Baseline 为 `d7641e7097bd7d94873936912cc5ddefef47603e`。当前仍等待最终 Independent Re-review。
 
 ## Review Status
 
