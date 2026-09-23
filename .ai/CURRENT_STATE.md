@@ -6,21 +6,27 @@
 
 - Project: MonoOLED Studio
 - Product version: 1.2.3
-- Current phase: AI workflow adoption completed
+- Current phase: Real Product TASK E2E Validation
 
 ## Workflow
 
 - Last completed workflow task: TASK-001
 - TASK-001 status: DONE
 - Independent Review: PASS (12/12 acceptance criteria)
-- Active task: NONE
-- Next workflow action: Define the first real product TASK
+- Active task: TASK-002
+- Next workflow action: Independent Review of TASK-002 VERIFY evidence
 
 ## Current workstream
 
-- User-owned theme visual changes are in progress.
-- The dark theme routing strategy remains an unresolved product decision.
-- Existing theme work remains a protected pre-existing workstream.
+- TASK-002 is closing the pre-existing theme visual workstream under the approved
+  product decision B.
+- Dark theme routing decision resolved: preserve one-dark-pro runtime routing and
+  apply approved dark visual tokens there.
+- Popup native-mask versus Design System classification remains a
+  `DEFERRED FOLLOW-UP CANDIDATE`; TASK-002 does not modify `ui_controls.py` or
+  popup tests to resolve it.
+- The pre-existing theme files remain auditable through the TASK-002 baseline;
+  BLOCKED.md and PROGRESS.md remain local work records outside the product scope.
 
 ## Dynamic repository facts
 

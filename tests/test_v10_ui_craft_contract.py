@@ -23,10 +23,10 @@ def test_semantic_spacing_scale_is_explicit_and_density_aware() -> None:
         'space_micro', 'space_tight', 'space_compact', 'space_normal',
         'space_group', 'space_section', 'space_section_large', 'space_page', 'space_macro',
     )] == [2, 4, 6, 8, 12, 16, 20, 24, 32]
-    assert m['radius_menu'] in (5, 6)
-    assert m['radius_control'] == 6
-    assert m['radius_panel'] == 8
-    assert m['radius_pill'] == 10
+    assert m['radius_menu'] == 8
+    assert m['radius_control'] == 8
+    assert m['radius_panel'] == 12
+    assert m['radius_pill'] == 16
 
 
 def test_light_theme_has_distinct_app_panel_canvas_and_control_surfaces() -> None:

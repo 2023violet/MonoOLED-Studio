@@ -18,10 +18,10 @@ Components consume `app.background`, `surface.*`, `text.*`, `border.*`, `accent.
 
 | Element | Radius | Rationale |
 |---------|--------|-----------|
-| **Panels** (ProfessionalPanel, CanvasWorkspace, Popups, Lists) | **8px** | Primary containment surfaces |
-| **Controls** (Buttons, Inputs, Tabs, List Items) | **6px** | Interactive elements — unified hierarchy |
-| **Pills** (StatusPill badges) | **10px** | Deliberately rounded pill shape |
-| **Menus** (Menu items, Scrollbar handles) | **5px** | Ephemeral transient surfaces |
+| **Panels** (ProfessionalPanel, CanvasWorkspace, Popups, Lists) | **12px** | Primary containment surfaces |
+| **Controls** (Buttons, Inputs, Tabs, List Items) | **8px** | Interactive elements — unified hierarchy |
+| **Pills** (StatusPill badges) | **16px** | Deliberately rounded pill shape |
+| **Menus** (Menu items, Scrollbar handles) | **8px** | Ephemeral transient surfaces |
 
 **Implementation:** Tokens defined in `ui_metrics.py` (`radius_panel`, `radius_control`, `radius_pill`, `radius_menu`) and applied systematically in `qt_theme.py`.
 

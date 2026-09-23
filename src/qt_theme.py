@@ -13,9 +13,9 @@ COLORS = {
     'card': _LIGHT['surface.panel'],
     'card_soft': _LIGHT['surface.toolbar'],
     'text': _LIGHT['text.primary'],
-    'text_secondary': '#6E6E73',
-    'text_muted': '#86868B',
-    'text_tertiary': '#6E6E73',
+    'text_secondary': '#59656b',
+    'text_muted': '#657176',
+    'text_tertiary': '#59656b',
     'separator': _LIGHT['border.normal'],
     'separator_soft': _LIGHT['border.subtle'],
     'accent': _LIGHT['accent.primary'],
@@ -99,14 +99,16 @@ _PALETTE_QSS_NAMES = {
 
 def _stylesheet_from_tokens(c: dict[str, str], d: dict[str, int]) -> str:
     # Systematic border-radius scale (V9 professional editor refinement):
-    # - Panel surfaces (8px): primary containment, popups, lists
-    # - Controls (6px): buttons, inputs, tabs, list items - unified hierarchy
-    # - Pills (10px): StatusPill - deliberately rounded badges
-    # - Menus (5px): ephemeral transient surfaces
-    r_panel = d.get('radius_panel', 8)
-    r_control = d.get('radius_control', 6)
-    r_pill = d.get('radius_pill', 10)
-    r_menu = d.get('radius_menu', 5)
+    # - Panel surfaces (12px): primary containment, popups, lists
+    # - Controls (8px): buttons, inputs, tabs, list items - unified hierarchy
+    # - Pills (16px): StatusPill - deliberately rounded badges
+    # - Menus (8px): ephemeral transient surfaces
+    r_panel = d.get('radius_panel', 12)
+    r_control = d.get('radius_control', 8)
+    r_pill = d.get('radius_pill', 16)
+    r_menu = d.get('radius_menu', 8)
+    # StudioSelectPopup keeps a 6px native mask in ui_controls.py; widening
+    # this stylesheet radius requires a coordinated popup-mask contract change.
     r_popup = max(5, min(6, r_control))
 
     return f'''

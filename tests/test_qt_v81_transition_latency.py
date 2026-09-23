@@ -63,7 +63,7 @@ def test_theme_only_switch_keeps_application_stylesheet_identity(qtbot,tmp_path,
     before=app.styleSheet()
     w.preferences.set('appearance.color_theme','monooled-dark',save=False);w.preferences.set('appearance.theme_mode','dark',save=False);w.apply_preferences();QApplication.processEvents()
     assert app.styleSheet()==before
-    assert app.palette().color(SEMANTIC_PALETTE_ROLES['app.background']).name().upper()==get_theme('one-dark-pro')['app.background']
+    assert app.palette().color(SEMANTIC_PALETTE_ROLES['app.background']).name().upper()==get_theme('one-dark-pro')['app.background'].upper()
 
 
 def test_v81_language_and_theme_switch_latency_budget(qtbot,tmp_path,monkeypatch):

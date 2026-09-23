@@ -16,9 +16,9 @@ _SPACING={
 }
 
 _BASE={
- 'compact': {'control':28,'row':28,'pad':8,'font_display':17,'font_body':12,'font_metadata':11,'icon':16,'gap':6,'panel_margin':8,'nav_min':184,'inspector_min':248,'radius_panel':8,'radius_control':6,'radius_pill':10,'radius_menu':5},
- 'comfortable': {'control':32,'row':32,'pad':10,'font_display':18,'font_body':13,'font_metadata':12,'icon':16,'gap':8,'panel_margin':10,'nav_min':196,'inspector_min':280,'radius_panel':8,'radius_control':6,'radius_pill':10,'radius_menu':5},
- 'spacious': {'control':36,'row':38,'pad':12,'font_display':20,'font_body':14,'font_metadata':13,'icon':18,'gap':10,'panel_margin':12,'nav_min':208,'inspector_min':304,'radius_panel':8,'radius_control':6,'radius_pill':10,'radius_menu':5},
+ 'compact': {'control':28,'row':28,'pad':8,'font_display':17,'font_body':12,'font_metadata':11,'icon':16,'gap':6,'panel_margin':8,'nav_min':184,'inspector_min':248,'radius_panel':12,'radius_control':8,'radius_pill':16,'radius_menu':8},
+ 'comfortable': {'control':32,'row':32,'pad':10,'font_display':18,'font_body':13,'font_metadata':12,'icon':16,'gap':8,'panel_margin':10,'nav_min':196,'inspector_min':280,'radius_panel':12,'radius_control':8,'radius_pill':16,'radius_menu':8},
+ 'spacious': {'control':36,'row':38,'pad':12,'font_display':20,'font_body':14,'font_metadata':13,'icon':18,'gap':10,'panel_margin':12,'nav_min':208,'inspector_min':304,'radius_panel':12,'radius_control':8,'radius_pill':16,'radius_menu':8},
 }
 
 def build_ui_metrics(density='comfortable',ui_scale=1.0):

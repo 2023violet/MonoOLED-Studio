@@ -13,3 +13,7 @@
 ## ADR-003 — Transient repository state is queried dynamically
 
 HEAD、工作区 dirty/clean、暂存项、未跟踪文件、本地与远端同步状态和推送状态都必须在执行前动态查询，不写入 `.ai/CURRENT_STATE.md`。未决的产品方案不属于已确认决定。
+
+## ADR-004 — Preserve the runtime dark identifier and apply the approved dark visual there
+
+产品方案 B 已确认：保留 `mode="dark"` 与系统深色到 `one-dark-pro` 的现有解析兼容性，不改为 `monooled-dark`。批准的 MonoOLED 深色 semantic tokens 应落实到实际可达的 `one-dark-pro`；`monooled-dark` 继续保留为公开主题标识和兼容资产，`high-contrast` 不受影响。

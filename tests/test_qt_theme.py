@@ -9,27 +9,39 @@ SIM = Path(__file__).resolve().parents[1] / 'src'
 sys.path.insert(0, str(SIM))
 
 from qt_theme import COLORS, METRICS, build_stylesheet
+from theme_system import REQUIRED_TOKENS, get_theme, resolve_theme_name
 from ui_metrics import build_ui_metrics
 
 
 def test_professional_editor_theme_matches_ui_craft_contract():
-    assert COLORS['app_bg'].upper() == '#F4F5F7'
-    assert COLORS['text'].upper() == '#1D1D1F'
+    assert COLORS['app_bg'].upper() == '#FAF9F6'
+    assert COLORS['text'].upper() == '#202A30'
     assert METRICS['grid'] == 8
     assert METRICS['gap'] == 20
-    assert COLORS['text_muted'].upper() == '#86868B'
-    assert COLORS['text_secondary'].upper() == '#6E6E73'
+    assert COLORS['text_muted'].upper() == '#657176'
+    assert COLORS['text_secondary'].upper() == '#59656B'
     metrics=build_ui_metrics('comfortable',1.0)
-    assert metrics['radius_panel']==8
-    assert metrics['radius_control']==6
-    assert metrics['radius_pill']==10
-    assert metrics['radius_menu'] in (4,5,6)
+    assert metrics['radius_panel']==12
+    assert metrics['radius_control']==8
+    assert metrics['radius_pill']==16
+    assert metrics['radius_menu'] == 8
+
+
+def test_runtime_dark_theme_uses_approved_tokens_without_rerouting():
+    approved = get_theme('monooled-dark')
+    runtime = get_theme('one-dark-pro')
+    assert resolve_theme_name('', 'dark') == 'one-dark-pro'
+    assert resolve_theme_name('', 'system', system_dark=True) == 'one-dark-pro'
+    assert resolve_theme_name('', 'light') == 'monooled-light'
+    assert {token: runtime[token] for token in REQUIRED_TOKENS} == {
+        token: approved[token] for token in REQUIRED_TOKENS
+    }
 
 
 def test_stylesheet_contains_interactive_states_and_accessible_structure():
     css = build_stylesheet()
-    assert '#F4F5F7' in css
-    assert '#1D1D1F' in css
+    assert '#faf9f6' in css
+    assert '#202a30' in css
     assert 'QPushButton[hoverVisible="true"]' in css
     assert 'QPushButton[pressedVisible="true"]' in css
     assert 'QPushButton:disabled' in css
