@@ -95,3 +95,13 @@ Review Status
 - 瞬时 Git 状态必须在执行前动态查询；长期状态文件不得保存精确 HEAD、dirty/clean、暂存列表、未跟踪列表或推送状态。
 - 没有用户明确授权时，不执行 push、PR、tag、release、force push、rebase、stash 或 clean。
 - 验证命令必须与任务风险匹配，并报告实际运行的命令、结果、跳过项和未运行门禁。
+
+## Rust V2 validation namespace
+
+Rust V2 的验证性决策和阶段计划位于 `.ai/rust/`：
+
+- `.ai/rust/ADR-001.md`：Rust 命名空间的 Validation 决策；全局 `.ai/DECISIONS.md` 中对应编号为 ADR-005；
+- `.ai/rust/VALIDATION_PLAN.md`：四个 Gate、语义兼容性、平台证据与 Phase 1 退出条件；
+- `.ai/rust/PHASE-0.md`：当前隔离与 Golden Baseline 契约。
+
+它们不替代 `AGENTS.md`、实时 Git、源码、测试或 `docs/AI_HANDOFF.md`。

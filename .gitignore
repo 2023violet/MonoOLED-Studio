@@ -40,3 +40,5 @@ src/reports/
 
 # Disposable AI navigation packet
 .ai/GENERATED_CONTEXT.md
+# Rust workspace build output
+target/

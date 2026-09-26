@@ -1,0 +1,76 @@
+name: Rust Validation
+
+on:
+  push:
+    branches:
+      - rust
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-matrix:
+    name: Rust ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libx11-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libwayland-dev
+
+      - name: Install stable Rust
+        shell: bash
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Check formatting
+        shell: bash
+        run: cargo fmt --all -- --check
+
+      - name: Run workspace tests
+        shell: bash
+        run: cargo test --workspace --locked
+
+      - name: Run Clippy
+        shell: bash
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Build release workspace
+        shell: bash
+        run: cargo build --workspace --release --locked
+
+      - name: Run Rust Golden CLI
+        shell: bash
+        run: cargo run --locked -p mono_cli -- test_assets/rust_v2/goldens.json
+
+      - name: Record gate boundary
+        shell: bash
+        run: |
+          echo "This matrix proves build, tests, lint, release compilation, and CLI Golden parity."
+          echo "It does not prove GUI interaction, renderer hardware coverage, or physical OLED compatibility."

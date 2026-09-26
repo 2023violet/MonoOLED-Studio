@@ -1,0 +1,539 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "commit": "d56af87ff71cbfd60321d4867c387130a2464a15",
+    "python_version": "3.13.15",
+    "source_blobs": {
+      "src/bitmap_encoding.py": "eab281b814bd546ceb58bf41536f6216b4976ea3",
+      "src/framebuffer.py": "6a4008cf8fe4cc167326f7293ecdc3fb70783225",
+      "src/builtin_oled_font.py": "b2d9c5b1091b979e61ab8b8245585433f93021d3",
+      "src/font_pack.py": "e2b8e7952baaed6b2f5914a9f9325c9780d20881",
+      "src/project_workspace.py": "9e70bab3440e96e3c8cba4e5fcd1a71f3d9b12b0",
+      "src/output_formatter.py": "2ce0a32d507e5796ed61ed1a979d814bc6b9ec47",
+      "src/output_profiles.py": "9f863affb9294b1380a44c425c22de84768ef61a"
+    }
+  },
+  "cases": [
+    {
+      "id": "encoding-h-r-m",
+      "kind": "encoding",
+      "input": {
+        "rows": [
+          "1010000010",
+          "0100000001",
+          "0000100000",
+          "0000000100",
+          "0001000000",
+          "0000010000",
+          "1000001000",
+          "0010000000",
+          "0100000010",
+          "0000100001"
+        ],
+        "profile": {
+          "bit_axis": "horizontal",
+          "group_order": "row_major",
+          "bit_order": "msb_first",
+          "polarity": "one_is_lit"
+        }
+      },
+      "expected": {
+        "hex": "a080404008000100100004008200200040800840",
+        "byte_count": 20,
+        "sha256": "9fb23550a3334ca503ad5cf5e56cee2702948014f888b5e9916f152f41bcd268",
+        "padded_size": [
+          16,
+          10
+        ]
+      }
+    },
+    {
+      "id": "encoding-h-r-l",
+      "kind": "encoding",
+      "input": {
+        "rows": [
+          "1010000010",
+          "0100000001",
+          "0000100000",
+          "0000000100",
+          "0001000000",
+          "0000010000",
+          "1000001000",
+          "0010000000",
+          "0100000010",
+          "0000100001"
+        ],
+        "profile": {
+          "bit_axis": "horizontal",
+          "group_order": "row_major",
+          "bit_order": "lsb_first",
+          "polarity": "one_is_lit"
+        }
+      },
+      "expected": {
+        "hex": "0501020210008000080020004100040002011002",
+        "byte_count": 20,
+        "sha256": "b1826a9eb1dfff08e373efed95c8e977bd4118331eba9510d5292d49f38fec75",
+        "padded_size": [
+          16,
+          10
+        ]
+      }
+    },
+    {
+      "id": "encoding-h-c-m",
+      "kind": "encoding",
+      "input": {
+        "rows": [
+          "1010000010",
+          "0100000001",
+          "0000100000",
+          "0000000100",
+          "0001000000",
+          "0000010000",
+          "1000001000",
+          "0010000000",
+          "0100000010",
+          "0000100001"
+        ],
+        "profile": {
+          "bit_axis": "horizontal",
+          "group_order": "column_major",
+          "bit_order": "msb_first",
+          "polarity": "one_is_lit"
+        }
+      },
+      "expected": {
+        "hex": "a040080110048220400880400000000000008040",
+        "byte_count": 20,
+        "sha256": "586d5200d33649f72fb881f23afa34195f601b952d8e436f43e314cfc3520746",
+        "padded_size": [
+          16,
+          10
+        ]
+      }
+    },
+    {
+      "id": "encoding-h-c-l",
+      "kind": "encoding",
+      "input": {
+        "rows": [
+          "1010000010",
+          "0100000001",
+          "0000100000",
+          "0000000100",
+          "0001000000",
+          "0000010000",
+          "1000001000",
+          "0010000000",
+          "0100000010",
+          "0000100001"
+        ],
+        "profile": {
+          "bit_axis": "horizontal",
+          "group_order": "column_major",
+          "bit_order": "lsb_first",
+          "polarity": "one_is_lit"
+        }
+      },
+      "expected": {
+        "hex": "0502108008204104021001020000000000000102",
+        "byte_count": 20,
+        "sha256": "61a0477abc9e9ac248948ef3b99851320e783aa83a63a733e0e02bcca07f2ae8",
+        "padded_size": [
+          16,
+          10
+        ]
+      }
+    },
+    {
+      "id": "encoding-v-c-m",
+      "kind": "encoding",
+      "input": {
+        "rows": [
+          "1010000010",
+          "0100000001",
+          "0000100000",
+          "0000000100",
+          "0001000000",
+          "0000010000",
+          "1000001000",
+          "0010000000",
+          "0100000010",
+          "0000100001"
+        ],
+        "profile": {
+          "bit_axis": "vertical",
+          "group_order": "column_major",
+          "bit_order": "msb_first",
+          "polarity": "one_is_lit"
+        }
+      },
+      "expected": {
+        "hex": "8200408081000800204004000200100080804040",
+        "byte_count": 20,
+        "sha256": "0554afe4211c001ad486336006ed2ccd314bedfa5f4b226ca5afad47a9b15d3a",
+        "padded_size": [
+          10,
+          16
+        ]
+      }
+    },
+    {
+      "id": "encoding-v-c-l",
+      "kind": "encoding",
+      "input": {
+        "rows": [
+          "1010000010",
+          "0100000001",
+          "0000100000",
+          "0000000100",
+          "0001000000",
+          "0000010000",
+          "1000001000",
+          "0010000000",
+          "0100000010",
+          "0000100001"
+        ],
+        "profile": {
+          "bit_axis": "vertical",
+          "group_order": "column_major",
+          "bit_order": "lsb_first",
+          "polarity": "one_is_lit"
+        }
+      },
+      "expected": {
+        "hex": "4100020181001000040220004000080001010202",
+        "byte_count": 20,
+        "sha256": "0bbcb1d5efaaea09271e58a3bed45d7412593db8f6a39b92748407c8a854ea5e",
+        "padded_size": [
+          10,
+          16
+        ]
+      }
+    },
+    {
+      "id": "encoding-v-r-m",
+      "kind": "encoding",
+      "input": {
+        "rows": [
+          "1010000010",
+          "0100000001",
+          "0000100000",
+          "0000000100",
+          "0001000000",
+          "0000010000",
+          "1000001000",
+          "0010000000",
+          "0100000010",
+          "0000100001"
+        ],
+        "profile": {
+          "bit_axis": "vertical",
+          "group_order": "row_major",
+          "bit_order": "msb_first",
+          "polarity": "one_is_lit"
+        }
+      },
+      "expected": {
+        "hex": "8240810820040210804000800000400000008040",
+        "byte_count": 20,
+        "sha256": "a80161eefcc82c0a77f7a3783811fda7c18d765c2f41d16e57ba10c206fc2b58",
+        "padded_size": [
+          10,
+          16
+        ]
+      }
+    },
+    {
+      "id": "encoding-v-r-l",
+      "kind": "encoding",
+      "input": {
+        "rows": [
+          "1010000010",
+          "0100000001",
+          "0000100000",
+          "0000000100",
+          "0001000000",
+          "0000010000",
+          "1000001000",
+          "0010000000",
+          "0100000010",
+          "0000100001"
+        ],
+        "profile": {
+          "bit_axis": "vertical",
+          "group_order": "row_major",
+          "bit_order": "lsb_first",
+          "polarity": "one_is_lit"
+        }
+      },
+      "expected": {
+        "hex": "4102811004204008010200010000020000000102",
+        "byte_count": 20,
+        "sha256": "9ef94727bf7b308e45ab3a1aa6ffb0b2eb4135fd1204bed04b9166c547730156",
+        "padded_size": [
+          10,
+          16
+        ]
+      }
+    },
+    {
+      "id": "polarity-padding",
+      "kind": "encoding",
+      "input": {
+        "rows": [
+          "101"
+        ],
+        "profile": {
+          "bit_axis": "horizontal",
+          "group_order": "row_major",
+          "bit_order": "msb_first",
+          "polarity": "zero_is_lit"
+        }
+      },
+      "expected": {
+        "hex": "5f",
+        "byte_count": 1,
+        "sha256": "d2e2adf7177b7a8afddbc12d1634cf23ea1a71020f6a1308070a16400fb68fde",
+        "padded_size": [
+          8,
+          1
+        ]
+      }
+    },
+    {
+      "id": "framebuffer-boundary",
+      "kind": "framebuffer",
+      "input": {
+        "width": 8,
+        "height": 8,
+        "set_pixels": [
+          [
+            0,
+            0
+          ],
+          [
+            3,
+            7
+          ],
+          [
+            7,
+            7
+          ]
+        ],
+        "masks": [
+          {
+            "origin": [
+              1,
+              1
+            ],
+            "rows": [
+              "10",
+              "01"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "hex": "0102048000000080",
+        "byte_count": 8,
+        "sha256": "5addac029e99bca408ab7d159cf38a6c6f7abbee970151e5c830f9852841008d",
+        "rows": [
+          "10000000",
+          "01000000",
+          "00100000",
+          "00000000",
+          "00000000",
+          "00000000",
+          "00000000",
+          "00010001"
+        ]
+      }
+    },
+    {
+      "id": "builtin-5x7",
+      "kind": "font",
+      "input": {
+        "name": "Golden Builtin",
+        "cell": [
+          5,
+          8
+        ],
+        "baseline": 6,
+        "advance": 6,
+        "characters": "A0",
+        "text": "A0",
+        "tracking": 1
+      },
+      "expected": {
+        "cell": [
+          5,
+          8
+        ],
+        "baseline": 6,
+        "advance": 6,
+        "glyphs": {
+          "A": {
+            "rows": [
+              "01110",
+              "10001",
+              "10001",
+              "11111",
+              "10001",
+              "10001",
+              "10001",
+              "00000"
+            ],
+            "metrics": {
+              "bearing_x": 0,
+              "bearing_y": 0,
+              "advance": 6
+            }
+          },
+          "0": {
+            "rows": [
+              "01110",
+              "10001",
+              "10011",
+              "10101",
+              "11001",
+              "10001",
+              "01110",
+              "00000"
+            ],
+            "metrics": {
+              "bearing_x": 0,
+              "bearing_y": 0,
+              "advance": 6
+            }
+          }
+        },
+        "composed_rows": [
+          "011100001110",
+          "100010010001",
+          "100010010011",
+          "111110010101",
+          "100010011001",
+          "100010010001",
+          "100010001110",
+          "000000000000"
+        ]
+      }
+    },
+    {
+      "id": "legacy-project",
+      "kind": "project",
+      "input": {
+        "manifest": {
+          "schema_version": 1,
+          "name": "Golden Legacy",
+          "default_canvas": [
+            8,
+            8
+          ],
+          "active_screen": "main",
+          "asset_dirs": [
+            "assets"
+          ],
+          "screens": [
+            {
+              "id": "main",
+              "label": "Main",
+              "path": "scenes/main.json"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "read_preserved_bytes": true,
+        "saved_manifest": {
+          "schema_version": 1,
+          "name": "Golden Legacy",
+          "default_canvas": [
+            8,
+            8
+          ],
+          "active_screen": "main",
+          "asset_dirs": [
+            "assets"
+          ],
+          "screens": [
+            {
+              "id": "main",
+              "label": "Main",
+              "path": "scenes/main.json"
+            }
+          ]
+        },
+        "active_profile": "ssd1306_vlsb_c",
+        "profile": {
+          "name": "SSD1306 VLSB · C Header",
+          "raster": {
+            "alignment": "glyph_width",
+            "threshold_mode": "luma",
+            "luma_threshold": 128,
+            "red_threshold": 255,
+            "green_threshold": 255,
+            "blue_threshold": 255,
+            "invert_source": false,
+            "antialias_scale": 1,
+            "offset_x": 0,
+            "offset_y": 0
+          },
+          "encoding": {
+            "bit_axis": "vertical",
+            "group_order": "row_major",
+            "bit_order": "lsb_first",
+            "polarity": "one_is_lit"
+          },
+          "text": {
+            "container": "text",
+            "radix": "hex",
+            "uppercase": true,
+            "bytes_per_line": 16,
+            "index_entries_per_line": 16,
+            "index_mode": "none",
+            "minimal_data": false,
+            "compact_spacing": false,
+            "segment_prefix": "#pragma once\n#include <stdint.h>\n\nstatic const uint8_t ${symbol}[] = {\n",
+            "segment_suffix": "};\n",
+            "comment_prefix": "    /* ",
+            "comment_suffix": " */\n",
+            "data_prefix": "0x",
+            "data_suffix": ",",
+            "line_prefix": "    ",
+            "line_suffix": "",
+            "line_end": "\n"
+          }
+        }
+      }
+    },
+    {
+      "id": "legacy-pixel-c-export",
+      "kind": "export",
+      "input": {
+        "profile_id": "legacy_pixel_c",
+        "name": "golden pattern",
+        "symbol": "Rust / Gold",
+        "rows": [
+          "10000001",
+          "01000010",
+          "00100100",
+          "00011000",
+          "00011000",
+          "00100100",
+          "01000010",
+          "10000001"
+        ]
+      },
+      "expected": {
+        "hex": "8142241818244281",
+        "byte_count": 8,
+        "sha256": "eb266379c69a34280593fb2d4ea1f0293568650503cde89fc21d0b947447ecc4",
+        "text": "#define Rust_Gold_WIDTH 8\n#define Rust_Gold_HEIGHT 8\n#define Rust_Gold_BYTES 8\n\nstatic const unsigned char Rust_Gold[] = {\n    0x81, 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x81,\n};\n",
+        "index": []
+      }
+    }
+  ]
+}

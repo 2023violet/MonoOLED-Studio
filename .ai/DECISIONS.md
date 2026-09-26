@@ -17,3 +17,7 @@ HEAD、工作区 dirty/clean、暂存项、未跟踪文件、本地与远端同�
 ## ADR-004 — Preserve the runtime dark identifier and apply the approved dark visual there
 
 产品方案 B 已确认：保留 `mode="dark"` 与系统深色到 `one-dark-pro` 的现有解析兼容性，不改为 `monooled-dark`。批准的 MonoOLED 深色 semantic tokens 应落实到实际可达的 `one-dark-pro`；`monooled-dark` 继续保留为公开主题标识和兼容资产，`high-contrast` 不受影响。
+
+## ADR-005 — Rust V2 Migration Strategy（Rust namespace ADR-001）
+
+Rust V2 已获准进入 Validation，尚未批准全量重写。Python V1 继续作为支持中的参考实现，egui/eframe 只是候选框架。四个 Gate 为 Golden Baseline、Rust Core、egui Pixel Slice 和 3-OS Gate；完整决策仍需 Go / Adjust / Stop 证据。详细决策见 `.ai/rust/ADR-001.md`，执行计划见 `.ai/rust/VALIDATION_PLAN.md`。
