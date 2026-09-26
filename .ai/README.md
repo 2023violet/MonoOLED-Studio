@@ -103,5 +103,8 @@ Rust V2 的验证性决策和阶段计划位于 `.ai/rust/`：
 - `.ai/rust/ADR-001.md`：Rust 命名空间的 Validation 决策；全局 `.ai/DECISIONS.md` 中对应编号为 ADR-005；
 - `.ai/rust/VALIDATION_PLAN.md`：四个 Gate、语义兼容性、平台证据与 Phase 1 退出条件；
 - `.ai/rust/PHASE-0.md`：当前隔离与 Golden Baseline 契约。
+- `.ai/rust/PHASE-1.md` 与 `.ai/rust/PHASE-1-REPORT.md`：当前 Pixel Slice 实现、验证证据与剩余门禁；
+- `.ai/rust/CLEAN_HANDOFF.md`：新人接手所需的 worktree 边界、已验证事实和下一步。
 
-它们不替代 `AGENTS.md`、实时 Git、源码、测试或 `docs/AI_HANDOFF.md`。
+它们不替代 `AGENTS.md`、实时 Git、源码、测试或 `docs/AI_HANDOFF.md`。从
+Rust 分支接手时先读 `CLEAN_HANDOFF.md`，然后按其中的 live Git 顺序复核。
