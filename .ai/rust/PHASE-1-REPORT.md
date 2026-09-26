@@ -137,9 +137,14 @@ The work remains within the approved Rust V2 Validation plan: Golden Baseline, m
 ## Remaining assumptions and risks
 
 - The three-OS GitHub Actions build, test, lint, release, and CLI parity gate is green.
-- macOS and Linux GUI smoke evidence is missing; Linux Wayland and X11 are not separately exercised.
-- Live GUI interaction, reopen through the running application, long-task behavior, worker shutdown, DPI behavior, and physical OLED compatibility evidence remain incomplete.
-- Save and Export currently write validation artifacts under target and are not the V1 project/export contract.
+- GUI interaction evidence is now recorded: macOS, Linux X11, and Linux
+  Wayland (weston headless) CI runs report `all_passed: true` with DPI
+  probes, frame-time percentiles, worker churn, and bounded close-path
+  shutdown; see [PHASE-1-EVIDENCE.md](PHASE-1-EVIDENCE.md). Windows CI
+  evidence is environment-limited (runner cannot create a GL 2.0+
+  context); the local Windows run reports `all_passed: true`.
+- Physical OLED compatibility remains untested.
+- Save and Export currently write validation artifacts under target and are not yet the V1 project/export contract.
 - Existing Python baseline red tests remain unresolved and were not altered.
 
 ## Checkpoint

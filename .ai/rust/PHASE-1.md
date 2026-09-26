@@ -52,11 +52,13 @@ are not yet the V1 project/export contract.
 ## Remaining Gate
 
 The three-OS build, test, lint, release, and CLI parity gate is complete.
-Before declaring the Pixel Slice accepted, record the target OS/toolchain,
-renderer, DPI, interaction, save/export, long-task, and worker-shutdown results.
-Linux Wayland and X11 are not separately exercised. Fixture serialization and
-parser roundtrip are covered by unit tests; direct GUI interaction and reopen
-evidence through the running application remain to be recorded.
+Scripted GUI interaction evidence is now recorded in
+[PHASE-1-EVIDENCE.md](PHASE-1-EVIDENCE.md): macOS, Linux X11, and Linux
+Wayland (weston headless) CI runs and a local Windows run all report
+`all_passed: true` with DPI probes, frame-time percentiles, worker churn,
+and bounded close-path shutdown. The GitHub-hosted Windows runner cannot
+create a GL 2.0+ context; that failure is recorded as an environment
+limit, not waived. Independent review of the evidence remains open.
 
 Status remains VERIFY and Review Status remains PENDING. No PR, tag, or release
 was created by this phase.

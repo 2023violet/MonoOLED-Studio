@@ -125,6 +125,15 @@ Second run (36240861666, remediated, artifacts downloaded and inspected):
   `launch_error.is_none()` (with a regression test) in the follow-up
   commit.
 
+Third run (36241440052, aggregation fix, artifacts downloaded):
+
+- macOS: PASS — `all_passed: true`, `Apple Software Renderer`, 72 frames.
+- Linux X11: PASS — `all_passed: true`, llvmpipe, 203 frames.
+- Linux Wayland: PASS — `all_passed: true`, llvmpipe, 100 frames.
+- Windows: FAIL, now correctly reported — `all_passed: false` with
+  `launch_error: "egui_glow: OpenGL: egui_glow requires opengl 2.0+"`
+  and zero steps. The report is honest; the job exits red.
+
 Windows CI classification note for review: the same binary reports
 `all_passed: true` on the local Windows 10 machine (Intel UHD, GL 3.3,
 evidence above), so this is a runner GPU-context limitation, not a code

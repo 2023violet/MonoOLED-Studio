@@ -44,13 +44,15 @@ Evidence details are in [PHASE-0.md](PHASE-0.md),
 
 ## Current limits
 
-The following remain pending and must not be described as passed:
+Scripted GUI evidence is recorded in
+[PHASE-1-EVIDENCE.md](PHASE-1-EVIDENCE.md) (macOS, Linux X11, Linux
+Wayland CI runs and local Windows all `all_passed: true`). The following
+remain pending and must not be described as passed:
 
-- macOS and Linux GUI smoke;
-- separate Linux Wayland and X11 runs;
-- real GUI interaction, Save -> Open through the running app, DPI and
-  renderer probes;
-- long-task responsiveness and worker shutdown;
+- GitHub-hosted Windows runner GUI evidence (runner cannot create a GL
+  2.0+ context; local Windows evidence stands, runner failure recorded);
+- renderer coverage beyond the runners' GPUs and llvmpipe (the
+  office-machine GPU matrix remains NOT RUN);
 - physical OLED compatibility;
 - independent review of the Phase 1 evidence.
 
@@ -61,10 +63,10 @@ not yet the V1 project persistence or export contract.
 
 Read `AGENTS.md`, `.ai/README.md`, `.ai/DECISIONS.md`,
 `.ai/rust/ADR-001.md`, `.ai/rust/VALIDATION_PLAN.md`, the active TASK, and
-`docs/AI_HANDOFF.md`. Query Git state live before any work. Continue with the
-remaining Phase 1 evidence, then request independent review. Do not expand to
-Font Studio, DeviceSession, Serial/HID, Tokio, automatic updates, cloud work,
-GPUI, Slint, or a complete UI redesign.
+`docs/AI_HANDOFF.md`. Query Git state live before any work. The remaining
+Phase 1 evidence is recorded; request independent review of it. Do not
+expand to Font Studio, DeviceSession, Serial/HID, Tokio, automatic
+updates, cloud work, GPUI, Slint, or a complete UI redesign.
 
 ## Publication state
 
