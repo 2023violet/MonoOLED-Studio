@@ -104,6 +104,8 @@ Rust V2 的验证性决策和阶段计划位于 `.ai/rust/`：
 - `.ai/rust/VALIDATION_PLAN.md`：四个 Gate、语义兼容性、平台证据与 Phase 1 退出条件；
 - `.ai/rust/PHASE-0.md`：当前隔离与 Golden Baseline 契约。
 - `.ai/rust/PHASE-1.md` 与 `.ai/rust/PHASE-1-REPORT.md`：当前 Pixel Slice 实现、验证证据与剩余门禁；
+- `.ai/rust/PHASE-1-EVIDENCE.md`：GUI 交互、DPI、长任务、worker 关闭与三平台冒烟证据记录；
+- `.ai/rust/PHASE-1-REVIEW-REQUEST.md`：Phase 1 证据的独立 Review 请求（当前待审）；
 - `.ai/rust/CLEAN_HANDOFF.md`：新人接手所需的 worktree 边界、已验证事实和下一步。
 
 它们不替代 `AGENTS.md`、实时 Git、源码、测试或 `docs/AI_HANDOFF.md`。从
