@@ -34,10 +34,11 @@ python src/gui.py
 - 新增正式文档必须同步 `docs/README.md` 索引。
 - 项目成员路径必须解析在项目根内；原子写入与外部修改指纹是可靠性契约，不得绕过。
 
-## 当前状态（2026-09-12）
+## 当前状态（2026-09-26）
 
 - `v1.2.3` 已发布：修复主题切换遗漏隐藏控件（可见同步 repolish + 隐藏零延迟补齐）。
 - 已知未修复：`tools/VERIFY_THEME_SWITCH_V101.py` 门禁脚本 signature 断言腐化（不在 CI 中）；详见 `docs/AI_HANDOFF.md` 第 11 节。
+- Rust V2 目前是独立的 Validation lane，不代表批准全量重写；在 `rust` worktree 接手时先读 `.ai/rust/CLEAN_HANDOFF.md`。
 
 ## AI Workflow Control Plane
 
