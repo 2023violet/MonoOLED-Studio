@@ -413,6 +413,12 @@ fn main() -> eframe::Result {
     );
 
     if let Some(path) = &evidence_path {
+        if let Err(error) = &run_result {
+            main_report
+                .lock()
+                .expect("evidence report lock")
+                .launch_error = Some(error.to_string());
+        }
         let os = json!({
             "platform": std::env::consts::OS,
             "family": std::env::consts::FAMILY,
@@ -440,7 +446,13 @@ fn main() -> eframe::Result {
             std::process::exit(2);
         }
     }
-    run_result
+    if let Err(error) = run_result {
+        // Surface launch failures after the report was written so the
+        // evidence JSON explains the nonzero exit.
+        eprintln!("Launch error: {error}");
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -43,6 +43,7 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
+            libxkbcommon-x11-0 \
             libwayland-dev \
             xvfb \
             weston
@@ -75,7 +76,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         timeout-minutes: 10
-        run: ./target/release/mono_desktop.exe --evidence target/evidence_windows.json
+        run: |
+          # mesa-opengl is absent on windows runners; the runner GPU may not
+          # expose a GL 2.0+ context in this session. mesa-d3d12 through
+          # OPENGLDLL is not available, so we run and record the outcome.
+          ./target/release/mono_desktop.exe --evidence target/evidence_windows.json
 
       - name: GUI evidence (macOS)
         if: runner.os == 'macOS'
@@ -140,13 +145,16 @@ jobs:
               except (OSError, ValueError) as error:
                   print(f"- {name}: unreadable ({error})")
                   continue
-              renderer = data.get("renderer", {}).get("gl_renderer", "?")
-              frames = data.get("frame_times_ms", {})
-              worker_close = data.get("worker", {}).get("close_path", {})
+              renderer = (data.get("renderer") or {}).get("gl_renderer") or "?"
+              frames = data.get("frame_times_ms") or {}
+              worker_close = (data.get("worker") or {}).get("close_path") or {}
+              launch_error = data.get("launch_error")
               print(f"- **{name}**: all_passed={data.get('all_passed')} "
                     f"renderer={renderer} frames={frames.get('count')} "
                     f"p99={frames.get('p99')}ms worker_close_joined="
                     f"{worker_close.get('joined_within_timeout')}")
+              if launch_error:
+                  print(f"  - launch_error: {launch_error}")
           attempt = "target/wayland_attempt.txt"
           if os.path.exists(attempt):
               with open(attempt, encoding="utf-8", errors="replace") as fh:
