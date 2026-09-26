@@ -1,6 +1,6 @@
 # Rust Phase 0 — Isolation and First Golden Baseline
 
-Status: IN_PROGRESS
+Status: VERIFY
 Review Status: PENDING
 
 ## Goal
@@ -63,14 +63,19 @@ workflow status; this branch's separate scope is navigated through .ai/README.
 
 ## Result
 
-Pending execution. macOS/Linux, Rust, GUI, renderer matrix, physical hardware,
-full regression and release checks are NOT RUN in Phase 0.
+Phase 0 execution evidence is complete as the prerequisite for Phase 1.
+
+- `python tools/VERIFY_RUST_GOLDENS.py`: all 13 Python reference fixtures matched.
+- `python -m pytest tests/test_rust_golden_baseline.py -q`: 16 passed.
+- Goldens remain frozen inputs; the verifier has no record/update mode.
+- macOS/Linux GUI, renderer matrix, physical hardware, full regression and
+  release checks remain outside the Phase 0 evidence.
 
 ## Approval and current prerequisite
 
 The user approved this Validation Plan. That approval authorizes Phase 1 after
 its prerequisites and does not declare a Go/PASS result or approve full
-migration. On 2026-09-25 the managed rust worktree has no available `rustc` or
-`cargo` in PATH or the checked common installation directories. Phase 1 Rust
-workspace creation is therefore **WAITING FOR TOOLCHAIN**; no uncompiled Rust
-business code is added under this blocker.
+migration. The Rust toolchain blocker recorded on 2026-09-25 was resolved on
+2026-09-26. Phase 1 now has a working workspace and a separate checkpoint
+report; this Phase 0 document remains at VERIFY/PENDING until the validation
+review is complete.

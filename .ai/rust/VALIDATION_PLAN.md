@@ -123,6 +123,8 @@ Stop: unacceptable compatibility, desktop capability, hardware coverage or cost.
 No missing platform/hardware result can be relabelled PASS or silently waived.
 
 Implementation reports end at VERIFY / PENDING. Independent review owns PASS
-and closure. No commit, push, PR, tag or release is authorized by this plan.
+and closure. This plan does not itself authorize commit, push, PR, tag or
+release; those actions require separate user authorization. The user later
+authorized the Phase 1 checkpoint push, which is recorded in PHASE-1-REPORT.md.
 Python regression remains targeted or uses the existing isolated group runner;
 never run the full tests directory in a single pytest process.
