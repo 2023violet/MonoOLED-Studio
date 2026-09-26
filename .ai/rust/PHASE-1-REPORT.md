@@ -69,7 +69,7 @@ Rust test-first evidence:
 Rust verification after implementation:
 
 - cargo fmt --all -- --check: PASS
-- cargo test --workspace --locked: PASS; mono_core 3 tests and mono_desktop 4 tests
+- cargo test --workspace --locked: PASS; mono_core 3 tests and mono_desktop 5 tests
 - cargo clippy --workspace --all-targets --locked -- -D warnings: PASS
 - cargo run --locked -p mono_cli -- test_assets/rust_v2/goldens.json: 13/13 PASS
 - cargo build --workspace --release --locked: PASS
@@ -90,6 +90,26 @@ Workflow test-first evidence:
 
     workflow_yaml_and_shell_continuation: PASS
     workflow_structure: PASS
+
+GitHub Actions verification:
+
+- Workflow: Rust Validation
+- Run: 36212314032
+- Commit: d0b79e1857c2653b104ee80398df65f99ed08042
+- URL: https://github.com/2023violet/MonoOLED-Studio/actions/runs/36212314032
+- windows-latest: success
+- ubuntu-latest: success
+- macos-latest: success
+
+The actual matrix logs recorded the following results on all three runners:
+
+    cargo test: 0 failed; mono_core 3 passed; mono_desktop 5 passed
+    cargo clippy --workspace --all-targets --locked -- -D warnings: success
+    cargo build --workspace --release --locked: success
+    mono_cli Golden CLI: All Rust Core fixtures matched.
+
+This matrix proves build, tests, lint, release compilation, and CLI Golden parity.
+It does not prove GUI interaction, renderer hardware coverage, or physical OLED compatibility.
 
 ## Changed files
 
@@ -116,9 +136,9 @@ The work remains within the approved Rust V2 Validation plan: Golden Baseline, m
 
 ## Remaining assumptions and risks
 
-- GitHub Actions three-OS matrix is configured but has not run because the rust branch is not pushed.
-- macOS and Linux GUI smoke evidence is missing.
-- Live GUI interaction, reopen through the running application, long-task behavior, and worker shutdown evidence remain incomplete.
+- The three-OS GitHub Actions build, test, lint, release, and CLI parity gate is green.
+- macOS and Linux GUI smoke evidence is missing; Linux Wayland and X11 are not separately exercised.
+- Live GUI interaction, reopen through the running application, long-task behavior, worker shutdown, DPI behavior, and physical OLED compatibility evidence remain incomplete.
 - Save and Export currently write validation artifacts under target and are not the V1 project/export contract.
 - Existing Python baseline red tests remain unresolved and were not altered.
 
@@ -128,4 +148,5 @@ A local backup was created at:
 
 C:\Temp\MonoOLED-Rust-Phase1-VERIFY-20260926.zip
 
-No commit, push, PR, tag, or release was performed.
+Checkpoint commit d0b79e1857c2653b104ee80398df65f99ed08042 was created and pushed to origin/rust.
+No PR, tag, or release was created.

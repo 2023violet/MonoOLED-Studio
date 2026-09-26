@@ -1,4 +1,4 @@
-# Rust Phase 1 — Core and egui Pixel Slice
+# Rust Phase 1 - Core and egui Pixel Slice
 
 Status: VERIFY
 Review Status: PENDING
@@ -46,16 +46,17 @@ are not yet the V1 project/export contract.
 - Windows desktop launch smoke: process started and remained alive for 4
   seconds; the smoke process was then terminated by the runner.
 - Python Golden verifier and focused V1 tests remain PASS from Phase 0.
-- .github/workflows/rust-validation.yml configures the Windows, Linux, and macOS validation matrix; remote CI execution is not yet run in this unpushed worktree.
-- cargo test -p mono_desktop --locked: 4/4 PASS
+- GitHub Actions run 36212314032 passed on windows-latest, ubuntu-latest, and macos-latest. The matrix covered fmt, workspace tests, clippy, release compilation, and mono_cli Golden parity.
+- cargo test -p mono_desktop --locked: 5/5 PASS
 
 ## Remaining Gate
 
-The next required gate is 3-OS evidence. Windows is the only live desktop
-smoke run so far. macOS and Linux (Wayland/X11 separately) remain NOT RUN.
+The three-OS build, test, lint, release, and CLI parity gate is complete.
 Before declaring the Pixel Slice accepted, record the target OS/toolchain,
-renderer, DPI, interaction and save/export results. Fixture serialization and parser roundtrip are covered by unit tests;
-direct GUI interaction evidence and reopen evidence through the running application
-remain to be recorded.
+renderer, DPI, interaction, save/export, long-task, and worker-shutdown results.
+Linux Wayland and X11 are not separately exercised. Fixture serialization and
+parser roundtrip are covered by unit tests; direct GUI interaction and reopen
+evidence through the running application remain to be recorded.
 
-No commit, push, PR, tag or release is performed by this phase.
+Status remains VERIFY and Review Status remains PENDING. No PR, tag, or release
+was created by this phase.
