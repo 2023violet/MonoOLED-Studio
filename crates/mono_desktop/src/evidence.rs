@@ -122,7 +122,7 @@ impl EvidenceReport {
     }
 
     pub fn all_passed(&self) -> bool {
-        self.steps.iter().all(|step| step.status)
+        self.launch_error.is_none() && self.steps.iter().all(|step| step.status)
     }
 
     pub fn to_json(&self, os: &Value, env: &Value) -> Value {

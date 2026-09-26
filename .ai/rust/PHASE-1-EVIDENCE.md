@@ -104,6 +104,33 @@ Per-OS evidence JSON artifacts are uploaded as `rust-evidence-<OS>` and a
 summary table (all_passed, renderer, frame count, p99, worker join) is
 appended to the run's step summary.
 
+Second run (36240861666, remediated, artifacts downloaded and inspected):
+
+- macOS: PASS — `all_passed: true`, `Apple Software Renderer` GL 4.1,
+  71 frames, p50 47.3 ms, p99 463.3 ms, churn 32 frames, worker close
+  joined in 14 ms, DPI probes all pass.
+- Linux X11: PASS — `all_passed: true`, `llvmpipe (LLVM 20.1.2, 256
+  bits)` GL 4.5, 252 frames, p50 7.1 ms, p99 8.0 ms, churn 213 frames,
+  worker close joined in 5 ms, DPI probes all pass.
+- Linux Wayland (weston headless, soft gate): PASS — `all_passed: true`,
+  same llvmpipe renderer, 100 frames, p50 25.1 ms, p99 31.9 ms, churn
+  61 frames, worker close joined in 5 ms, DPI probes all pass.
+  `wayland_attempt.txt` is empty (no stderr from the attempt).
+- Windows: FAIL — launch failed again with `egui_glow requires opengl
+  2.0+` in the runner session. The remediation worked as designed: the
+  evidence JSON was written with `launch_error` recorded and the step
+  exited nonzero. The first remediated report wrongly reported
+  `all_passed: true` alongside the launch error (zero steps recorded,
+  vacuous pass); fixed by making `all_passed` require
+  `launch_error.is_none()` (with a regression test) in the follow-up
+  commit.
+
+Windows CI classification note for review: the same binary reports
+`all_passed: true` on the local Windows 10 machine (Intel UHD, GL 3.3,
+evidence above), so this is a runner GPU-context limitation, not a code
+defect. The runner outcome stays recorded as FAIL; reclassification to
+"environment-limited, evidenced locally" belongs to independent review.
+
 ## Test-first discipline
 
 Red output before implementation (`cargo test -p mono_desktop --locked`):

@@ -520,6 +520,15 @@ mod tests {
     }
 
     #[test]
+    fn report_aggregation_fails_on_launch_error_even_without_failed_steps() {
+        let mut report = crate::evidence::EvidenceReport::new();
+        report.record_step("env_probe", true, "ok");
+        assert!(report.all_passed());
+        report.launch_error = Some("egui_glow requires opengl 2.0+".into());
+        assert!(!report.all_passed());
+    }
+
+    #[test]
     fn script_step_names_are_frozen_in_order() {
         let expected: Vec<&str> = vec![
             "env_probe",
