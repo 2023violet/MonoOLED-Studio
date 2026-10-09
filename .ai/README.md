@@ -95,3 +95,21 @@ Review Status
 - 瞬时 Git 状态必须在执行前动态查询；长期状态文件不得保存精确 HEAD、dirty/clean、暂存列表、未跟踪列表或推送状态。
 - 没有用户明确授权时，不执行 push、PR、tag、release、force push、rebase、stash 或 clean。
 - 验证命令必须与任务风险匹配，并报告实际运行的命令、结果、跳过项和未运行门禁。
+
+## Historical records (not active task authority)
+
+The following records were moved from the repository root during TASK-A to keep
+root Markdown and source-delivery paths compliant. Their file contents and Git
+blob IDs are preserved; they are historical evidence, not current decisions
+or active TASK instructions:
+
+- [`records/UI_CRAFT_BLOCKED_2026_09_12.md`](records/UI_CRAFT_BLOCKED_2026_09_12.md) — historical theme-workstream blockers (formerly `BLOCKED.md`).
+- [`records/UI_CRAFT_PROGRESS_2026_09_12.md`](records/UI_CRAFT_PROGRESS_2026_09_12.md) — historical theme-workstream progress (formerly `PROGRESS.md`).
+- [`records/RUST_V2_CROSS_PLATFORM_REVIEW_2026_09_25.md`](records/RUST_V2_CROSS_PLATFORM_REVIEW_2026_09_25.md) — exploratory Rust V2 architecture review (formerly the non-ASCII-root-named document).
+
+The source-delivery builder scans `ROOT.rglob('*')` and collects files accepted
+by `include()` regardless of Git tracking status. Eligible files in `.ai/records/`
+are included in source delivery; this directory is not a Windows runtime
+application resource.
+For current scope and approved decisions, continue to use the live TASK,
+`.ai/CURRENT_STATE.md`, `.ai/DECISIONS.md`, and `docs/AI_HANDOFF.md`.
