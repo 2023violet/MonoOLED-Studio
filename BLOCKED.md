@@ -1,0 +1,7 @@
+# BLOCKED（待领导裁决）
+
+1. 【白名单溢出，已先行处理】tests/test_v10_ui_craft_contract.py 不在任务书白名单，但其 test_semantic_spacing_scale_is_explicit_and_density_aware 以字面量锁定 radius_menu/control/panel/pill 旧值（5/6、6、8、10）——与任务书明确允许同步的 tests/test_qt_theme.py radius 断言完全同类。已按同规矩仅改四个数值字面量（断言结构、条数未动），否则任务 2 验收必红。若领导不同意，git checkout 该文件并把 ui_metrics.py 圆角回退即可。
+
+2. 【任务书前提错误，深色 aihot 化未生效，需领导裁决】实测（2026-09-12）：src/theme_system.py::resolve_theme_name 第 93-94 行——mode=='dark' 固定返回 'one-dark-pro'（docstring 明言 "Dark is the approved One Dark Pro surface"），monooled-dark 无任何 UI 路径可达（死主题）。任务书「重定义 monooled-dark + 禁止动 one-dark-pro」组合下，深色 aihot 风格用户永远看不到；深色抓图（zh_CN_dark_comfortable_1p0x_1440x900_main.png）实为 one-dark-pro 原貌。已按任务书完成 monooled-dark 块重定义（保留，可达性待裁决）。三个选项：A) 改 resolve_theme_name dark 分支返回 monooled-dark——但 tests/test_theme_model_v101.py 锁定 resolve_theme_name(...,'dark',...)=='one-dark-pro'，且属 AI_HANDOFF 兼容性基线，需新任务书授权；B) 解禁 one-dark-pro 块，把暗青灰 token 应用到 one-dark-pro（现解析下立即可见）；C) 接受仅浅色 aihot 化，深色维持 One Dark Pro。同一原因，反向验证按任务书原文（改 monooled-dark accent）不会红——死主题无测试锁定，已改用被锁定的浅色 accent 做等价反向验证（见 PROGRESS.md 任务 3）。
+
+   【裁决材料补充 2026-09-12】选项 A/B 的实际效果预览图已产出：src/reports/windows_v10_ui_craft_golden_aihot/preview_optionAB_dark_aihot.png（临时替换+抓图+字节级还原，工作区无残留，还原后 test_qt_theme 3 passed）。三张决策图：浅色新风格 zh_CN_light_comfortable_1p0x_1440x900_main.png / 深色现状 zh_CN_dark_comfortable_1p0x_1440x900_main.png / 深色暗青灰预览 preview_optionAB_dark_aihot.png。领导回复形如「A+追认+提交」「B+追认+先不提交」「C+回滚溢出」即可，执行者按字面执行。

@@ -224,12 +224,39 @@ def _build_context(repo_root: Path, recent: int) -> str:
     return "\n".join(lines)
 
 
-def _output_path(repo_root: Path, value: str) -> Path:
-    candidate = (repo_root / value).resolve() if not Path(value).is_absolute() else Path(value).resolve()
+def _has_symlink_component(repo_root: Path, candidate: Path) -> bool:
+    relative = candidate.relative_to(repo_root)
+    current = repo_root
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _is_tracked(repo_root: Path, relative: str) -> bool:
+    tracked_paths = _run_git(repo_root, "ls-files", "-z")
+    target = os.path.normcase(relative.replace("/", os.sep))
+    return any(os.path.normcase(path.replace("/", os.sep)) == target for path in tracked_paths.split("\0") if path)
+
+
+def _output_path(repo_root: Path, value: str, *, default_output: bool) -> Path:
+    raw = Path(value)
+    candidate = Path(os.path.abspath(str(raw if raw.is_absolute() else repo_root / raw)))
     try:
         candidate.relative_to(repo_root)
     except ValueError as exc:
         raise ContextBuildError("--output must remain inside the repository root") from exc
+    relative = candidate.relative_to(repo_root)
+    if _has_symlink_component(repo_root, candidate):
+        raise ContextBuildError("--output may not use a symlink path")
+    if relative.parts and relative.parts[0].lower() == ".git":
+        raise ContextBuildError("--output may not target the .git directory")
+    relative_text = relative.as_posix()
+    if _is_tracked(repo_root, relative_text):
+        raise ContextBuildError(f"--output may not target a Git-tracked path: {relative_text}")
+    if not default_output and os.path.lexists(candidate):
+        raise ContextBuildError(f"--output already exists: {relative_text}")
     if not candidate.parent.is_dir():
         raise ContextBuildError("Output directory does not exist")
     return candidate
@@ -280,7 +307,11 @@ def main(argv: list[str] | None = None) -> int:
                 sys.stdout.reconfigure(encoding="utf-8", errors="strict", newline="\n")
             sys.stdout.write(content)
             return 0
-        target = _output_path(root, args.output or ".ai/GENERATED_CONTEXT.md")
+        target = _output_path(
+            root,
+            args.output or ".ai/GENERATED_CONTEXT.md",
+            default_output=args.output is None,
+        )
         _write_atomic(target, content)
         display = target.relative_to(root).as_posix()
         print(f"Wrote {display}")

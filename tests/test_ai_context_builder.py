@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 from pathlib import Path
 import os
 import subprocess
@@ -71,6 +72,10 @@ def _run(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def test_basic_snapshot_has_version_branch_head_state_decision_and_recent_commit(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     result = _run(repo, "--stdout", "--recent", "1")
@@ -120,6 +125,10 @@ def test_stdout_does_not_create_default_file_and_default_output_is_atomic(tmp_pa
     output = repo / ".ai" / "GENERATED_CONTEXT.md"
     assert output.is_file()
     assert output.read_text(encoding="utf-8").startswith("# GENERATED AI CONTEXT\n")
+    first = output.read_bytes()
+    result = _run(repo)
+    assert result.returncode == 0, result.stderr
+    assert output.read_bytes() == first
 
 
 def test_custom_output_and_recent_bounds(tmp_path: Path) -> None:
@@ -131,6 +140,70 @@ def test_custom_output_and_recent_bounds(tmp_path: Path) -> None:
     invalid = _run(repo, "--stdout", "--recent", "21")
     assert invalid.returncode != 0
     assert "--recent must be between 1 and 20" in invalid.stderr
+
+
+@pytest.mark.parametrize("target", [".ai/DECISIONS.md", "AGENTS.md"])
+def test_custom_output_rejects_tracked_targets_without_changes(tmp_path: Path, target: str) -> None:
+    repo = _repo(tmp_path)
+    target_path = repo / Path(target)
+    before = target_path.read_bytes()
+    result = _run(repo, "--output", target)
+    assert result.returncode != 0
+    assert "Git-tracked path" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert target_path.read_bytes() == before
+
+
+def test_custom_output_rejects_git_metadata_without_changes(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    config = repo / ".git" / "config"
+    before = config.read_bytes()
+    head_before = _git(repo, "rev-parse", "HEAD")
+    status_before = _git(repo, "status", "--porcelain=v1")
+    result = _run(repo, "--output", ".git/config")
+    assert result.returncode != 0
+    assert ".git directory" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert config.read_bytes() == before
+    assert _git(repo, "rev-parse", "HEAD") == head_before
+    assert _git(repo, "status", "--porcelain=v1") == status_before
+
+
+def test_custom_output_rejects_existing_untracked_file_without_reading_or_overwriting(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    target = repo / "user-note.md"
+    marker = "UNIQUE_USER_NOTE_MARKER"
+    target.write_text(marker + "\n", encoding="utf-8")
+    result = _run(repo, "--output", target.name)
+    assert result.returncode != 0
+    assert "already exists" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert target.read_text(encoding="utf-8") == marker + "\n"
+    assert marker not in result.stdout
+
+
+def test_custom_output_allows_new_packet_only(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    result = _run(repo, "--output", "context-packet.md")
+    assert result.returncode == 0, result.stderr
+    packet = repo / "context-packet.md"
+    assert packet.is_file()
+    assert packet.read_text(encoding="utf-8").startswith("# GENERATED AI CONTEXT\n")
+
+
+def test_custom_output_rejects_symlink_when_supported(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    real_target = repo / "real-target.md"
+    real_target.write_text("SYMLINK_TARGET_CONTENT\n", encoding="utf-8")
+    link = repo / "link.md"
+    try:
+        os.symlink(real_target, link)
+    except (FileExistsError, NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    result = _run(repo, "--output", link.name)
+    assert result.returncode != 0
+    assert "symlink" in result.stderr.lower()
+    assert real_target.read_text(encoding="utf-8") == "SYMLINK_TARGET_CONTENT\n"
 
 
 def test_required_source_and_detached_head_fail_without_traceback(tmp_path: Path) -> None:
@@ -149,11 +222,20 @@ def test_required_source_and_detached_head_fail_without_traceback(tmp_path: Path
     assert "Traceback" not in detached.stderr
 
 
-def test_sources_are_preserved_and_gitignore_contract_is_present() -> None:
-    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    assert ".ai/GENERATED_CONTEXT.md" in gitignore
-    for relative in ("AGENTS.md", ".ai/DECISIONS.md", ".ai/CURRENT_STATE.md"):
-        assert (ROOT / relative).is_file()
+def test_sources_are_preserved_and_generated_warning_is_explicit(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    sources = ("AGENTS.md", ".ai/CURRENT_STATE.md", ".ai/DECISIONS.md", "src/VERSION")
+    before = {relative: _sha256(repo / relative) for relative in sources}
+    stdout = _run(repo, "--stdout")
+    assert stdout.returncode == 0, stdout.stderr
+    assert "GENERATED FILE — DERIVED CONTEXT ONLY" in stdout.stdout
+    assert "NOT AUTHORITATIVE" in stdout.stdout
+    assert "REGENERATE BEFORE USE" in stdout.stdout
+    assert _run(repo).returncode == 0
+    assert _run(repo).returncode == 0
+    after = {relative: _sha256(repo / relative) for relative in sources}
+    assert after == before
+    assert ".ai/GENERATED_CONTEXT.md" in (ROOT / ".gitignore").read_text(encoding="utf-8")
 
 
 def test_builder_has_no_network_or_external_dependencies() -> None:

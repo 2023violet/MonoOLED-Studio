@@ -19,6 +19,19 @@ During the TASK-003 local implementation and verification phase, staging, commit
 
 After TASK-003 reached `VERIFY / PENDING`, the user separately authorized creation of a GitHub Independent Review Baseline. This publication authorization is limited to the task's formal seven-file Review Scope. `.ai/GENERATED_CONTEXT.md` is derived and must not enter the commit; `BLOCKED.md` and `PROGRESS.md` are protected local records and must not enter the commit. Publication is limited to a normal fast-forward push to `origin/main`. Force push, force-with-lease, amend, rebase, merge, PR, tag, release, history rewrite, and new branch operations are not authorized. The resulting commit SHA will be recorded only in subsequent review or closure history after the commit succeeds.
 
+## Independent Review History
+
+Review Baseline: `d56af87ff71cbfd60321d4867c387130a2464a15`
+
+Review result: `REWORK REQUIRED`
+
+Findings:
+
+1. Custom `--output` could overwrite Git-tracked files, existing user files, or `.git` metadata.
+2. The source-preservation test only checked that source files existed and did not verify before/after preservation.
+
+The rework is limited to output safety and regression coverage. TASK-003 remains `Status: VERIFY` and `Review Status: PENDING`; no Closure is performed.
+
 ## Current Problem and Failure Evidence
 
 - Cold start requires many separate manual reads and Git queries.
@@ -130,6 +143,15 @@ Implemented the minimal read-only builder and isolated regression coverage.
 - Full regression, `tests/test_v112_pixel_canvas_github_hygiene.py`, build, release, commit, push, PR, and independent review were not run in this task.
 
 Deleting `.ai/GENERATED_CONTEXT.md` loses no authoritative information; it only removes a disposable derived index that can be regenerated.
+
+## Rework Result
+
+- Added a builder-owned default-output exception for `.ai/GENERATED_CONTEXT.md`; repeated default generation remains allowed.
+- Custom output now requires a new repository-local path, rejects Git-tracked paths, rejects `.git` metadata, rejects existing files, and rejects symlink components without reading target contents.
+- Added regression coverage for tracked authority files, `.git/config`, existing untracked user files, new custom packets, default regeneration, generated warnings, and Windows symlink behavior.
+- Authority preservation now records SHA-256 values for `AGENTS.md`, `.ai/CURRENT_STATE.md`, `.ai/DECISIONS.md`, and `src/VERSION` before and after stdout/default generation.
+- Rework verification: `python -m pytest tests\\test_ai_context_builder.py -q -rs` → 13 passed, 1 skipped. The symlink test was skipped because this Windows environment does not grant symlink creation privilege (`WinError 1314`); the production path check remains implemented.
+- No staging, commit, push, Closure, or TASK status promotion was performed during this rework.
 
 ## Review Status
 
