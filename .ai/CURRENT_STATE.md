@@ -26,8 +26,13 @@
 - Popup native-mask versus Design System classification remains a
   `DEFERRED FOLLOW-UP CANDIDATE`; TASK-002 does not modify `ui_controls.py` or
   popup tests to resolve it.
-- The pre-existing theme files remain auditable through the TASK-002 baseline;
-  BLOCKED.md and PROGRESS.md remain local work records outside the product scope.
+- The pre-existing theme files remain auditable through the TASK-002 baseline.
+- TASK-A archived former root `BLOCKED.md` and `PROGRESS.md` as
+  `.ai/records/UI_CRAFT_BLOCKED_2026_09_12.md` and
+  `.ai/records/UI_CRAFT_PROGRESS_2026_09_12.md`. They remain historical
+  maintenance records, not authoritative for active tasks, product decisions,
+  or workflow state. Eligible records may enter source delivery, but are not
+  Windows runtime application resources.
 
 ## Phase 2 Result
 

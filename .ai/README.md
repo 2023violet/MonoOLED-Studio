@@ -107,7 +107,9 @@ or active TASK instructions:
 - [`records/UI_CRAFT_PROGRESS_2026_09_12.md`](records/UI_CRAFT_PROGRESS_2026_09_12.md) — historical theme-workstream progress (formerly `PROGRESS.md`).
 - [`records/RUST_V2_CROSS_PLATFORM_REVIEW_2026_09_25.md`](records/RUST_V2_CROSS_PLATFORM_REVIEW_2026_09_25.md) — exploratory Rust V2 architecture review (formerly the non-ASCII-root-named document).
 
-The source-delivery builder collects tracked repository documents, including
-`.ai/records/`; these records are not Windows runtime application resources.
+The source-delivery builder scans `ROOT.rglob('*')` and collects files accepted
+by `include()` regardless of Git tracking status. Eligible files in `.ai/records/`
+are included in source delivery; this directory is not a Windows runtime
+application resource.
 For current scope and approved decisions, continue to use the live TASK,
 `.ai/CURRENT_STATE.md`, `.ai/DECISIONS.md`, and `docs/AI_HANDOFF.md`.
