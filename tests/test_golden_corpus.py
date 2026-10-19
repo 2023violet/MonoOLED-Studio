@@ -105,3 +105,12 @@ def test_legacy_project_open_is_byte_preserving():
     assert cases['project-curing_lite-open']['expected']['loaded']['manifest_unchanged_after_open'] is True
     assert sum(1 for item in cases.values() if item['kind'] == 'path_safety') >= 8
     assert cases['project-save-rejects-external-modification']['expected']['error'] == 'ExternalProjectModificationError'
+
+
+def test_handoff_cases_record_entries():
+    cases = _build('handoff')
+    entries = cases['handoff-builtin_main_scene-boundaries']['expected']['entries']
+    names = {entry['name'] for entry in entries}
+    assert 'ui_contract.json' in names and 'HANDOFF_README.md' in names
+    assert any(entry['kind'] == 'png' for entry in entries)
+    assert any(name.startswith('golden/') and name.endswith('.bin') for name in names)
