@@ -126,3 +126,13 @@ def test_automation_session_records_contract_without_absolute_paths():
     blob = json.dumps(session)
     assert ROOT.as_posix() not in blob and str(ROOT) not in blob
     assert 'exports/current.h' in session['export_files']
+
+
+def test_font_cases_split_strict_and_semantic():
+    cases = _build('fonts')
+    strict = cases['fontpack-builtin-5x8-roundtrip']
+    assert strict['level'] == 'strict' and strict['expected']['reload_matches'] is True
+    assert cases['fontpack-manual-8x8-cjk-roundtrip']['expected']['glyphs']['U+4E2D']
+    generated = cases['fontgen-dejavu-8x16-aa1']
+    assert generated['level'] == 'semantic'
+    assert len(generated['expected']['glyphs']) == 95
