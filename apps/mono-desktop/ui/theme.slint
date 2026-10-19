@@ -1,0 +1,59 @@
+// Generated from V1 src/theme_system.py (ADR-004). Do not edit by hand.
+// mode: 0 = monooled-light, 1 = one-dark-pro (Dark), 2 = high-contrast.
+export global Theme {
+    in-out property <int> mode: 0;
+    out property <color> app-background: mode == 2 ? #000000 : mode == 1 ? #13191c : #faf9f6;
+    out property <color> surface-panel: mode == 2 ? #000000 : mode == 1 ? #1a2226 : #ffffff;
+    out property <color> surface-canvas: mode == 2 ? #000000 : mode == 1 ? #10161a : #f3f3ef;
+    out property <color> surface-toolbar: mode == 2 ? #000000 : mode == 1 ? #202a2f : #fcfbf7;
+    out property <color> surface-hover: mode == 2 ? #202020 : mode == 1 ? #232e33 : #f0eee8;
+    out property <color> surface-pressed: mode == 2 ? #303030 : mode == 1 ? #28343a : #e6e3da;
+    out property <color> surface-selected: mode == 2 ? #002a55 : mode == 1 ? #10393c : #d9ece9;
+    out property <color> text-primary: mode == 2 ? #ffffff : mode == 1 ? #e7eceb : #202a30;
+    out property <color> text-secondary: mode == 2 ? #ffffff : mode == 1 ? #a5b0b3 : #59656b;
+    out property <color> text-muted: mode == 2 ? #d8d8d8 : mode == 1 ? #89979d : #657176;
+    out property <color> text-disabled: mode == 2 ? #888888 : mode == 1 ? #5f6b70 : #9aa5a6;
+    out property <color> border-normal: mode == 2 ? #ffffff : mode == 1 ? #2c373c : #dfe4e1;
+    out property <color> border-subtle: mode == 2 ? #a0a0a0 : mode == 1 ? #263034 : #e9ede9;
+    out property <color> border-focus: mode == 2 ? #00d8ff : mode == 1 ? #12ccd8 : #176b75;
+    out property <color> accent-primary: mode == 2 ? #00a8ff : mode == 1 ? #12ccd8 : #176b75;
+    out property <color> accent-hover: mode == 2 ? #00d8ff : mode == 1 ? #2ce2e8 : #12565e;
+    out property <color> accent-soft: mode == 2 ? #002a55 : mode == 1 ? #0e3f44 : #d9ece9;
+    out property <color> accent-on-primary: mode == 2 ? #000000 : mode == 1 ? #000000 : #ffffff;
+    out property <color> status-success: mode == 2 ? #00ff6a : mode == 1 ? #5fc79a : #2f7d5c;
+    out property <color> status-warning: mode == 2 ? #ffd400 : mode == 1 ? #d3b26a : #b8873a;
+    out property <color> status-error: mode == 2 ? #ff3b30 : mode == 1 ? #d86a52 : #b3402a;
+    out property <color> status-neutral-background: mode == 2 ? #000000 : mode == 1 ? #232e33 : #f0efe9;
+    out property <color> status-neutral-foreground: mode == 2 ? #ffffff : mode == 1 ? #a5b0b3 : #59656b;
+    out property <color> status-accent-background: mode == 2 ? #002a55 : mode == 1 ? #0e3f44 : #d9ece9;
+    out property <color> status-accent-foreground: mode == 2 ? #ffffff : mode == 1 ? #7ce8ec : #12565e;
+    out property <color> status-success-background: mode == 2 ? #003a18 : mode == 1 ? #16402c : #e3f1e7;
+    out property <color> status-success-foreground: mode == 2 ? #ffffff : mode == 1 ? #8ad9b4 : #256b4a;
+    out property <color> status-warning-background: mode == 2 ? #4a3d00 : mode == 1 ? #40351a : #f5ecd9;
+    out property <color> status-warning-foreground: mode == 2 ? #ffffff : mode == 1 ? #e3c98c : #8a6529;
+    out property <color> status-error-background: mode == 2 ? #4a0000 : mode == 1 ? #45231c : #f7e6e0;
+    out property <color> status-error-foreground: mode == 2 ? #ffffff : mode == 1 ? #eb9a85 : #8f3522;
+    out property <color> popover-shadow: mode == 2 ? #000000ff : mode == 1 ? #00000099 : #00000033;
+    out property <color> overlay-scrim: mode == 2 ? #000000cc : mode == 1 ? #00000099 : #00000066;
+    out property <color> canvas-grid: mode == 2 ? #505050 : mode == 1 ? #343438 : #343438;
+    out property <color> canvas-guide: mode == 2 ? #ffd400 : mode == 1 ? #ffd60a : #ff9f0a;
+    out property <color> canvas-selection: mode == 2 ? #00d8ff : mode == 1 ? #12ccd8 : #176b75;
+    out property <color> canvas-off: mode == 0 ? #0b0d0e : #000000;
+    out property <color> canvas-on: #ffffff;
+    out property <bool> dark: mode != 0;
+}
+
+// V9 radius scale and V1 density metrics.
+export global Metrics {
+    in-out property <int> density: 1; // 0 compact, 1 comfortable, 2 spacious
+    in-out property <float> scale: 1.0;
+    out property <length> radius-panel: 12px;
+    out property <length> radius-control: 8px;
+    out property <length> radius-pill: 16px;
+    out property <length> control-height: density == 0 ? 28px : density == 2 ? 38px : 32px;
+    out property <length> pad: density == 0 ? 6px : density == 2 ? 12px : 8px;
+    out property <length> gap: density == 0 ? 6px : density == 2 ? 12px : 8px;
+    out property <length> font-body: 13px;
+    out property <length> font-small: 11px;
+    out property <length> font-title: 15px;
+}

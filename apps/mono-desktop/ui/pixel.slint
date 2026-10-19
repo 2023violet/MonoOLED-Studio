@@ -1,0 +1,702 @@
+// Pixel Studio workspace: tool rail | 1-bit canvas | inspector, plus the
+// output workbench panel (V1 `pixel_studio_qt` + `output_workbench_qt`).
+import { ScrollView, LineEdit, SpinBox, ComboBox, CheckBox, ListView } from "std-widgets.slint";
+import { Theme, Metrics } from "theme.slint";
+import { Icon } from "icons.slint";
+import { I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, Scrim, Dialog } from "widgets.slint";
+
+export global PixelModel {
+    in property <image> canvas;
+    in property <int> doc-w: 16;
+    in property <int> doc-h: 16;
+    in property <string> title;
+    in-out property <int> tool: 0;
+    in-out property <int> brush-size: 1;
+    in-out property <int> zoom-index: 0; // 0 = Fit, then V1 ZOOMS
+    in property <float> zoom: 0;
+    in-out property <bool> show-grid: true;
+    in-out property <bool> show-rulers: true;
+    in-out property <bool> show-preview: true;
+    in property <bool> wheel-zoom: true;
+    in property <bool> middle-pan: true;
+    in property <bool> space-pan: true;
+    in property <bool> has-selection;
+    in property <int> sel-x;
+    in property <int> sel-y;
+    in property <int> sel-w;
+    in property <int> sel-h;
+    in property <bool> has-key-cursor;
+    in property <int> key-x;
+    in property <int> key-y;
+    in property <string> cursor-text;
+    in property <string> selection-text;
+    in property <string> info-text;
+    in property <bool> has-clipboard;
+    in-out property <int> inspector-tab: 0;
+    // Dialogs: 0 none, 1 canvas size, 2 import, 3 insert bitmap text.
+    in-out property <int> dialog: 0;
+    in-out property <int> resize-w;
+    in-out property <int> resize-h;
+    in-out property <int> resize-anchor: 4;
+    in property <string> import-path;
+    in property <image> import-preview;
+    in property <string> import-info;
+    in-out property <int> import-mode: 0;
+    in-out property <int> import-threshold: 128;
+    in-out property <int> import-red: 255;
+    in-out property <int> import-green: 255;
+    in-out property <int> import-blue: 255;
+    in-out property <bool> import-invert;
+    in property <[string]> font-packs;
+    in-out property <int> text-font: 0;
+    in-out property <string> text-value;
+    in-out property <int> text-x;
+    in-out property <int> text-y;
+    in-out property <int> text-tracking;
+    in property <string> dialog-error;
+
+    callback pointer(string /* down|move|up|hover|leave */, int, int, int /* 0 left 1 right */);
+    callback key(string);
+    callback action(string);
+    callback tool-chosen(int);
+    callback brush-chosen(int);
+    callback zoom-chosen(int);
+    callback zoom-step(int);
+    callback import-changed();
+    callback dialog-accepted();
+}
+
+export struct ProfileItem { id: string, name: string }
+
+export global OutputModel {
+    in property <[string]> sources;
+    in-out property <int> source: 0;
+    in property <[ProfileItem]> profiles;
+    in property <[string]> profile-names;
+    in-out property <int> profile: 0;
+    in property <bool> project-profiles;
+    in property <[string]> font-packs;
+    in-out property <int> font-pack: 0;
+    in-out property <string> characters;
+    in-out property <string> image-path;
+    in property <[string]> modes;
+    in property <int> mode;
+    in property <int> bit-order;
+    in property <int> polarity;
+    in property <int> container;
+    in property <int> radix;
+    in property <int> index-mode;
+    in property <int> bytes-per-line: 16;
+    in property <int> index-per-line: 16;
+    in property <bool> minimal;
+    in property <bool> compact;
+    in property <bool> uppercase;
+    in property <int> threshold-mode;
+    in property <int> threshold: 128;
+    in property <int> red: 255;
+    in property <int> green: 255;
+    in property <int> blue: 255;
+    in property <bool> invert;
+    in property <[string]> template-keys;
+    in property <[string]> template-labels;
+    in property <[string]> template-values;
+    in property <string> message;
+    in property <[string]> lines;
+    in-out property <bool> output-visible: true;
+    callback field(string /* key */, string /* value */);
+    callback source-chosen(int);
+    callback profile-chosen(int);
+    callback bench-action(string);
+}
+
+component ToolButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> tip;
+    in property <bool> checked;
+    callback clicked();
+    width: Metrics.control-height + 6px;
+    height: Metrics.control-height + 6px;
+    border-radius: Metrics.radius-control;
+    background: checked ? Theme.surface-selected : touch.has-hover ? Theme.surface-hover : transparent;
+    accessible-role: button;
+    accessible-label: tip;
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        name: root.icon;
+        tint: root.checked ? Theme.accent-hover : Theme.text-secondary;
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+component ToolRail inherits Panel {
+    width: Metrics.control-height + 22px;
+    VerticalLayout {
+        padding: 8px;
+        spacing: 4px;
+        alignment: start;
+        for name[index] in ["pencil", "eraser", "line", "rect", "fill", "select"]: ToolButton {
+            icon: name;
+            tip: I18n.tr(I18n.lang, ["pixel.tool.Pencil", "pixel.tool.Eraser", "pixel.tool.Line", "pixel.tool.Rectangle", "pixel.tool.Fill", "pixel.tool.Select"][index]);
+            checked: PixelModel.tool == index;
+            clicked => { PixelModel.tool = index; PixelModel.tool-chosen(index); }
+        }
+    }
+}
+
+export component PixelCanvas inherits Rectangle {
+    property <length> ruler: PixelModel.show-rulers ? 22px : 0px;
+    property <float> fit: max(1, min(40, floor(min((root.width - ruler - 32px) / max(1, PixelModel.doc-w) / 1px, (root.height - ruler - 32px) / max(1, PixelModel.doc-h) / 1px))));
+    property <length> px: (PixelModel.zoom > 0 ? PixelModel.zoom : fit) * 1px;
+    property <int> button: -1;
+    property <bool> panning;
+    property <bool> space-down;
+    property <length> pan-origin-x;
+    property <length> pan-origin-y;
+    property <length> pan-view-x;
+    property <length> pan-view-y;
+    property <int> last-x: -1;
+    property <int> last-y: -1;
+    background: Theme.surface-canvas;
+    clip: true;
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " ") { root.space-down = PixelModel.space-pan; return accept; }
+            if (event.modifiers.control) {
+                if (event.text == "z" || event.text == "Z") { PixelModel.action("undo"); return accept; }
+                if (event.text == "y" || event.text == "Y") { PixelModel.action("redo"); return accept; }
+                if (event.text == "c" || event.text == "C") { PixelModel.action("copy"); return accept; }
+                if (event.text == "x" || event.text == "X") { PixelModel.action("cut"); return accept; }
+                if (event.text == "v" || event.text == "V") { PixelModel.action("paste"); return accept; }
+                return reject;
+            }
+            if (event.text == Key.LeftArrow) { PixelModel.key("left"); return accept; }
+            if (event.text == Key.RightArrow) { PixelModel.key("right"); return accept; }
+            if (event.text == Key.UpArrow) { PixelModel.key("up"); return accept; }
+            if (event.text == Key.DownArrow) { PixelModel.key("down"); return accept; }
+            if (event.text == Key.Return) { PixelModel.key("enter"); return accept; }
+            if (event.text == Key.Delete || event.text == Key.Backspace) { PixelModel.key("delete"); return accept; }
+            if (event.text == Key.Escape) { PixelModel.key("escape"); return accept; }
+            if (event.text == "b" || event.text == "B") { PixelModel.tool = 0; PixelModel.tool-chosen(0); return accept; }
+            if (event.text == "m" || event.text == "M") { PixelModel.tool = 5; PixelModel.tool-chosen(5); return accept; }
+            if (event.text == "f" || event.text == "F") { PixelModel.tool = 4; PixelModel.tool-chosen(4); return accept; }
+            return reject;
+        }
+        key-released(event) => {
+            if (event.text == " ") { root.space-down = false; return accept; }
+            return reject;
+        }
+    }
+    flick := Flickable {
+        x: root.ruler;
+        y: root.ruler;
+        width: parent.width - root.ruler;
+        height: parent.height - root.ruler;
+        interactive: false;
+        content-width: max(self.width, PixelModel.doc-w * root.px + 32px);
+        content-height: max(self.height, PixelModel.doc-h * root.px + 32px);
+        host := Rectangle {
+            x: max(16px, (flick.width - PixelModel.doc-w * root.px) / 2);
+            y: max(16px, (flick.height - PixelModel.doc-h * root.px) / 2);
+            width: PixelModel.doc-w * root.px;
+            height: PixelModel.doc-h * root.px;
+            background: Theme.canvas-off;
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: PixelModel.canvas;
+                image-rendering: pixelated;
+            }
+            if PixelModel.show-grid && root.px >= 4px: Rectangle {
+                for column in PixelModel.doc-w + 1: Rectangle {
+                    x: column * root.px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.canvas-grid;
+                    opacity: column / 8 * 8 == column ? 0.9 : 0.45;
+                }
+                for row in PixelModel.doc-h + 1: Rectangle {
+                    y: row * root.px;
+                    height: 1px;
+                    width: parent.width;
+                    background: Theme.canvas-grid;
+                    opacity: row / 8 * 8 == row ? 0.9 : 0.45;
+                }
+            }
+            if PixelModel.has-selection: Rectangle {
+                x: PixelModel.sel-x * root.px;
+                y: PixelModel.sel-y * root.px;
+                width: PixelModel.sel-w * root.px;
+                height: PixelModel.sel-h * root.px;
+                border-width: 2px;
+                border-color: Theme.canvas-selection;
+                background: Theme.canvas-selection.with-alpha(0.12);
+            }
+            if root.last-x >= 0 && root.last-y >= 0 && root.px >= 4px: Rectangle {
+                x: root.last-x * root.px;
+                y: root.last-y * root.px;
+                width: root.px;
+                height: root.px;
+                border-width: 1px;
+                border-color: Theme.canvas-guide;
+            }
+            if PixelModel.has-key-cursor: Rectangle {
+                x: PixelModel.key-x * root.px - 1px;
+                y: PixelModel.key-y * root.px - 1px;
+                width: root.px + 2px;
+                height: root.px + 2px;
+                border-width: 2px;
+                border-color: Theme.canvas-guide;
+            }
+            touch := TouchArea {
+                mouse-cursor: root.panning ? grabbing : root.space-down ? grab : crosshair;
+                function cell-x() -> int { return floor(self.mouse-x / root.px); }
+                function cell-y() -> int { return floor(self.mouse-y / root.px); }
+                function view-x() -> length { return self.mouse-x + host.x + flick.content-x; }
+                function view-y() -> length { return self.mouse-y + host.y + flick.content-y; }
+                function track() {
+                    if (root.panning) {
+                        flick.content-x = min(0px, max(flick.width - flick.content-width, root.pan-view-x + (self.view-x() - root.pan-origin-x)));
+                        flick.content-y = min(0px, max(flick.height - flick.content-height, root.pan-view-y + (self.view-y() - root.pan-origin-y)));
+                        return;
+                    }
+                    let cx = self.cell-x();
+                    let cy = self.cell-y();
+                    if (cx == root.last-x && cy == root.last-y) { return; }
+                    root.last-x = cx >= 0 && cx < PixelModel.doc-w && cy >= 0 && cy < PixelModel.doc-h ? cx : -1;
+                    root.last-y = root.last-x >= 0 ? cy : -1;
+                    PixelModel.pointer(root.button >= 0 ? "move" : "hover", cx, cy, root.button);
+                }
+                changed mouse-x => { self.track(); }
+                changed mouse-y => { self.track(); }
+                changed has-hover => {
+                    if (!self.has-hover && root.button < 0) {
+                        root.last-x = -1;
+                        root.last-y = -1;
+                        PixelModel.pointer("leave", -1, -1, -1);
+                    }
+                }
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        keys.focus();
+                        if ((event.button == PointerEventButton.middle && PixelModel.middle-pan) || (event.button == PointerEventButton.left && root.space-down)) {
+                            root.panning = true;
+                            root.pan-origin-x = self.view-x();
+                            root.pan-origin-y = self.view-y();
+                            root.pan-view-x = flick.content-x;
+                            root.pan-view-y = flick.content-y;
+                            return;
+                        }
+                        if (event.button == PointerEventButton.left || event.button == PointerEventButton.right) {
+                            root.button = event.button == PointerEventButton.right ? 1 : 0;
+                            PixelModel.pointer("down", self.cell-x(), self.cell-y(), root.button);
+                        }
+                    } else if (event.kind == PointerEventKind.up) {
+                        if (root.panning) { root.panning = false; return; }
+                        if (root.button >= 0) {
+                            PixelModel.pointer("up", self.cell-x(), self.cell-y(), root.button);
+                            root.button = -1;
+                        }
+                    }
+                }
+                scroll-event(event) => {
+                    if (!PixelModel.wheel-zoom || event.delta-y == 0) { return reject; }
+                    PixelModel.zoom-step(event.delta-y > 0 ? 1 : -1);
+                    return accept;
+                }
+            }
+        }
+    }
+    if PixelModel.show-rulers: Rectangle {
+        x: root.ruler;
+        y: 0;
+        width: parent.width - root.ruler;
+        height: root.ruler;
+        background: Theme.surface-toolbar;
+        clip: true;
+        for tick in (PixelModel.doc-w / 8) + 1: Text {
+            x: host.x + flick.content-x + tick * 8 * root.px - 2px;
+            y: 4px;
+            text: tick * 8;
+            font-size: 10px;
+            color: Theme.text-muted;
+        }
+    }
+    if PixelModel.show-rulers: Rectangle {
+        x: 0;
+        y: root.ruler;
+        width: root.ruler;
+        height: parent.height - root.ruler;
+        background: Theme.surface-toolbar;
+        clip: true;
+        for tick in (PixelModel.doc-h / 8) + 1: Text {
+            x: 3px;
+            y: host.y + flick.content-y + tick * 8 * root.px - 6px;
+            text: tick * 8;
+            font-size: 10px;
+            color: Theme.text-muted;
+        }
+    }
+}
+
+component Field inherits HorizontalLayout {
+    in property <string> label;
+    in property <length> label-width: 96px;
+    spacing: 6px;
+    Label { text: root.label; width: root.label-width; }
+    @children
+}
+
+component ActionGrid inherits GridLayout {
+    spacing: 6px;
+}
+
+component PixelInspector inherits Panel {
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        TabStrip {
+            items: [I18n.tr(I18n.lang, "pixel.title"), I18n.tr(I18n.lang, "bench.title")];
+            current <=> PixelModel.inspector-tab;
+        }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                spacing: 8px;
+                if PixelModel.inspector-tab == 0: VerticalLayout {
+                    spacing: 8px;
+                    SectionTitle { text: I18n.tr(I18n.lang, "pixel.preview"); }
+                    CheckBox { text: I18n.tr(I18n.lang, "pixel.preview"); checked <=> PixelModel.show-preview; }
+                    if PixelModel.show-preview: Rectangle {
+                        height: min(160px, max(40px, PixelModel.doc-h * 2px + 16px));
+                        background: Theme.canvas-off;
+                        border-radius: Metrics.radius-control;
+                        clip: true;
+                        Image {
+                            source: PixelModel.canvas;
+                            image-rendering: pixelated;
+                            width: PixelModel.doc-w * 2px <= parent.width - 16px ? PixelModel.doc-w * 2px : PixelModel.doc-w * 1px;
+                            height: PixelModel.doc-w * 2px <= parent.width - 16px ? PixelModel.doc-h * 2px : PixelModel.doc-h * 1px;
+                        }
+                    }
+                    Caption { text: PixelModel.info-text; }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "pixel.tool.Select"); }
+                    Caption { text: PixelModel.selection-text; }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Button { text: I18n.tr(I18n.lang, "pixel.action.copy"); enabled: PixelModel.has-selection; horizontal-stretch: 1; clicked => { PixelModel.action("copy"); } }
+                        Button { text: I18n.tr(I18n.lang, "pixel.action.cut"); enabled: PixelModel.has-selection; horizontal-stretch: 1; clicked => { PixelModel.action("cut"); } }
+                        Button { text: I18n.tr(I18n.lang, "pixel.action.paste"); enabled: PixelModel.has-clipboard; horizontal-stretch: 1; clicked => { PixelModel.action("paste"); } }
+                    }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "pixel.section.text_font"); }
+                    Button { text: I18n.tr(I18n.lang, "pixel.action.insert_bitmap_text"); clicked => { PixelModel.action("insert-text"); } }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.brush");
+                        SpinBox { value: PixelModel.brush-size; minimum: 1; maximum: 8; edited(v) => { PixelModel.brush-chosen(v); } }
+                    }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "pixel.section.transform"); }
+                    ActionGrid {
+                        Row {
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.invert"); clicked => { PixelModel.action("invert"); } }
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.flip_h"); clicked => { PixelModel.action("flip-h"); } }
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.flip_v"); clicked => { PixelModel.action("flip-v"); } }
+                        }
+                        Row {
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.rotate90"); clicked => { PixelModel.action("rotate90"); } }
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.rotate180"); clicked => { PixelModel.action("rotate180"); } }
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.rotate270"); clicked => { PixelModel.action("rotate270"); } }
+                        }
+                        Row {
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.canvas_size"); clicked => { PixelModel.action("canvas-size"); } }
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.crop_selection"); enabled: PixelModel.has-selection; clicked => { PixelModel.action("crop"); } }
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.clear"); role: ButtonRole.danger; clicked => { PixelModel.action("clear"); } }
+                        }
+                    }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "pixel.tab.export"); }
+                    ActionGrid {
+                        Row {
+                            Button { text: I18n.tr(I18n.lang, "bench.new"); clicked => { PixelModel.action("new"); } }
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.open"); clicked => { PixelModel.action("open"); } }
+                        }
+                        Row {
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.save"); role: ButtonRole.primary; clicked => { PixelModel.action("save"); } }
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.export_bin"); clicked => { PixelModel.action("save-bin"); } }
+                        }
+                        Row {
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.export_c"); clicked => { PixelModel.action("save-c"); } }
+                            Button { text: I18n.tr(I18n.lang, "pixel.action.font"); clicked => { PixelModel.action("font-generator"); } }
+                        }
+                    }
+                }
+                if PixelModel.inspector-tab == 1: VerticalLayout {
+                    spacing: 8px;
+                    SectionTitle { text: I18n.tr(I18n.lang, "bench.group.source"); }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.source");
+                        ComboBox { model: OutputModel.sources; current-index <=> OutputModel.source; selected => { OutputModel.source-chosen(self.current-index); } }
+                    }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.profile");
+                        ComboBox { model: OutputModel.profile-names; current-index <=> OutputModel.profile; selected => { OutputModel.profile-chosen(self.current-index); } }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Button { text: I18n.tr(I18n.lang, "bench.save_as"); enabled: OutputModel.project-profiles; horizontal-stretch: 1; clicked => { OutputModel.bench-action("save-as"); } }
+                        Button { text: I18n.tr(I18n.lang, "bench.delete"); enabled: OutputModel.project-profiles; horizontal-stretch: 1; clicked => { OutputModel.bench-action("delete-profile"); } }
+                    }
+                    Caption { text: OutputModel.project-profiles ? I18n.tr(I18n.lang, "bench.project_profile") : I18n.tr(I18n.lang, "bench.temporary_profile"); }
+                    if OutputModel.source == 3: Field {
+                        label: "Font Pack";
+                        ComboBox { model: OutputModel.font-packs; current-index <=> OutputModel.font-pack; selected => { OutputModel.bench-action("generate"); } }
+                    }
+                    if OutputModel.source == 3: Field {
+                        label: I18n.tr(I18n.lang, "bench.characters");
+                        LineEdit { text <=> OutputModel.characters; placeholder-text: I18n.tr(I18n.lang, "bench.characters_hint"); edited => { OutputModel.bench-action("generate"); } }
+                    }
+                    if OutputModel.source == 4: VerticalLayout {
+                        spacing: 8px;
+                        SectionTitle { text: I18n.tr(I18n.lang, "bench.group.raster"); }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            LineEdit { text <=> OutputModel.image-path; placeholder-text: I18n.tr(I18n.lang, "bench.image_hint"); accepted => { OutputModel.bench-action("generate"); } }
+                            Button { text: I18n.tr(I18n.lang, "bench.browse"); clicked => { OutputModel.bench-action("browse-image"); } }
+                        }
+                        Field {
+                            label: I18n.tr(I18n.lang, "pixel.import.threshold_mode");
+                            ComboBox { model: [I18n.tr(I18n.lang, "bench.threshold.luma"), I18n.tr(I18n.lang, "bench.threshold.rgb_all")]; current-index: OutputModel.threshold-mode; selected => { OutputModel.field("raster.threshold_mode", self.current-index == 1 ? "rgb_all" : "luma"); } }
+                        }
+                        if OutputModel.threshold-mode == 0: Field {
+                            label: I18n.tr(I18n.lang, "pixel.import.threshold");
+                            SpinBox { value: OutputModel.threshold; minimum: 0; maximum: 255; edited(v) => { OutputModel.field("raster.luma_threshold", v); } }
+                        }
+                        if OutputModel.threshold-mode == 1: VerticalLayout {
+                            spacing: 6px;
+                            Field { label: "R"; SpinBox { value: OutputModel.red; minimum: 0; maximum: 255; edited(v) => { OutputModel.field("raster.red_threshold", v); } } }
+                            Field { label: "G"; SpinBox { value: OutputModel.green; minimum: 0; maximum: 255; edited(v) => { OutputModel.field("raster.green_threshold", v); } } }
+                            Field { label: "B"; SpinBox { value: OutputModel.blue; minimum: 0; maximum: 255; edited(v) => { OutputModel.field("raster.blue_threshold", v); } } }
+                        }
+                        CheckBox { text: I18n.tr(I18n.lang, "bench.invert_source"); checked: OutputModel.invert; toggled => { OutputModel.field("raster.invert_source", self.checked ? "true" : "false"); } }
+                    }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "bench.group.encoding"); }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.mode");
+                        ComboBox { model: OutputModel.modes; current-index: OutputModel.mode; selected => { OutputModel.field("mode", self.current-index); } }
+                    }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.bit_order");
+                        ComboBox { model: [I18n.tr(I18n.lang, "bench.msb_first"), I18n.tr(I18n.lang, "bench.lsb_first")]; current-index: OutputModel.bit-order; selected => { OutputModel.field("encoding.bit_order", self.current-index == 0 ? "msb_first" : "lsb_first"); } }
+                    }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.polarity");
+                        ComboBox { model: [I18n.tr(I18n.lang, "bench.one_is_lit"), I18n.tr(I18n.lang, "bench.zero_is_lit")]; current-index: OutputModel.polarity; selected => { OutputModel.field("encoding.polarity", self.current-index == 0 ? "one_is_lit" : "zero_is_lit"); } }
+                    }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "bench.group.format"); }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.container");
+                        ComboBox { model: [I18n.tr(I18n.lang, "bench.container.text"), I18n.tr(I18n.lang, "bench.container.binary")]; current-index: OutputModel.container; selected => { OutputModel.field("text.container", self.current-index == 0 ? "text" : "binary"); } }
+                    }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.radix");
+                        ComboBox { model: [I18n.tr(I18n.lang, "bench.radix.hex"), I18n.tr(I18n.lang, "bench.radix.decimal")]; current-index: OutputModel.radix; selected => { OutputModel.field("text.radix", self.current-index == 0 ? "hex" : "decimal"); } }
+                    }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.bytes_per_line");
+                        SpinBox { value: OutputModel.bytes-per-line; minimum: 1; maximum: 256; edited(v) => { OutputModel.field("text.bytes_per_line", v); } }
+                    }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.index_per_line");
+                        SpinBox { value: OutputModel.index-per-line; minimum: 1; maximum: 256; edited(v) => { OutputModel.field("text.index_entries_per_line", v); } }
+                    }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.index");
+                        ComboBox { model: [I18n.tr(I18n.lang, "bench.index.none"), I18n.tr(I18n.lang, "bench.index.inline"), I18n.tr(I18n.lang, "bench.index.sidecar")]; current-index: OutputModel.index-mode; selected => { OutputModel.field("text.index_mode", ["none", "inline", "sidecar"][self.current-index]); } }
+                    }
+                    CheckBox { text: I18n.tr(I18n.lang, "bench.minimal"); checked: OutputModel.minimal; toggled => { OutputModel.field("text.minimal_data", self.checked ? "true" : "false"); } }
+                    CheckBox { text: I18n.tr(I18n.lang, "bench.compact"); checked: OutputModel.compact; toggled => { OutputModel.field("text.compact_spacing", self.checked ? "true" : "false"); } }
+                    CheckBox { text: I18n.tr(I18n.lang, "bench.uppercase"); checked: OutputModel.uppercase; toggled => { OutputModel.field("text.uppercase", self.checked ? "true" : "false"); } }
+                    for key[index] in OutputModel.template-keys: Field {
+                        label: OutputModel.template-labels[index];
+                        LineEdit { text: OutputModel.template-values[index]; accepted(t) => { OutputModel.field("text." + key, t); } }
+                    }
+                    Caption { text: I18n.tr(I18n.lang, "bench.template_hint"); }
+                    Divider { }
+                    Caption { text: OutputModel.message; }
+                }
+            }
+        }
+    }
+}
+
+component OutputPanel inherits Panel {
+    VerticalLayout {
+        padding: 10px;
+        spacing: 6px;
+        HorizontalLayout {
+            spacing: 6px;
+            SectionTitle { text: I18n.tr(I18n.lang, "bench.output"); vertical-alignment: center; }
+            Caption { text: OutputModel.message; vertical-alignment: center; wrap: no-wrap; overflow: elide; horizontal-stretch: 1; }
+            Button { text: OutputModel.output-visible ? I18n.tr(I18n.lang, "bench.collapse") : I18n.tr(I18n.lang, "bench.expand"); role: ButtonRole.ghost; clicked => { OutputModel.output-visible = !OutputModel.output-visible; } }
+            Button { text: I18n.tr(I18n.lang, "bench.generate"); role: ButtonRole.primary; clicked => { OutputModel.bench-action("generate"); } }
+            Button { text: I18n.tr(I18n.lang, "bench.copy"); clicked => { OutputModel.bench-action("copy"); } }
+            Button { text: I18n.tr(I18n.lang, "bench.save"); clicked => { OutputModel.bench-action("save"); } }
+            Button { text: I18n.tr(I18n.lang, "bench.clear"); clicked => { OutputModel.bench-action("clear"); } }
+        }
+        if OutputModel.output-visible: Rectangle {
+            vertical-stretch: 1;
+            background: Theme.surface-canvas;
+            border-radius: Metrics.radius-control;
+            ListView {
+                for line in OutputModel.lines: Text {
+                    text: line;
+                    font-family: "Consolas";
+                    font-size: 12px;
+                    color: Theme.text-primary;
+                    height: 16px;
+                }
+            }
+        }
+    }
+}
+
+component DialogButtons inherits VerticalLayout {
+    in property <string> accept-text;
+    spacing: 6px;
+    if PixelModel.dialog-error != "": Text { text: PixelModel.dialog-error; color: Theme.status-error; font-size: Metrics.font-small; wrap: word-wrap; }
+    HorizontalLayout {
+        alignment: end;
+        spacing: 8px;
+        Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { PixelModel.dialog = 0; } }
+        Button { text: root.accept-text; role: ButtonRole.primary; clicked => { PixelModel.dialog-accepted(); } }
+    }
+}
+
+component ResizeDialog inherits Scrim {
+    Dialog {
+        height: 230px;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 10px;
+            SectionTitle { text: I18n.tr(I18n.lang, "pixel.canvas_size_title"); }
+            Field { label: I18n.tr(I18n.lang, "pixel.width"); SpinBox { value <=> PixelModel.resize-w; minimum: 1; maximum: 4096; } }
+            Field { label: I18n.tr(I18n.lang, "pixel.height"); SpinBox { value <=> PixelModel.resize-h; minimum: 1; maximum: 4096; } }
+            Field {
+                label: I18n.tr(I18n.lang, "pixel.anchor");
+                ComboBox {
+                    model: [I18n.tr(I18n.lang, "pixel.anchor.top_left"), I18n.tr(I18n.lang, "pixel.anchor.top"), I18n.tr(I18n.lang, "pixel.anchor.top_right"), I18n.tr(I18n.lang, "pixel.anchor.left"), I18n.tr(I18n.lang, "pixel.anchor.center"), I18n.tr(I18n.lang, "pixel.anchor.right"), I18n.tr(I18n.lang, "pixel.anchor.bottom_left"), I18n.tr(I18n.lang, "pixel.anchor.bottom"), I18n.tr(I18n.lang, "pixel.anchor.bottom_right")];
+                    current-index <=> PixelModel.resize-anchor;
+                }
+            }
+            DialogButtons { accept-text: I18n.tr(I18n.lang, "pixel.resize"); }
+        }
+    }
+}
+
+component ImportDialog inherits Scrim {
+    Dialog {
+        width: 560px;
+        height: 470px;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 10px;
+            SectionTitle { text: I18n.tr(I18n.lang, "pixel.import.title"); }
+            Caption { text: PixelModel.import-path; wrap: no-wrap; overflow: elide; }
+            Field {
+                label: I18n.tr(I18n.lang, "pixel.import.threshold_mode");
+                ComboBox { model: [I18n.tr(I18n.lang, "bench.threshold.luma"), I18n.tr(I18n.lang, "bench.threshold.rgb_all")]; current-index <=> PixelModel.import-mode; selected => { PixelModel.import-changed(); } }
+            }
+            if PixelModel.import-mode == 0: Field {
+                label: I18n.tr(I18n.lang, "pixel.import.threshold");
+                SpinBox { value <=> PixelModel.import-threshold; minimum: 0; maximum: 255; edited => { PixelModel.import-changed(); } }
+            }
+            if PixelModel.import-mode == 1: HorizontalLayout {
+                spacing: 6px;
+                Label { text: "R"; } SpinBox { value <=> PixelModel.import-red; minimum: 0; maximum: 255; edited => { PixelModel.import-changed(); } }
+                Label { text: "G"; } SpinBox { value <=> PixelModel.import-green; minimum: 0; maximum: 255; edited => { PixelModel.import-changed(); } }
+                Label { text: "B"; } SpinBox { value <=> PixelModel.import-blue; minimum: 0; maximum: 255; edited => { PixelModel.import-changed(); } }
+            }
+            CheckBox { text: I18n.tr(I18n.lang, "pixel.import.invert"); checked <=> PixelModel.import-invert; toggled => { PixelModel.import-changed(); } }
+            Rectangle {
+                vertical-stretch: 1;
+                background: Theme.canvas-off;
+                border-radius: Metrics.radius-control;
+                clip: true;
+                Image { source: PixelModel.import-preview; image-rendering: pixelated; width: parent.width - 16px; height: parent.height - 16px; image-fit: contain; }
+            }
+            Caption { text: PixelModel.import-info; }
+            DialogButtons { accept-text: I18n.tr(I18n.lang, "pixel.import.apply"); }
+        }
+    }
+}
+
+component TextDialog inherits Scrim {
+    Dialog {
+        height: 300px;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 10px;
+            SectionTitle { text: I18n.tr(I18n.lang, "pixel.insert_title"); }
+            Field { label: I18n.tr(I18n.lang, "pixel.font_pack"); ComboBox { model: PixelModel.font-packs; current-index <=> PixelModel.text-font; } }
+            Field { label: I18n.tr(I18n.lang, "pixel.text"); LineEdit { text <=> PixelModel.text-value; } }
+            HorizontalLayout {
+                spacing: 6px;
+                Label { text: "X"; } SpinBox { value <=> PixelModel.text-x; minimum: -4096; maximum: 4096; }
+                Label { text: "Y"; } SpinBox { value <=> PixelModel.text-y; minimum: -4096; maximum: 4096; }
+                Label { text: I18n.tr(I18n.lang, "pixel.tracking"); } SpinBox { value <=> PixelModel.text-tracking; minimum: -16; maximum: 64; }
+            }
+            Caption { text: I18n.tr(I18n.lang, "pixel.font_hint"); }
+            DialogButtons { accept-text: I18n.tr(I18n.lang, "dialog.ok"); }
+        }
+    }
+}
+
+export component PixelDialogs inherits Rectangle {
+    if PixelModel.dialog == 1: ResizeDialog { width: root.width; height: root.height; }
+    if PixelModel.dialog == 2: ImportDialog { width: root.width; height: root.height; }
+    if PixelModel.dialog == 3: TextDialog { width: root.width; height: root.height; }
+}
+
+export component PixelView inherits VerticalLayout {
+    spacing: 8px;
+    HorizontalLayout {
+        spacing: 8px;
+        vertical-stretch: 3;
+        ToolRail { }
+        Panel {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                padding: 10px;
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    SectionTitle { text: PixelModel.title; vertical-alignment: center; }
+                    StatusPill { text: PixelModel.doc-w + " × " + PixelModel.doc-h; }
+                    Rectangle { horizontal-stretch: 1; }
+                    Label { text: I18n.tr(I18n.lang, "pixel.zoom"); }
+                    ComboBox {
+                        model: ["Fit", "4×", "6×", "8×", "10×", "12×", "16×", "20×", "24×", "32×", "40×"];
+                        current-index <=> PixelModel.zoom-index;
+                        selected => { PixelModel.zoom-chosen(self.current-index); }
+                    }
+                    CheckBox { text: I18n.tr(I18n.lang, "toggle.grid"); checked <=> PixelModel.show-grid; }
+                    CheckBox { text: I18n.tr(I18n.lang, "toggle.rulers"); checked <=> PixelModel.show-rulers; }
+                }
+                PixelCanvas { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Caption { text: PixelModel.cursor-text; wrap: no-wrap; horizontal-stretch: 1; }
+                    Caption { text: I18n.tr(I18n.lang, "pixel.input_hint"); wrap: no-wrap; overflow: elide; horizontal-stretch: 2; horizontal-alignment: right; }
+                }
+            }
+        }
+        PixelInspector { width: 360px; }
+    }
+    OutputPanel { vertical-stretch: OutputModel.output-visible ? 1 : 0; height: OutputModel.output-visible ? 220px : 52px; }
+}

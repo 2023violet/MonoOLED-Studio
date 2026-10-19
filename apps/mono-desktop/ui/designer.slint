@@ -1,0 +1,511 @@
+// Scene Designer workspace: Navigator | OLED canvas | Inspector, plus the drawer.
+import { ScrollView, LineEdit, SpinBox, ComboBox, CheckBox, ListView } from "std-widgets.slint";
+import { Theme, Metrics } from "theme.slint";
+import { I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, ListRow } from "widgets.slint";
+
+export struct ScreenItem { id: string, label: string, active: bool }
+export struct ElementItem { id: string, kind: string, detail: string, selected: bool, hidden: bool, locked: bool }
+export struct AssetItem { path: string, detail: string }
+export struct FindingItem { severity: string, code: string, message: string }
+export struct OverlayBox { id: string, x: int, y: int, w: int, h: int, selected: bool, primary: bool, hidden: bool }
+export struct StateVar { name: string, kind: string, value: string, options: [string], current: int, minimum: int, maximum: int }
+
+export global DesignerModel {
+    // Navigator
+    in property <[ScreenItem]> screens;
+    in property <[ElementItem]> elements;
+    in property <[AssetItem]> assets;
+    in property <[string]> font-packs;
+    in-out property <int> navigator-tab: 0;
+    in-out property <string> asset-filter;
+    // Canvas
+    in property <image> canvas;
+    in property <int> doc-w: 128;
+    in property <int> doc-h: 32;
+    in-out property <float> zoom: 0;
+    in-out property <bool> show-grid: true;
+    in-out property <bool> show-bounds: true;
+    in-out property <bool> show-rulers: true;
+    in-out property <bool> show-zones: false;
+    in-out property <int> zoom-index: 0;
+    in property <[OverlayBox]> boxes;
+    in property <[int]> guides-x;
+    in property <[int]> guides-y;
+    in property <string> framebuffer-summary;
+    in property <string> canvas-subtitle;
+    // Inspector
+    in-out property <int> inspector-tab: 0;
+    in property <bool> has-selection;
+    in property <int> selection-count;
+    in property <string> element-id;
+    in property <string> element-type;
+    in property <string> element-asset;
+    in property <int> geom-x;
+    in property <int> geom-y;
+    in property <int> geom-w;
+    in property <int> geom-h;
+    in property <bool> edit-x;
+    in property <bool> edit-y;
+    in property <bool> edit-w;
+    in property <bool> edit-h;
+    in property <bool> element-locked;
+    in property <bool> element-hidden;
+    in property <string> measure-text;
+    in-out property <int> align-reference: 0;
+    in property <[StateVar]> states;
+    in property <string> runtime-text;
+    in property <bool> playing;
+    in property <int> canvas-w-setting: 128;
+    in property <int> canvas-h-setting: 32;
+    // Drawer
+    in-out property <int> drawer-tab: 0;
+    in property <[FindingItem]> findings;
+    in property <string> findings-summary;
+    in property <PillTone> findings-tone: PillTone.neutral;
+    in property <string> diff-summary;
+    in property <string> diff-detail;
+    in property <[string]> log-lines;
+
+    callback navigator-action(string /* action */, string /* id */);
+    callback element-clicked(string /* id */, bool /* additive */);
+    callback geometry-edited(string /* field */, int /* value */);
+    callback inspector-action(string);
+    callback state-edited(string /* name */, string /* value */);
+    callback canvas-pointer(string /* phase: down|move|up|hover */, float /* doc x */, float /* doc y */, bool /* shift */, bool /* ctrl */);
+    callback canvas-key(string);
+    callback canvas-size-edited(int, int);
+    callback zoom-chosen(int);
+}
+
+component NumberField inherits HorizontalLayout {
+    in property <string> label;
+    in property <int> value;
+    in property <bool> enabled: true;
+    callback edited(int);
+    spacing: 6px;
+    Label { text: root.label; width: 18px; }
+    SpinBox {
+        enabled: root.enabled;
+        value: root.value;
+        minimum: -4096;
+        maximum: 4096;
+        edited(v) => { root.edited(v); }
+    }
+}
+
+component Navigator inherits Panel {
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        SectionTitle { text: I18n.tr(I18n.lang, "panel.workspace"); }
+        TabStrip {
+            items: [I18n.tr(I18n.lang, "panel.screens"), I18n.tr(I18n.lang, "panel.elements"), I18n.tr(I18n.lang, "panel.assets"), I18n.tr(I18n.lang, "panel.fonts")];
+            current <=> DesignerModel.navigator-tab;
+        }
+        Rectangle {
+            background: Theme.surface-toolbar;
+            border-radius: Metrics.radius-control;
+            vertical-stretch: 1;
+            if DesignerModel.navigator-tab == 0: ListView {
+                for screen in DesignerModel.screens: ListRow {
+                    text: screen.label;
+                    detail: screen.id;
+                    selected: screen.active;
+                    clicked => { DesignerModel.navigator-action("open-screen", screen.id); }
+                }
+            }
+            if DesignerModel.navigator-tab == 1: ListView {
+                for element in DesignerModel.elements: ListRow {
+                    text: element.id;
+                    detail: element.kind;
+                    selected: element.selected;
+                    muted: element.hidden;
+                    clicked => { DesignerModel.element-clicked(element.id, false); }
+                }
+            }
+            if DesignerModel.navigator-tab == 2: VerticalLayout {
+                padding: 6px;
+                spacing: 6px;
+                LineEdit {
+                    placeholder-text: I18n.tr(I18n.lang, "assets.filter");
+                    text <=> DesignerModel.asset-filter;
+                    edited(t) => { DesignerModel.navigator-action("filter-assets", t); }
+                }
+                ListView {
+                    for asset in DesignerModel.assets: ListRow {
+                        text: asset.path;
+                        detail: asset.detail;
+                        double-clicked => { DesignerModel.navigator-action("place-asset", asset.path); }
+                    }
+                }
+            }
+            if DesignerModel.navigator-tab == 3: ListView {
+                for pack in DesignerModel.font-packs: ListRow {
+                    text: pack;
+                    double-clicked => { DesignerModel.navigator-action("open-font-pack", pack); }
+                }
+            }
+        }
+        if DesignerModel.navigator-tab == 0: VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 6px;
+                Button { text: I18n.tr(I18n.lang, "action.new_screen"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("new-screen", ""); } }
+                Button { text: I18n.tr(I18n.lang, "action.duplicate"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("duplicate-screen", ""); } }
+            }
+            Button { text: I18n.tr(I18n.lang, "action.delete"); role: ButtonRole.danger; clicked => { DesignerModel.navigator-action("delete-screen", ""); } }
+        }
+        if DesignerModel.navigator-tab == 1: HorizontalLayout {
+            spacing: 6px;
+            Button { text: I18n.tr(I18n.lang, "action.add_placeholder"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("add-placeholder", ""); } }
+            Button { text: I18n.tr(I18n.lang, "action.delete"); role: ButtonRole.danger; horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("delete-elements", ""); } }
+        }
+        if DesignerModel.navigator-tab == 2: Button { text: I18n.tr(I18n.lang, "asset.import"); clicked => { DesignerModel.navigator-action("import-asset", ""); } }
+        if DesignerModel.navigator-tab == 3: HorizontalLayout {
+            spacing: 6px;
+            Button { text: I18n.tr(I18n.lang, "font.new_title"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("new-font-pack", ""); } }
+            Button { text: I18n.tr(I18n.lang, "font.rescan"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("rescan-fonts", ""); } }
+        }
+    }
+}
+
+// Pixel-exact OLED canvas with editor-only overlays (grid, bounds, rulers, guides).
+export component OledCanvas inherits Rectangle {
+    in property <image> source;
+    in property <int> doc-w;
+    in property <int> doc-h;
+    in property <float> zoom;
+    in property <bool> grid;
+    in property <bool> rulers;
+    in property <bool> bounds;
+    in property <[OverlayBox]> boxes;
+    in property <[int]> guides-x;
+    in property <[int]> guides-y;
+    callback pointer(string, float, float, bool, bool);
+    callback key(string);
+    property <length> ruler: rulers ? 22px : 0px;
+    // zoom 0 = Auto: largest integer zoom that fits the visible area.
+    property <float> fit: max(1, floor(min((root.width - ruler - 32px) / max(1, doc-w) / 1px, (root.height - ruler - 32px) / max(1, doc-h) / 1px)));
+    property <length> px: (zoom > 0 ? zoom : fit) * 1px;
+    background: Theme.surface-canvas;
+    clip: true;
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Delete || event.text == Key.Backspace) { root.key("delete"); return accept; }
+            if (event.text == Key.LeftArrow) { root.key(event.modifiers.shift ? "left10" : "left"); return accept; }
+            if (event.text == Key.RightArrow) { root.key(event.modifiers.shift ? "right10" : "right"); return accept; }
+            if (event.text == Key.UpArrow) { root.key(event.modifiers.shift ? "up10" : "up"); return accept; }
+            if (event.text == Key.DownArrow) { root.key(event.modifiers.shift ? "down10" : "down"); return accept; }
+            if (event.text == Key.Escape) { root.key("escape"); return accept; }
+            return reject;
+        }
+    }
+    flick := Flickable {
+        x: root.ruler;
+        y: root.ruler;
+        width: parent.width - root.ruler;
+        height: parent.height - root.ruler;
+        content-width: max(self.width, root.doc-w * root.px + 32px);
+        content-height: max(self.height, root.doc-h * root.px + 32px);
+        canvas-host := Rectangle {
+            x: max(16px, (flick.width - root.doc-w * root.px) / 2);
+            y: max(16px, (flick.height - root.doc-h * root.px) / 2);
+            width: root.doc-w * root.px;
+            height: root.doc-h * root.px;
+            background: Theme.canvas-off;
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.source;
+                image-rendering: pixelated;
+            }
+            if root.grid && root.px >= 4px: Rectangle {
+                for column in root.doc-w + 1: Rectangle {
+                    x: column * root.px;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.canvas-grid;
+                    opacity: 0.55;
+                }
+                for row in root.doc-h + 1: Rectangle {
+                    y: row * root.px;
+                    height: 1px;
+                    width: parent.width;
+                    background: Theme.canvas-grid;
+                    opacity: 0.55;
+                }
+            }
+            for box in root.boxes: Rectangle {
+                visible: root.bounds || box.selected;
+                x: box.x * root.px;
+                y: box.y * root.px;
+                width: max(1px, box.w * root.px);
+                height: max(1px, box.h * root.px);
+                border-width: box.selected ? 2px : 1px;
+                border-color: box.selected ? Theme.canvas-selection : Theme.text-muted;
+                opacity: box.hidden ? 0.35 : 1;
+                Rectangle {
+                    visible: box.primary;
+                    x: -3px;
+                    y: -3px;
+                    width: 6px;
+                    height: 6px;
+                    background: Theme.canvas-selection;
+                }
+            }
+            for gx in root.guides-x: Rectangle {
+                x: gx * root.px;
+                width: 1px;
+                height: parent.height;
+                background: Theme.canvas-guide;
+            }
+            for gy in root.guides-y: Rectangle {
+                y: gy * root.px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.canvas-guide;
+            }
+            pointer := TouchArea {
+                mouse-cursor: crosshair;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                        keys.focus();
+                        root.pointer("down", self.mouse-x / root.px, self.mouse-y / root.px, event.modifiers.shift, event.modifiers.control);
+                    } else if (event.kind == PointerEventKind.up && event.button == PointerEventButton.left) {
+                        root.pointer("up", self.mouse-x / root.px, self.mouse-y / root.px, event.modifiers.shift, event.modifiers.control);
+                    }
+                }
+                moved => {
+                    root.pointer(self.pressed ? "move" : "hover", self.mouse-x / root.px, self.mouse-y / root.px, false, false);
+                }
+            }
+        }
+    }
+    if root.rulers: Rectangle {
+        x: root.ruler;
+        y: 0;
+        width: parent.width - root.ruler;
+        height: root.ruler;
+        background: Theme.surface-toolbar;
+        clip: true;
+        for tick in (root.doc-w / 8) + 1: Text {
+            x: canvas-host.x + flick.content-x + tick * 8 * root.px - 2px;
+            y: 4px;
+            text: tick * 8;
+            font-size: 10px;
+            color: Theme.text-muted;
+        }
+    }
+    if root.rulers: Rectangle {
+        x: 0;
+        y: root.ruler;
+        width: root.ruler;
+        height: parent.height - root.ruler;
+        background: Theme.surface-toolbar;
+        clip: true;
+        for tick in (root.doc-h / 8) + 1: Text {
+            x: 3px;
+            y: canvas-host.y + flick.content-y + tick * 8 * root.px - 6px;
+            text: tick * 8;
+            font-size: 10px;
+            color: Theme.text-muted;
+        }
+    }
+}
+
+component CanvasPanel inherits Panel {
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        SectionTitle { text: I18n.tr(I18n.lang, "panel.canvas"); }
+        Caption { text: DesignerModel.canvas-subtitle; }
+        HorizontalLayout {
+            spacing: 10px;
+            StatusPill { text: DesignerModel.framebuffer-summary; tone: PillTone.neutral; }
+            Rectangle { horizontal-stretch: 1; }
+            Label { text: I18n.tr(I18n.lang, "pixel.zoom"); }
+            ComboBox {
+                model: ["Auto", "1×", "2×", "4×", "6×", "8×", "12×", "16×"];
+                current-index <=> DesignerModel.zoom-index;
+                selected(v) => { DesignerModel.zoom-chosen(self.current-index); }
+            }
+            CheckBox { text: I18n.tr(I18n.lang, "toggle.grid"); checked <=> DesignerModel.show-grid; }
+            CheckBox { text: I18n.tr(I18n.lang, "toggle.bounds"); checked <=> DesignerModel.show-bounds; }
+            CheckBox { text: I18n.tr(I18n.lang, "toggle.rulers"); checked <=> DesignerModel.show-rulers; }
+        }
+        OledCanvas {
+            vertical-stretch: 1;
+            source: DesignerModel.canvas;
+            doc-w: DesignerModel.doc-w;
+            doc-h: DesignerModel.doc-h;
+            zoom: DesignerModel.zoom;
+            grid: DesignerModel.show-grid;
+            rulers: DesignerModel.show-rulers;
+            bounds: DesignerModel.show-bounds;
+            boxes: DesignerModel.boxes;
+            guides-x: DesignerModel.guides-x;
+            guides-y: DesignerModel.guides-y;
+            pointer(phase, x, y, shift, ctrl) => { DesignerModel.canvas-pointer(phase, x, y, shift, ctrl); }
+            key(k) => { DesignerModel.canvas-key(k); }
+        }
+        Caption { text: I18n.tr(I18n.lang, "canvas.overlay_hint"); }
+    }
+}
+
+component Inspector inherits Panel {
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        TabStrip {
+            items: [I18n.tr(I18n.lang, "panel.properties"), I18n.tr(I18n.lang, "preview.state"), I18n.tr(I18n.lang, "inspector.canvas")];
+            current <=> DesignerModel.inspector-tab;
+        }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+                if DesignerModel.inspector-tab == 0: VerticalLayout {
+                    spacing: 8px;
+                    SectionTitle { text: I18n.tr(I18n.lang, "panel.properties"); }
+                    if !DesignerModel.has-selection: Caption { text: I18n.tr(I18n.lang, "inspector.no_selection"); }
+                    if DesignerModel.has-selection: VerticalLayout {
+                        spacing: 8px;
+                        HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "property.id"); width: 64px; } LineEdit { text: DesignerModel.element-id; read-only: true; } }
+                        HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "property.type"); width: 64px; } LineEdit { text: DesignerModel.element-type; read-only: true; } }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            NumberField { label: "X"; value: DesignerModel.geom-x; enabled: DesignerModel.edit-x; edited(v) => { DesignerModel.geometry-edited("x", v); } }
+                            NumberField { label: "Y"; value: DesignerModel.geom-y; enabled: DesignerModel.edit-y; edited(v) => { DesignerModel.geometry-edited("y", v); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            NumberField { label: "W"; value: DesignerModel.geom-w; enabled: DesignerModel.edit-w; edited(v) => { DesignerModel.geometry-edited("w", v); } }
+                            NumberField { label: "H"; value: DesignerModel.geom-h; enabled: DesignerModel.edit-h; edited(v) => { DesignerModel.geometry-edited("h", v); } }
+                        }
+                        if !DesignerModel.edit-w && DesignerModel.element-type == "image": Caption { text: I18n.tr(I18n.lang, "property.native_size_locked"); }
+                        HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "property.asset"); width: 64px; } LineEdit { text: DesignerModel.element-asset; read-only: true; } }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            CheckBox { text: I18n.tr(I18n.lang, "property.locked"); checked: DesignerModel.element-locked; toggled => { DesignerModel.inspector-action(self.checked ? "lock" : "unlock"); } }
+                            CheckBox { text: I18n.tr(I18n.lang, "property.hidden"); checked: DesignerModel.element-hidden; toggled => { DesignerModel.inspector-action(self.checked ? "hide" : "show"); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Button { text: I18n.tr(I18n.lang, "action.assign_bitmap"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("assign-bitmap"); } }
+                            Button { text: I18n.tr(I18n.lang, "action.bitmap_text"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("bitmap-text"); } }
+                        }
+                    }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "panel.arrange"); }
+                    ComboBox {
+                        model: [I18n.tr(I18n.lang, "align.selection_bounds"), I18n.tr(I18n.lang, "align.primary"), I18n.tr(I18n.lang, "align.canvas")];
+                        current-index <=> DesignerModel.align-reference;
+                    }
+                    GridLayout {
+                        spacing: 6px;
+                        Row {
+                            Button { text: I18n.tr(I18n.lang, "align.left"); clicked => { DesignerModel.inspector-action("align:left"); } }
+                            Button { text: I18n.tr(I18n.lang, "align.hcenter"); clicked => { DesignerModel.inspector-action("align:hcenter"); } }
+                            Button { text: I18n.tr(I18n.lang, "align.right"); clicked => { DesignerModel.inspector-action("align:right"); } }
+                        }
+                        Row {
+                            Button { text: I18n.tr(I18n.lang, "align.top"); clicked => { DesignerModel.inspector-action("align:top"); } }
+                            Button { text: I18n.tr(I18n.lang, "align.vcenter"); clicked => { DesignerModel.inspector-action("align:vcenter"); } }
+                            Button { text: I18n.tr(I18n.lang, "align.bottom"); clicked => { DesignerModel.inspector-action("align:bottom"); } }
+                        }
+                        Row {
+                            Button { text: I18n.tr(I18n.lang, "align.distribute_h"); clicked => { DesignerModel.inspector-action("distribute:horizontal"); } }
+                            Button { text: I18n.tr(I18n.lang, "align.distribute_v"); clicked => { DesignerModel.inspector-action("distribute:vertical"); } }
+                            Button { text: I18n.tr(I18n.lang, "align.snap"); clicked => { DesignerModel.inspector-action("snap"); } }
+                        }
+                    }
+                    Caption { text: DesignerModel.measure-text; }
+                }
+                if DesignerModel.inspector-tab == 1: VerticalLayout {
+                    spacing: 8px;
+                    SectionTitle { text: I18n.tr(I18n.lang, "preview.state"); }
+                    if DesignerModel.states.length == 0: Caption { text: I18n.tr(I18n.lang, "state.empty"); }
+                    for state in DesignerModel.states: HorizontalLayout {
+                        spacing: 6px;
+                        Label { text: state.name; width: 90px; }
+                        if state.kind == "enum": ComboBox {
+                            model: state.options;
+                            current-index: state.current;
+                            selected(v) => { DesignerModel.state-edited(state.name, v); }
+                        }
+                        if state.kind == "int": SpinBox {
+                            value: state.value.to-float();
+                            minimum: state.minimum;
+                            maximum: state.maximum;
+                            edited(v) => { DesignerModel.state-edited(state.name, v); }
+                        }
+                    }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "preview.timeline"); }
+                    Caption { text: DesignerModel.runtime-text; }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Button { text: DesignerModel.playing ? I18n.tr(I18n.lang, "action.pause") : I18n.tr(I18n.lang, "action.play"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("toggle-play"); } }
+                        Button { text: I18n.tr(I18n.lang, "action.step"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("step"); } }
+                        Button { text: I18n.tr(I18n.lang, "action.reset"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("reset-runtime"); } }
+                    }
+                }
+                if DesignerModel.inspector-tab == 2: VerticalLayout {
+                    spacing: 8px;
+                    SectionTitle { text: I18n.tr(I18n.lang, "panel.canvas_settings"); }
+                    HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "canvas.width"); width: 120px; } w-spin := SpinBox { value: DesignerModel.canvas-w-setting; minimum: 1; maximum: 1024; } }
+                    HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "canvas.height"); width: 120px; } h-spin := SpinBox { value: DesignerModel.canvas-h-setting; minimum: 8; maximum: 1024; step-size: 8; } }
+                    Button { text: I18n.tr(I18n.lang, "action.apply_canvas"); role: ButtonRole.secondary; clicked => { DesignerModel.canvas-size-edited(w-spin.value, h-spin.value); } }
+                }
+            }
+        }
+    }
+}
+
+component Drawer inherits Panel {
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        TabStrip {
+            items: [I18n.tr(I18n.lang, "panel.validation"), I18n.tr(I18n.lang, "panel.diff"), I18n.tr(I18n.lang, "panel.logs")];
+            current <=> DesignerModel.drawer-tab;
+        }
+        if DesignerModel.drawer-tab == 0: VerticalLayout {
+            spacing: 6px;
+            StatusPill { text: DesignerModel.findings-summary; tone: DesignerModel.findings-tone; }
+            ListView {
+                for finding in DesignerModel.findings: HorizontalLayout {
+                    padding: 4px;
+                    spacing: 8px;
+                    StatusPill {
+                        text: finding.severity;
+                        tone: finding.severity == "BLOCKER" || finding.severity == "ERROR" ? PillTone.error : finding.severity == "WARNING" ? PillTone.warning : PillTone.neutral;
+                    }
+                    Text { text: finding.code + " — " + finding.message; font-size: Metrics.font-body; color: Theme.text-primary; vertical-alignment: center; overflow: elide; }
+                }
+            }
+        }
+        if DesignerModel.drawer-tab == 1: VerticalLayout {
+            spacing: 6px;
+            StatusPill { text: DesignerModel.diff-summary; tone: PillTone.success; }
+            Caption { text: DesignerModel.diff-detail; }
+        }
+        if DesignerModel.drawer-tab == 2: ListView {
+            for line in DesignerModel.log-lines: Text { text: line; font-size: Metrics.font-small; color: Theme.text-secondary; font-family: "Consolas"; }
+        }
+    }
+}
+
+export component DesignerView inherits VerticalLayout {
+    spacing: 8px;
+    HorizontalLayout {
+        spacing: 8px;
+        vertical-stretch: 3;
+        Navigator { width: 280px; }
+        CanvasPanel { horizontal-stretch: 1; }
+        Inspector { width: 360px; }
+    }
+    Drawer { vertical-stretch: 0; height: 210px; }
+}

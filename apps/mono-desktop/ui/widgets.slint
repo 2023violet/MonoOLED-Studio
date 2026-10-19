@@ -1,0 +1,241 @@
+// Shared MonoOLED widgets. Every state (normal / hover / pressed / selected /
+// focus / disabled) changes colour only, never geometry (V1 design system).
+import { Theme, Metrics } from "theme.slint";
+
+export global I18n {
+    in-out property <string> lang: "zh_CN";
+    pure callback tr(string /* lang */, string /* key */) -> string;
+}
+
+export enum ButtonRole { primary, secondary, ghost, danger }
+
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <ButtonRole> role: ButtonRole.secondary;
+    in property <bool> enabled: true;
+    in property <bool> checked: false;
+    in property <string> tooltip;
+    in property <length> min-width-hint: 0px;
+    callback clicked();
+    min-height: Metrics.control-height;
+    max-height: Metrics.control-height;
+    min-width: max(min-width-hint, label.preferred-width + 2 * 14px);
+    horizontal-stretch: 0;
+    border-radius: Metrics.radius-control;
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { if (enabled) { clicked(); } }
+    background: !enabled ? Theme.surface-toolbar
+        : role == ButtonRole.primary ? (touch.pressed ? Theme.accent-hover : touch.has-hover ? Theme.accent-hover : Theme.accent-primary)
+        : role == ButtonRole.danger ? (touch.has-hover ? Theme.status-error-background : Theme.surface-panel)
+        : role == ButtonRole.ghost ? (checked ? Theme.surface-selected : touch.pressed ? Theme.surface-pressed : touch.has-hover ? Theme.surface-hover : transparent)
+        : (checked ? Theme.surface-selected : touch.pressed ? Theme.surface-pressed : touch.has-hover ? Theme.surface-hover : Theme.surface-toolbar);
+    border-width: role == ButtonRole.secondary || role == ButtonRole.danger ? 1px : 0px;
+    border-color: focus.has-focus ? Theme.border-focus : role == ButtonRole.danger ? Theme.status-error : Theme.border-normal;
+    label := Text {
+        text: root.text;
+        font-size: Metrics.font-body;
+        font-weight: root.role == ButtonRole.primary ? 600 : 500;
+        color: !root.enabled ? Theme.text-disabled
+            : root.role == ButtonRole.primary ? Theme.accent-on-primary
+            : root.role == ButtonRole.danger ? Theme.status-error
+            : root.checked ? Theme.accent-hover : Theme.text-primary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") { root.clicked(); return accept; }
+            return reject;
+        }
+    }
+}
+
+// Segmented workspace switch (Design / Pixel Studio / Review).
+export component Segmented inherits Rectangle {
+    in property <[string]> items;
+    in-out property <int> current: 0;
+    callback selected(int);
+    height: Metrics.control-height + 4px;
+    border-radius: Metrics.radius-control;
+    background: Theme.surface-toolbar;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    HorizontalLayout {
+        padding: 2px;
+        spacing: 2px;
+        for item[index] in root.items: Rectangle {
+            border-radius: Metrics.radius-control - 2px;
+            background: index == root.current ? Theme.surface-selected : seg-touch.has-hover ? Theme.surface-hover : transparent;
+            min-width: seg-text.preferred-width + 24px;
+            seg-text := Text {
+                text: item;
+                font-size: Metrics.font-body;
+                color: index == root.current ? Theme.accent-hover : Theme.text-secondary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                visible: index == root.current;
+                y: parent.height - 4px;
+                height: 2px;
+                width: 16px;
+                border-radius: 1px;
+                background: Theme.accent-primary;
+            }
+            seg-touch := TouchArea {
+                clicked => {
+                    root.current = index;
+                    root.selected(index);
+                }
+            }
+        }
+    }
+}
+
+// Flat tab strip (Navigator / Inspector / Drawer).
+export component TabStrip inherits HorizontalLayout {
+    in property <[string]> items;
+    in-out property <int> current: 0;
+    callback selected(int);
+    spacing: 4px;
+    alignment: start;
+    for item[index] in root.items: Rectangle {
+        height: Metrics.control-height;
+        min-width: tab-text.preferred-width + 20px;
+        border-radius: Metrics.radius-control;
+        background: index == root.current ? Theme.surface-selected : tab-touch.has-hover ? Theme.surface-hover : transparent;
+        tab-text := Text {
+            text: item;
+            font-size: Metrics.font-body;
+            color: index == root.current ? Theme.accent-hover : Theme.text-secondary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        tab-touch := TouchArea {
+            clicked => {
+                root.current = index;
+                root.selected(index);
+            }
+        }
+    }
+}
+
+export component Panel inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    background: Theme.surface-panel;
+    border-radius: Metrics.radius-panel;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    clip: true;
+}
+
+export component SectionTitle inherits Text {
+    font-size: Metrics.font-title;
+    font-weight: 600;
+    color: Theme.text-primary;
+}
+
+export component Caption inherits Text {
+    font-size: Metrics.font-small;
+    color: Theme.text-muted;
+    wrap: word-wrap;
+}
+
+export component Label inherits Text {
+    font-size: Metrics.font-body;
+    color: Theme.text-secondary;
+    vertical-alignment: center;
+}
+
+export enum PillTone { neutral, accent, success, warning, error }
+
+export component StatusPill inherits Rectangle {
+    in property <string> text;
+    in property <PillTone> tone: PillTone.neutral;
+    border-radius: Metrics.radius-pill;
+    height: Metrics.control-height - 4px;
+    min-width: pill-text.preferred-width + 20px;
+    background: tone == PillTone.accent ? Theme.status-accent-background
+        : tone == PillTone.success ? Theme.status-success-background
+        : tone == PillTone.warning ? Theme.status-warning-background
+        : tone == PillTone.error ? Theme.status-error-background
+        : Theme.status-neutral-background;
+    pill-text := Text {
+        text: root.text;
+        font-size: Metrics.font-small;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: root.tone == PillTone.accent ? Theme.status-accent-foreground
+            : root.tone == PillTone.success ? Theme.status-success-foreground
+            : root.tone == PillTone.warning ? Theme.status-warning-foreground
+            : root.tone == PillTone.error ? Theme.status-error-foreground
+            : Theme.status-neutral-foreground;
+    }
+}
+
+export component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.border-subtle;
+}
+
+// Selectable list row (screens, elements, assets, font packs, glyphs).
+export component ListRow inherits Rectangle {
+    in property <string> text;
+    in property <string> detail;
+    in property <bool> selected;
+    in property <bool> muted;
+    callback clicked();
+    callback double-clicked();
+    height: Metrics.control-height + 4px;
+    border-radius: Metrics.radius-control;
+    background: selected ? Theme.surface-selected : row-touch.has-hover ? Theme.surface-hover : transparent;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        Text {
+            text: root.text;
+            font-size: Metrics.font-body;
+            color: root.selected ? Theme.accent-hover : root.muted ? Theme.text-muted : Theme.text-primary;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            text: root.detail;
+            font-size: Metrics.font-small;
+            color: Theme.text-muted;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            horizontal-stretch: 0;
+        }
+    }
+    row-touch := TouchArea {
+        clicked => { root.clicked(); }
+        double-clicked => { root.double-clicked(); }
+    }
+}
+
+export component Scrim inherits Rectangle {
+    background: Theme.overlay-scrim;
+    TouchArea { }
+}
+
+export component Dialog inherits Rectangle {
+    in property <string> title;
+    width: 440px;
+    background: Theme.surface-panel;
+    border-radius: Metrics.radius-panel;
+    border-width: 1px;
+    border-color: Theme.border-normal;
+    drop-shadow-blur: 24px;
+    drop-shadow-color: Theme.popover-shadow;
+}

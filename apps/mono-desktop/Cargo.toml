@@ -1,0 +1,31 @@
+[package]
+name = "mono-desktop"
+description = "MonoOLED Studio desktop application (Slint)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "monooled-studio"
+path = "src/main.rs"
+
+[dependencies]
+mono-core.workspace = true
+mono-project.workspace = true
+mono-font.workspace = true
+serde_json.workspace = true
+# G2 decision: Slint 1.18.1, femtovg GPU renderer with software fallback (Royalty-free 2.0 + AboutSlint).
+slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility"] }
+# Native open/save dialogs (MIT); no other platform integration crates.
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+
+# Clipboard for "copy array" (MIT OR Apache-2.0); Slint 1.18 has no public clipboard API.
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+
+[build-dependencies]
+slint-build = "=1.18.1"
+
+[lints]
+workspace = true

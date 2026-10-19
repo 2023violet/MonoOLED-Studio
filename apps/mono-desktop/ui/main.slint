@@ -1,0 +1,254 @@
+// MonoOLED Studio main window.
+import { Theme, Metrics } from "theme.slint";
+import { LineEdit, AboutSlint, Palette } from "std-widgets.slint";
+import { Icon } from "icons.slint";
+import { I18n, Button, ButtonRole, Segmented, StatusPill, PillTone, Caption, Scrim, Dialog } from "widgets.slint";
+import { DesignerView, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar } from "designer.slint";
+import { PixelView, PixelDialogs, PixelModel, OutputModel, ProfileItem } from "pixel.slint";
+
+export { Theme, Metrics, I18n, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar, PillTone, PixelModel, OutputModel, ProfileItem }
+
+export struct DocTab { title: string, kind: string, dirty: bool }
+
+export global AppModel {
+    in property <string> project-name;
+    in property <string> status-text;
+    in property <string> agent-text;
+    in property <bool> can-undo;
+    in property <bool> can-redo;
+    in property <bool> dirty;
+    in property <string> health-text;
+    in property <PillTone> health-tone: PillTone.neutral;
+    in-out property <int> workspace: 0;
+    in property <[DocTab]> tabs;
+    in-out property <int> current-tab: 0;
+    in property <bool> busy;
+    in property <string> busy-text;
+    in property <string> toast;
+    in-out property <bool> prompt-visible;
+    in property <string> prompt-title;
+    in property <string> prompt-label;
+    in-out property <string> prompt-text;
+    in-out property <bool> about-visible;
+    in-out property <bool> preferences-visible;
+    in property <string> version: "2.0.0";
+    callback prompt-accepted(string);
+    callback prompt-cancelled();
+    callback action(string);
+    callback tab-selected(int);
+    callback tab-closed(int);
+}
+
+component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> tip;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: Metrics.control-height + 4px;
+    height: Metrics.control-height + 4px;
+    border-radius: Metrics.radius-control;
+    background: touch.has-hover && enabled ? Theme.surface-hover : transparent;
+    accessible-role: button;
+    accessible-label: tip;
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        name: root.icon;
+        tint: root.enabled ? Theme.text-secondary : Theme.text-disabled;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component CommandBar inherits Rectangle {
+    height: 56px;
+    background: Theme.surface-toolbar;
+    border-width: 0px;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 8px;
+        alignment: stretch;
+        IconButton { icon: "folder"; tip: I18n.tr(I18n.lang, "action.open_project"); clicked => { AppModel.action("open-project"); } }
+        IconButton { icon: "undo"; tip: I18n.tr(I18n.lang, "action.undo"); enabled: AppModel.can-undo; clicked => { AppModel.action("undo"); } }
+        IconButton { icon: "redo"; tip: I18n.tr(I18n.lang, "action.redo"); enabled: AppModel.can-redo; clicked => { AppModel.action("redo"); } }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            min-width: 260px;
+            Text { text: AppModel.project-name == "" ? I18n.tr(I18n.lang, "app.title") : AppModel.project-name + (AppModel.dirty ? " •" : ""); font-size: 15px; font-weight: 700; color: Theme.text-primary; }
+            Caption { text: I18n.tr(I18n.lang, "app.subtitle"); wrap: no-wrap; }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Segmented {
+            items: [I18n.tr(I18n.lang, "workspace.design"), "Pixel Studio", "Font Lab", I18n.tr(I18n.lang, "workspace.review")];
+            current <=> AppModel.workspace;
+            selected(i) => { AppModel.action("workspace:" + i); }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        StatusPill { text: AppModel.health-text; tone: AppModel.health-tone; }
+        Button { text: I18n.tr(I18n.lang, "action.batch_validate"); clicked => { AppModel.action("batch-validate"); } }
+        Button { text: I18n.tr(I18n.lang, "action.handoff"); clicked => { AppModel.action("handoff"); } }
+        Button { text: I18n.tr(I18n.lang, "action.save"); role: ButtonRole.primary; clicked => { AppModel.action("save"); } }
+        IconButton { icon: "settings"; tip: I18n.tr(I18n.lang, "action.preferences"); clicked => { AppModel.action("preferences"); } }
+    }
+}
+
+component StatusBar inherits Rectangle {
+    height: 26px;
+    background: Theme.surface-toolbar;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        Text { text: AppModel.status-text; font-size: Metrics.font-small; color: Theme.text-muted; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+        Text { text: "Pixel Truth: Canonical Renderer · VLSB · 1 = OLED lit"; font-size: Metrics.font-small; color: Theme.text-muted; vertical-alignment: center; horizontal-stretch: 0; }
+        Text { text: AppModel.agent-text; font-size: Metrics.font-small; color: Theme.text-muted; vertical-alignment: center; horizontal-stretch: 0; }
+    }
+}
+
+component PromptDialog inherits Scrim {
+    Dialog {
+        height: 190px;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 10px;
+            Text { text: AppModel.prompt-title; font-size: 16px; font-weight: 700; color: Theme.text-primary; }
+            Text { text: AppModel.prompt-label; color: Theme.text-secondary; }
+            input := LineEdit {
+                text <=> AppModel.prompt-text;
+                accepted(t) => { AppModel.prompt-accepted(t); }
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { AppModel.prompt-visible = false; AppModel.prompt-cancelled(); } }
+                Button { text: I18n.tr(I18n.lang, "dialog.ok"); role: ButtonRole.primary; clicked => { AppModel.prompt-accepted(AppModel.prompt-text); } }
+            }
+        }
+    }
+    init => { input.focus(); }
+}
+
+component AboutDialog inherits Scrim {
+    Dialog {
+        height: 360px;
+        VerticalLayout {
+            padding: 20px;
+            spacing: 10px;
+            Text { text: "MonoOLED Studio " + AppModel.version; font-size: 18px; font-weight: 700; color: Theme.text-primary; }
+            Text { text: I18n.tr(I18n.lang, "app.subtitle"); color: Theme.text-secondary; wrap: word-wrap; }
+            Text { text: "MIT License · Rust · Slint"; color: Theme.text-muted; font-size: Metrics.font-small; }
+            AboutSlint { height: 140px; }
+            HorizontalLayout {
+                alignment: end;
+                Button { text: I18n.tr(I18n.lang, "dialog.close"); role: ButtonRole.primary; clicked => { AppModel.about-visible = false; } }
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: (AppModel.project-name == "" ? "" : AppModel.project-name + (AppModel.dirty ? " • " : " — ")) + "MonoOLED Studio";
+    preferred-width: 1440px;
+    preferred-height: 900px;
+    min-width: 1100px;
+    min-height: 700px;
+    background: Theme.app-background;
+    default-font-size: Metrics.font-body;
+    default-font-family: "Microsoft YaHei UI";
+    icon: @image-url("../assets/monooled.png");
+    // std-widgets follow the app theme, not the OS colour scheme.
+    property <bool> dark-theme: Theme.dark;
+    changed dark-theme => { Palette.color-scheme = self.dark-theme ? ColorScheme.dark : ColorScheme.light; }
+    init => { Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
+
+    MenuBar {
+        Menu {
+            title: I18n.tr(I18n.lang, "menu.file");
+            MenuItem { title: I18n.tr(I18n.lang, "action.new_project"); activated => { AppModel.action("new-project"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.open_project"); activated => { AppModel.action("open-project"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.open_scene"); activated => { AppModel.action("open-scene"); } }
+            MenuSeparator { }
+            MenuItem { title: I18n.tr(I18n.lang, "action.save"); activated => { AppModel.action("save"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.export_current"); activated => { AppModel.action("export-current"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.export_all"); activated => { AppModel.action("export-all"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.handoff"); activated => { AppModel.action("handoff"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.export_c_header"); activated => { AppModel.action("export-c-header"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.thumbnail_wall"); activated => { AppModel.action("thumbnail-wall"); } }
+            MenuSeparator { }
+            MenuItem { title: I18n.tr(I18n.lang, "action.exit"); activated => { AppModel.action("exit"); } }
+        }
+        Menu {
+            title: I18n.tr(I18n.lang, "menu.edit");
+            MenuItem { title: I18n.tr(I18n.lang, "action.undo"); enabled: AppModel.can-undo; activated => { AppModel.action("undo"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.redo"); enabled: AppModel.can-redo; activated => { AppModel.action("redo"); } }
+            MenuSeparator { }
+            MenuItem { title: I18n.tr(I18n.lang, "action.add_placeholder"); activated => { AppModel.action("add-placeholder"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.assign_bitmap"); activated => { AppModel.action("assign-bitmap"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.duplicate"); activated => { AppModel.action("duplicate"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.delete"); activated => { AppModel.action("delete"); } }
+        }
+        Menu {
+            title: I18n.tr(I18n.lang, "menu.arrange");
+            MenuItem { title: I18n.tr(I18n.lang, "action.front"); activated => { AppModel.action("front"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.back"); activated => { AppModel.action("back"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.group"); activated => { AppModel.action("group"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.ungroup"); activated => { AppModel.action("ungroup"); } }
+            MenuSeparator { }
+            MenuItem { title: I18n.tr(I18n.lang, "align.left"); activated => { AppModel.action("align:left"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "align.right"); activated => { AppModel.action("align:right"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "align.top"); activated => { AppModel.action("align:top"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "align.bottom"); activated => { AppModel.action("align:bottom"); } }
+        }
+        Menu {
+            title: I18n.tr(I18n.lang, "menu.view");
+            MenuItem { title: I18n.tr(I18n.lang, "workspace.design"); activated => { AppModel.action("workspace:0"); } }
+            MenuItem { title: "Pixel Studio"; activated => { AppModel.action("workspace:1"); } }
+            MenuItem { title: "Font Lab"; activated => { AppModel.action("workspace:2"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "workspace.review"); activated => { AppModel.action("workspace:3"); } }
+            MenuSeparator { }
+            MenuItem { title: I18n.tr(I18n.lang, "action.diagnostics"); activated => { AppModel.action("diagnostics"); } }
+        }
+        Menu {
+            title: I18n.tr(I18n.lang, "menu.tools");
+            MenuItem { title: I18n.tr(I18n.lang, "action.preferences"); activated => { AppModel.action("preferences"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.asset_health"); activated => { AppModel.action("asset-health"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.save_template"); activated => { AppModel.action("save-template"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.insert_template"); activated => { AppModel.action("insert-template"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.convert_asset"); activated => { AppModel.action("convert-asset"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.agent_bridge"); activated => { AppModel.action("agent-bridge"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.restore_autosave"); activated => { AppModel.action("restore-autosave"); } }
+        }
+        Menu {
+            title: I18n.tr(I18n.lang, "menu.help");
+            MenuItem { title: I18n.tr(I18n.lang, "action.about"); activated => { AppModel.action("about"); } }
+        }
+    }
+
+    VerticalLayout {
+        CommandBar { }
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+        Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding: 8px;
+                spacing: 8px;
+                if AppModel.workspace == 0 || AppModel.workspace == 3: DesignerView { vertical-stretch: 1; }
+                if AppModel.workspace == 1: PixelView { vertical-stretch: 1; }
+                if AppModel.workspace == 2: Rectangle {
+                    vertical-stretch: 1;
+                    Caption { text: "…"; }
+                }
+            }
+        }
+        StatusBar { }
+    }
+    if AppModel.workspace == 1 && PixelModel.dialog != 0: PixelDialogs { width: root.width; height: root.height; }
+    if AppModel.prompt-visible: PromptDialog { width: root.width; height: root.height; }
+    if AppModel.about-visible: AboutDialog { width: root.width; height: root.height; }
+}

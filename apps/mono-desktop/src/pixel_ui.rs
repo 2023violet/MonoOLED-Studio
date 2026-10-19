@@ -1,0 +1,1024 @@
+//! `App` glue for the Pixel Studio workspace and the output workbench: UI
+//! callbacks in, `PixelModel` / `OutputModel` properties out.
+
+use std::path::{Path, PathBuf};
+
+use mono_core::CoreError;
+use mono_core::formatter::OutputItem;
+use mono_core::pixel::{PixelDocument, insert_fontpack_text};
+use mono_core::profiles::{OutputProfile, RasterProfile, ThresholdMode};
+use mono_core::raster::{RgbaImage, rasterize};
+use mono_core::render::posix;
+use mono_project::atomic::{atomic_write, atomic_write_json};
+use mono_project::fontpack_io::load_font_pack;
+use mono_project::resources::hex_digest;
+use serde_json::{Map, Value, json};
+use slint::Global;
+
+use crate::app::{App, Prompt, model, ss};
+use crate::canvas::image_from_pixels;
+use crate::i18n::trf;
+use crate::pixel::{ZOOMS, default_symbol, load_import_source};
+use crate::workbench::{MODES, SOURCES, bitmap_item, font_items, merged_profiles};
+use crate::{OutputModel, PixelModel, ProfileItem};
+
+pub const ANCHORS: [&str; 9] = [
+    "top-left",
+    "top",
+    "top-right",
+    "left",
+    "center",
+    "right",
+    "bottom-left",
+    "bottom",
+    "bottom-right",
+];
+
+const TEMPLATE_FIELDS: [&str; 9] = [
+    "segment_prefix",
+    "segment_suffix",
+    "comment_prefix",
+    "comment_suffix",
+    "data_prefix",
+    "data_suffix",
+    "line_prefix",
+    "line_suffix",
+    "line_end",
+];
+
+/// V1 legacy glyph exporter cell (`font_generator(cell=(12, 16))`).
+const GLYPH_CELL: (usize, usize) = (12, 16);
+
+/// The import dialog's source image and the document it currently produces.
+pub struct ImportState {
+    pub path: PathBuf,
+    pub image: RgbaImage,
+    pub doc: Option<PixelDocument>,
+}
+
+fn vlsb(rows: &[Vec<u8>], width: usize) -> Vec<u8> {
+    let height = rows.len();
+    let mut out = vec![0u8; width * height.div_ceil(8)];
+    for (y, row) in rows.iter().enumerate() {
+        for (x, value) in row.iter().enumerate() {
+            if *value != 0 {
+                out[(y / 8) * width + x] |= 1 << (y % 8);
+            }
+        }
+    }
+    out
+}
+
+/// V1 `generate_glyphs` output: `U+XXXX.png`, `glyph_manifest.json`, `glyphs.h`;
+/// stale managed PNGs from a previous manifest are removed.
+pub fn write_glyph_dir(
+    cells: &[(char, Vec<Vec<u8>>)],
+    output: &Path,
+    font_size: i64,
+) -> Result<usize, CoreError> {
+    std::fs::create_dir_all(output).map_err(|e| mono_project::resources::io_error(output, &e))?;
+    let (w, h) = GLYPH_CELL;
+    let manifest_path = output.join("glyph_manifest.json");
+    let mut previous: Vec<String> = Vec::new();
+    if let Ok(raw) = std::fs::read(&manifest_path) {
+        if let Ok(Value::Object(old)) = serde_json::from_slice::<Value>(&raw) {
+            if let Some(Value::Object(glyphs)) = old.get("glyphs") {
+                for meta in glyphs.values() {
+                    if let Some(file) = meta.get("file").and_then(Value::as_str) {
+                        let plain = Path::new(file).file_name().is_some_and(|n| n == file);
+                        if plain && file.starts_with("U+") && file.ends_with(".png") {
+                            previous.push(file.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut glyphs = Map::new();
+    let mut arrays = Vec::new();
+    let mut written = Vec::new();
+    for (ch, rows) in cells {
+        let code = u32::from(*ch);
+        let file = format!("U+{code:04X}.png");
+        let png = mono_project::image_io::encode_bitmap_png(w, h, rows)?;
+        atomic_write(&output.join(&file), &png)?;
+        let raw = vlsb(rows, w);
+        let symbol = format!("glyph_{code:04X}");
+        let body: Vec<String> = raw.iter().map(|b| format!("0x{b:02X}")).collect();
+        arrays.push(format!(
+            "static const unsigned char {symbol}[{}] = {{{}}};",
+            raw.len(),
+            body.join(",")
+        ));
+        glyphs.insert(
+            ch.to_string(),
+            json!({"file": file, "w": w, "h": h, "bytes": raw.len(), "symbol": symbol}),
+        );
+        written.push(file);
+    }
+    let manifest = json!({"cell": {"w": w, "h": h}, "font_size": font_size, "glyphs": glyphs});
+    atomic_write_json(&manifest_path, &manifest)?;
+    let header = format!("#pragma once\n\n{}\n", arrays.join("\n"));
+    atomic_write(&output.join("glyphs.h"), header.as_bytes())?;
+    previous.sort();
+    for stale in previous.iter().filter(|f| !written.contains(f)) {
+        let _ = std::fs::remove_file(output.join(stale));
+    }
+    Ok(cells.len())
+}
+
+fn pick_image() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Bitmap", &["png", "bmp"])
+        .pick_file()
+}
+
+impl App {
+    pub fn project_root(&self) -> Option<PathBuf> {
+        match (&self.project, &self.session) {
+            (Some(p), _) => Some(p.root.clone()),
+            (None, Some(s)) => Some(s.root().to_path_buf()),
+            _ => None,
+        }
+    }
+
+    fn undo_limit(&self) -> usize {
+        usize::try_from(self.prefs.int("performance.undo_history")).unwrap_or(200)
+    }
+
+    pub fn show_prompt(&mut self, prompt: Prompt, title: &str, label: &str, text: &str) {
+        self.prompt = Some(prompt);
+        if let Some(ui) = self.ui.upgrade() {
+            let m = crate::AppModel::get(&ui);
+            m.set_prompt_title(title.into());
+            m.set_prompt_label(label.into());
+            m.set_prompt_text(text.into());
+            m.set_prompt_visible(true);
+        }
+    }
+
+    /// `None` = cancel, `Some(true)` = save first, `Some(false)` = discard.
+    fn confirm_unsaved_pixel(&self) -> Option<bool> {
+        if !self.pixel.doc.dirty {
+            return Some(false);
+        }
+        let result = rfd::MessageDialog::new()
+            .set_title(self.t("dialog.unsaved_title"))
+            .set_description(self.t("dialog.save_changes"))
+            .set_buttons(rfd::MessageButtons::YesNoCancel)
+            .show();
+        match result {
+            rfd::MessageDialogResult::Yes => Some(true),
+            rfd::MessageDialogResult::No => Some(false),
+            _ => None,
+        }
+    }
+
+    /// Pixel Studio and input preferences (V1 `RuntimeSettings`).
+    pub fn apply_pixel_preferences(&mut self) {
+        self.pixel.brush = self.prefs.int("pixel_studio.brush_size").clamp(1, 8);
+        self.pixel.interpolation = self.prefs.bool("pixel_studio.stroke_interpolation");
+        let limit = self.undo_limit();
+        self.pixel.doc.set_max_undo(limit);
+        let Some(ui) = self.ui.upgrade() else { return };
+        let pm = PixelModel::get(&ui);
+        pm.set_show_grid(self.prefs.bool("pixel_studio.pixel_grid"));
+        pm.set_show_rulers(self.prefs.bool("pixel_studio.rulers"));
+        pm.set_show_preview(self.prefs.bool("pixel_studio.actual_preview"));
+        pm.set_wheel_zoom(self.prefs.str("input.wheel_action") == "zoom");
+        pm.set_middle_pan(self.prefs.str("input.middle_drag") == "pan");
+        pm.set_space_pan(self.prefs.str("input.space_drag") == "pan");
+        pm.set_brush_size(self.pixel.brush as i32);
+    }
+
+    // ------------------------------------------------------------- refresh
+
+    pub fn refresh_pixel(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let pm = PixelModel::get(&ui);
+        let p = &self.pixel;
+        let (w, h) = (p.width(), p.height());
+        pm.set_canvas(image_from_pixels(w, h, &p.display_pixels()));
+        pm.set_doc_w(w as i32);
+        pm.set_doc_h(h as i32);
+        let title = if p.path.is_some() {
+            p.title()
+        } else {
+            self.t("pixel.title")
+        };
+        pm.set_title(ss(format!(
+            "{title}{}",
+            if p.doc.dirty { " ●" } else { "" }
+        )));
+        pm.set_tool(p.tool.index());
+        pm.set_brush_size(p.brush as i32);
+        match p.overlay_selection() {
+            Some((x, y, sw, sh)) => {
+                pm.set_has_selection(true);
+                pm.set_sel_x(x as i32);
+                pm.set_sel_y(y as i32);
+                pm.set_sel_w(sw as i32);
+                pm.set_sel_h(sh as i32);
+            }
+            None => pm.set_has_selection(false),
+        }
+        match p.key_cursor {
+            Some((x, y)) => {
+                pm.set_has_key_cursor(true);
+                pm.set_key_x(x as i32);
+                pm.set_key_y(y as i32);
+            }
+            None => pm.set_has_key_cursor(false),
+        }
+        pm.set_has_clipboard(p.clipboard.is_some());
+        pm.set_info_text(ss(format!("{w} × {h} · {} B VLSB", w * h.div_ceil(8))));
+        let selection = match p.selection {
+            Some((x, y, sw, sh)) => format!(
+                "{} · {}",
+                trf(
+                    &self.lang,
+                    "pixel.selection",
+                    &[
+                        ("x", x.to_string()),
+                        ("y", y.to_string()),
+                        ("w", sw.to_string()),
+                        ("h", sh.to_string())
+                    ]
+                ),
+                trf(
+                    &self.lang,
+                    "pixel.selection.lit",
+                    &[("lit", p.lit_in_selection().to_string())]
+                )
+            ),
+            None => self.t("pixel.selection.none"),
+        };
+        pm.set_selection_text(ss(selection));
+        self.refresh_pixel_cursor();
+        self.refresh_app();
+    }
+
+    fn refresh_pixel_cursor(&self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let p = &self.pixel;
+        let text = match p.hover.or(p.key_cursor) {
+            Some((x, y)) => {
+                let (xu, yu) = (x as usize, y as usize);
+                trf(
+                    &self.lang,
+                    "pixel.status",
+                    &[
+                        ("x", x.to_string()),
+                        ("y", y.to_string()),
+                        ("value", p.doc.get(xu, yu).to_string()),
+                        ("page", (yu / 8).to_string()),
+                        ("bit", (yu % 8).to_string()),
+                        ("byte", ((yu / 8) * p.width() + xu).to_string()),
+                    ],
+                )
+            }
+            None => self.t("font.status.pixel"),
+        };
+        PixelModel::get(&ui).set_cursor_text(ss(text));
+    }
+
+    // ------------------------------------------------------------- input
+
+    pub fn pixel_pointer(&mut self, phase: &str, x: i32, y: i32, button: i32) {
+        let (x, y) = (i64::from(x), i64::from(y));
+        let changed = match phase {
+            "down" => self.pixel.pointer_down(x, y, button == 1),
+            "move" => self.pixel.pointer_move(x, y),
+            "up" => self.pixel.pointer_up(x, y),
+            "hover" => {
+                self.pixel.pointer_move(x, y);
+                false
+            }
+            _ => {
+                self.pixel.hover = None;
+                false
+            }
+        };
+        if changed {
+            self.refresh_pixel();
+        } else {
+            self.refresh_pixel_cursor();
+        }
+        if phase == "up" && changed {
+            self.bench_document_changed();
+        }
+    }
+
+    pub fn pixel_key(&mut self, key: &str) {
+        if self.pixel.key(key) {
+            self.refresh_pixel();
+            self.bench_document_changed();
+        }
+    }
+
+    pub fn pixel_zoom(&mut self, index: i32) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let zoom = usize::try_from(index - 1)
+            .ok()
+            .and_then(|i| ZOOMS.get(i))
+            .copied()
+            .unwrap_or(0);
+        let pm = PixelModel::get(&ui);
+        pm.set_zoom_index(index);
+        pm.set_zoom(zoom as f32);
+    }
+
+    /// V1 wheel zoom: +-2 px within 4..40 (from Fit, start at the nearest step).
+    pub fn pixel_zoom_step(&mut self, direction: i32) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let pm = PixelModel::get(&ui);
+        let current = pm.get_zoom() as i32;
+        let current = if current == 0 { 10 } else { current };
+        let next = (current + 2 * direction.signum()).clamp(4, 40);
+        pm.set_zoom(next as f32);
+        let index = ZOOMS
+            .iter()
+            .position(|z| *z == next)
+            .map_or(0, |i| i as i32 + 1);
+        pm.set_zoom_index(index);
+    }
+
+    pub fn pixel_action(&mut self, action: &str) {
+        let result: Result<(), CoreError> = (|| {
+            match action {
+                "new" => {
+                    let Some(save_first) = self.confirm_unsaved_pixel() else {
+                        return Ok(());
+                    };
+                    if save_first && !self.pixel_save()? {
+                        return Ok(());
+                    }
+                    let limit = self.undo_limit();
+                    self.pixel.replace(PixelDocument::new(32, 16)?, None, limit);
+                }
+                "open" => {
+                    let Some(path) = pick_image() else {
+                        return Ok(());
+                    };
+                    self.pixel_begin_import(&path)?;
+                }
+                "save" => {
+                    self.pixel_save()?;
+                }
+                "save-bin" => {
+                    let Some(path) = rfd::FileDialog::new()
+                        .set_file_name("oled_bitmap.bin")
+                        .add_filter("BIN", &["bin"])
+                        .save_file()
+                    else {
+                        return Ok(());
+                    };
+                    self.pixel.save_bin(&path)?;
+                    self.set_status(posix(&path));
+                }
+                "save-c" => {
+                    let Some(path) = rfd::FileDialog::new()
+                        .set_file_name("oled_bitmap.h")
+                        .add_filter("C Header", &["h"])
+                        .save_file()
+                    else {
+                        return Ok(());
+                    };
+                    let symbol = default_symbol(self.pixel.path.as_deref());
+                    let (title, label) = (self.t("pixel.action.export_c"), self.t("pixel.symbol"));
+                    self.show_prompt(Prompt::CSymbol(path), &title, &label, &symbol);
+                }
+                "font-generator" => {
+                    let (title, label) =
+                        (self.t("pixel.action.font"), self.t("pixel.font.characters"));
+                    self.show_prompt(Prompt::GlyphCharacters, &title, &label, "");
+                }
+                "canvas-size" => {
+                    if let Some(ui) = self.ui.upgrade() {
+                        let pm = PixelModel::get(&ui);
+                        pm.set_resize_w(self.pixel.width() as i32);
+                        pm.set_resize_h(self.pixel.height() as i32);
+                        pm.set_resize_anchor(4);
+                        pm.set_dialog_error("".into());
+                        pm.set_dialog(1);
+                    }
+                }
+                "insert-text" => {
+                    if self.font_packs.is_empty() {
+                        self.set_status(self.t("pixel.font_missing"));
+                        return Ok(());
+                    }
+                    if let Some(ui) = self.ui.upgrade() {
+                        let pm = PixelModel::get(&ui);
+                        pm.set_font_packs(model(self.font_packs.iter().map(ss).collect()));
+                        let (x, y) = self.pixel.selection.map_or((0, 0), |s| (s.0, s.1));
+                        pm.set_text_x(x as i32);
+                        pm.set_text_y(y as i32);
+                        pm.set_dialog_error("".into());
+                        pm.set_dialog(3);
+                    }
+                }
+                other => {
+                    if !self.pixel.try_action(other)? {
+                        self.refresh_pixel();
+                        return Ok(());
+                    }
+                }
+            }
+            self.refresh_pixel();
+            self.bench_document_changed();
+            Ok(())
+        })();
+        if let Err(e) = result {
+            self.error(&e);
+            self.refresh_pixel();
+        }
+    }
+
+    /// V1 `save_png`: reuse the current `.png` path, else ask. Returns false on cancel.
+    pub fn pixel_save(&mut self) -> Result<bool, CoreError> {
+        let path = match &self.pixel.path {
+            Some(p) if p.extension().is_some_and(|e| e.eq_ignore_ascii_case("png")) => p.clone(),
+            _ => {
+                let mut dialog = rfd::FileDialog::new().add_filter("PNG", &["png"]);
+                if let Some(root) = self.project_root() {
+                    dialog = dialog.set_directory(root);
+                }
+                let Some(p) = dialog.set_file_name("bitmap.png").save_file() else {
+                    return Ok(false);
+                };
+                p
+            }
+        };
+        let saved = self.pixel.save_png(&path)?;
+        self.set_status(posix(&saved));
+        self.scan_project_files();
+        self.refresh_navigator();
+        self.refresh_pixel();
+        Ok(true)
+    }
+
+    pub fn pixel_begin_import(&mut self, path: &Path) -> Result<(), CoreError> {
+        let image = load_import_source(path)?;
+        self.import = Some(ImportState {
+            path: path.to_path_buf(),
+            image,
+            doc: None,
+        });
+        if let Some(ui) = self.ui.upgrade() {
+            let pm = PixelModel::get(&ui);
+            pm.set_import_path(ss(posix(path)));
+            pm.set_dialog_error("".into());
+            pm.set_dialog(2);
+        }
+        self.pixel_import_changed();
+        Ok(())
+    }
+
+    pub fn pixel_import_changed(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let pm = PixelModel::get(&ui);
+        let Some(import) = self.import.as_mut() else {
+            return;
+        };
+        let clamp = |v: i32| v.clamp(0, 255) as u8;
+        let profile = RasterProfile {
+            threshold_mode: if pm.get_import_mode() == 1 {
+                ThresholdMode::RgbAll
+            } else {
+                ThresholdMode::Luma
+            },
+            luma_threshold: clamp(pm.get_import_threshold()),
+            red_threshold: clamp(pm.get_import_red()),
+            green_threshold: clamp(pm.get_import_green()),
+            blue_threshold: clamp(pm.get_import_blue()),
+            invert_source: pm.get_import_invert(),
+            ..RasterProfile::default()
+        };
+        match rasterize(&import.image, &profile, None).and_then(|b| {
+            PixelDocument::from_rows(&b.rows().map(<[u8]>::to_vec).collect::<Vec<_>>())
+        }) {
+            Ok(doc) => {
+                pm.set_import_preview(image_from_pixels(doc.width(), doc.height(), doc.pixels()));
+                pm.set_import_info(ss(format!("{} × {}", doc.width(), doc.height())));
+                pm.set_dialog_error("".into());
+                import.doc = Some(doc);
+            }
+            Err(e) => {
+                pm.set_dialog_error(ss(e.message));
+                import.doc = None;
+            }
+        }
+    }
+
+    pub fn pixel_dialog_accepted(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let pm = PixelModel::get(&ui);
+        let result: Result<(), CoreError> = (|| {
+            match pm.get_dialog() {
+                1 => {
+                    let anchor = ANCHORS
+                        .get(pm.get_resize_anchor().max(0) as usize)
+                        .copied()
+                        .unwrap_or("center");
+                    self.pixel.resize(
+                        i64::from(pm.get_resize_w()),
+                        i64::from(pm.get_resize_h()),
+                        anchor,
+                    )?;
+                }
+                2 => {
+                    let Some(save_first) = self.confirm_unsaved_pixel() else {
+                        return Ok(());
+                    };
+                    if save_first && !self.pixel_save()? {
+                        return Ok(());
+                    }
+                    let Some(import) = self.import.take() else {
+                        return Ok(());
+                    };
+                    let Some(doc) = import.doc else {
+                        return Err(CoreError::invalid("image must not be empty"));
+                    };
+                    let limit = self.undo_limit();
+                    self.pixel.replace(doc, Some(import.path), limit);
+                }
+                3 => {
+                    let text = pm.get_text_value().to_string();
+                    let pack_id = self
+                        .font_packs
+                        .get(pm.get_text_font().max(0) as usize)
+                        .cloned()
+                        .unwrap_or_default();
+                    if text.is_empty() || pack_id.is_empty() {
+                        pm.set_dialog(0);
+                        return Ok(());
+                    }
+                    let root = self.project_root().unwrap_or_default();
+                    let pack = load_font_pack(&root.join(&pack_id))?;
+                    let (x, y) = (i64::from(pm.get_text_x()), i64::from(pm.get_text_y()));
+                    let (w, h) = insert_fontpack_text(
+                        &mut self.pixel.doc,
+                        &pack,
+                        &text,
+                        x,
+                        y,
+                        pm.get_text_tracking(),
+                    )?;
+                    let fits = x >= 0
+                        && y >= 0
+                        && x as usize + w <= self.pixel.width()
+                        && y as usize + h <= self.pixel.height();
+                    self.pixel.selection =
+                        (w > 0 && h > 0 && fits).then_some((x as usize, y as usize, w, h));
+                }
+                _ => {}
+            }
+            pm.set_dialog(0);
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.refresh_pixel();
+                self.bench_document_changed();
+            }
+            Err(e) => pm.set_dialog_error(ss(e.message)),
+        }
+    }
+
+    /// Prompts raised by Pixel Studio / the workbench. Returns false if not ours.
+    pub fn pixel_prompt(&mut self, prompt: Prompt, text: &str) -> bool {
+        let result: Result<(), CoreError> = match prompt {
+            Prompt::CSymbol(path) => {
+                if text.is_empty() {
+                    return true;
+                }
+                self.pixel
+                    .save_c_header(&path, text)
+                    .map(|()| self.set_status(posix(&path)))
+            }
+            Prompt::GlyphCharacters => {
+                if text.is_empty() {
+                    return true;
+                }
+                let Some(output) = rfd::FileDialog::new()
+                    .set_title(self.t("pixel.font.output"))
+                    .pick_folder()
+                else {
+                    return true;
+                };
+                mono_font::render_centered_cells(text, None, 12, GLYPH_CELL, 128)
+                    .and_then(|cells| write_glyph_dir(&cells, &output, 12))
+                    .map(|count| {
+                        let message = trf(
+                            &self.lang,
+                            "pixel.font.done",
+                            &[("count", count.to_string())],
+                        );
+                        self.set_status(message);
+                    })
+            }
+            Prompt::ProfileId => {
+                if text.is_empty() {
+                    return true;
+                }
+                let (title, label) = (self.t("bench.save_as"), self.t("bench.profile_name"));
+                self.show_prompt(Prompt::ProfileName(text.to_string()), &title, &label, text);
+                Ok(())
+            }
+            Prompt::ProfileName(id) => {
+                if text.is_empty() {
+                    return true;
+                }
+                let mut profile = self.bench.profile.clone();
+                profile.name = text.to_string();
+                match self.project.as_mut() {
+                    Some(project) => project
+                        .upsert_output_profile(&id, &profile, true)
+                        .map(|()| {
+                            self.bench.profile_id = id;
+                            self.bench.profile = profile;
+                        }),
+                    None => Ok(()),
+                }
+            }
+            _ => return false,
+        };
+        if let Err(e) = result {
+            self.bench.message = e.message.clone();
+            self.error(&e);
+        }
+        self.refresh_bench();
+        true
+    }
+
+    // ------------------------------------------------------------ workbench
+
+    fn saved_profiles(&self) -> (String, Vec<(String, OutputProfile)>) {
+        self.project
+            .as_ref()
+            .and_then(|p| p.output_profiles().ok())
+            .unwrap_or_else(|| ("ssd1306_vlsb_c".into(), Vec::new()))
+    }
+
+    /// Load the project's active profile (project open / workspace switch).
+    pub fn bench_load_active(&mut self) {
+        let (active, saved) = self.saved_profiles();
+        let merged = merged_profiles(&saved);
+        let (id, profile) = merged
+            .iter()
+            .find(|(id, _)| *id == active)
+            .or_else(|| merged.first())
+            .cloned()
+            .unwrap_or_default();
+        self.bench.profile_id = id;
+        self.bench.profile = profile;
+        self.bench.last = None;
+        self.refresh_bench();
+    }
+
+    pub fn refresh_bench(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let om = OutputModel::get(&ui);
+        let b = &self.bench;
+        om.set_sources(model(
+            SOURCES
+                .iter()
+                .map(|s| ss(self.t(&format!("bench.source.{s}"))))
+                .collect(),
+        ));
+        om.set_source(b.source as i32);
+        let (_, saved) = self.saved_profiles();
+        let merged = merged_profiles(&saved);
+        om.set_profiles(model(
+            merged
+                .iter()
+                .map(|(id, p)| ProfileItem {
+                    id: ss(id),
+                    name: ss(&p.name),
+                })
+                .collect(),
+        ));
+        om.set_profile_names(model(merged.iter().map(|(_, p)| ss(&p.name)).collect()));
+        om.set_profile(
+            merged
+                .iter()
+                .position(|(id, _)| *id == b.profile_id)
+                .unwrap_or(0) as i32,
+        );
+        om.set_project_profiles(self.project.is_some());
+        om.set_font_packs(model(self.font_packs.iter().map(ss).collect()));
+        om.set_modes(model(MODES.iter().map(|(label, _, _)| ss(label)).collect()));
+        om.set_mode(b.mode_index() as i32);
+        let pick = |key: &str, first: &str| i32::from(b.field(key) != first);
+        om.set_bit_order(pick("encoding.bit_order", "msb_first"));
+        om.set_polarity(pick("encoding.polarity", "one_is_lit"));
+        om.set_container(pick("text.container", "text"));
+        om.set_radix(pick("text.radix", "hex"));
+        om.set_index_mode(match b.field("text.index_mode").as_str() {
+            "inline" => 1,
+            "sidecar" => 2,
+            _ => 0,
+        });
+        let int = |key: &str| b.field(key).parse::<i32>().unwrap_or(0);
+        om.set_bytes_per_line(int("text.bytes_per_line"));
+        om.set_index_per_line(int("text.index_entries_per_line"));
+        om.set_minimal(b.field("text.minimal_data") == "true");
+        om.set_compact(b.field("text.compact_spacing") == "true");
+        om.set_uppercase(b.field("text.uppercase") == "true");
+        om.set_threshold_mode(pick("raster.threshold_mode", "luma"));
+        om.set_threshold(int("raster.luma_threshold"));
+        om.set_red(int("raster.red_threshold"));
+        om.set_green(int("raster.green_threshold"));
+        om.set_blue(int("raster.blue_threshold"));
+        om.set_invert(b.field("raster.invert_source") == "true");
+        om.set_template_keys(model(TEMPLATE_FIELDS.iter().map(ss).collect()));
+        om.set_template_labels(model(
+            TEMPLATE_FIELDS
+                .iter()
+                .map(|k| ss(self.t(&format!("bench.template.{k}"))))
+                .collect(),
+        ));
+        om.set_template_values(model(
+            TEMPLATE_FIELDS
+                .iter()
+                .map(|k| ss(b.field(&format!("text.{k}"))))
+                .collect(),
+        ));
+        om.set_message(ss(&b.message));
+        om.set_lines(model(b.display_text().split('\n').map(ss).collect()));
+    }
+
+    fn persist_profile(&mut self) {
+        let Some(project) = self.project.as_mut() else {
+            return;
+        };
+        let id = self.bench.profile_id.clone();
+        self.bench.message = match project.upsert_output_profile(&id, &self.bench.profile, true) {
+            Ok(()) => tr_static(&self.lang, "bench.profile_saved"),
+            Err(e) => trf(
+                &self.lang,
+                "bench.profile_save_failed",
+                &[("error", e.message)],
+            ),
+        };
+    }
+
+    pub fn bench_field(&mut self, key: &str, value: &str) {
+        match self.bench.set_field(key, value) {
+            Ok(()) => {
+                self.persist_profile();
+                if self.bench.last.is_some() {
+                    self.bench_generate();
+                }
+            }
+            Err(e) => self.bench.message = e.message,
+        }
+        self.refresh_bench();
+    }
+
+    pub fn bench_source(&mut self, index: i32) {
+        self.bench.source = usize::try_from(index).unwrap_or(0).min(SOURCES.len() - 1);
+        self.bench_generate();
+        self.refresh_bench();
+    }
+
+    pub fn bench_profile(&mut self, index: i32) {
+        let (_, saved) = self.saved_profiles();
+        let merged = merged_profiles(&saved);
+        if let Some((id, profile)) = usize::try_from(index).ok().and_then(|i| merged.get(i)) {
+            self.bench.profile_id = id.clone();
+            self.bench.profile = profile.clone();
+            self.persist_profile();
+            if self.bench.last.is_some() {
+                self.bench_generate();
+            }
+        }
+        self.refresh_bench();
+    }
+
+    /// V1 regenerates on canvas edits when the source is the canvas/selection.
+    pub fn bench_document_changed(&mut self) {
+        if self.bench.last.is_some() && self.bench.source <= 1 {
+            self.bench_generate();
+            self.refresh_bench();
+        }
+    }
+
+    fn bench_items(&mut self) -> Result<Vec<OutputItem>, CoreError> {
+        let profile = self.bench.profile.clone();
+        match self.bench.source_kind() {
+            "canvas" => {
+                let name = self
+                    .pixel
+                    .path
+                    .as_deref()
+                    .and_then(Path::file_stem)
+                    .map_or_else(
+                        || "oled_bitmap".into(),
+                        |s| s.to_string_lossy().into_owned(),
+                    );
+                Ok(vec![bitmap_item(&name, &self.pixel.doc.rows(), &profile)?])
+            }
+            "selection" => {
+                if self.pixel.selection.is_none() {
+                    return Err(CoreError::invalid(self.t("bench.no_selection")));
+                }
+                Ok(vec![bitmap_item(
+                    "selection",
+                    &self.pixel.selection_rows(),
+                    &profile,
+                )?])
+            }
+            "scene" => {
+                let name = self
+                    .project
+                    .as_ref()
+                    .map(mono_project::project::ProjectWorkspace::active_screen)
+                    .unwrap_or_else(|| "scene".into());
+                let Some(fb) = self.current_framebuffer() else {
+                    return Err(CoreError::invalid(self.t("bench.no_project")));
+                };
+                let rows: Vec<Vec<u8>> = fb.rows().map(<[u8]>::to_vec).collect();
+                Ok(vec![bitmap_item(&name, &rows, &profile)?])
+            }
+            "font" => {
+                let root = self
+                    .project_root()
+                    .ok_or_else(|| CoreError::invalid(self.t("bench.no_project")))?;
+                let pack_id = self
+                    .font_packs
+                    .get(self.bench_font_index())
+                    .cloned()
+                    .ok_or_else(|| CoreError::invalid(self.t("pixel.font_missing")))?;
+                let pack = load_font_pack(&root.join(pack_id))?;
+                font_items(&pack, &self.bench.characters, &profile)
+            }
+            _ => {
+                let path = PathBuf::from(self.bench.image_path.trim());
+                let bytes = std::fs::read(&path)
+                    .map_err(|e| mono_project::resources::io_error(&path, &e))?;
+                let decoded = mono_project::image_io::decode_image(&bytes)?;
+                let image = RgbaImage::new(decoded.width, decoded.height, decoded.rgba)?;
+                let bitmap = rasterize(&image, &profile.raster, None)?;
+                let rows: Vec<Vec<u8>> = bitmap.rows().map(<[u8]>::to_vec).collect();
+                let name = path
+                    .file_stem()
+                    .map_or_else(|| "image".into(), |s| s.to_string_lossy().into_owned());
+                Ok(vec![bitmap_item(&name, &rows, &profile)?])
+            }
+        }
+    }
+
+    fn bench_font_index(&self) -> usize {
+        self.ui.upgrade().map_or(0, |ui| {
+            OutputModel::get(&ui).get_font_pack().max(0) as usize
+        })
+    }
+
+    pub fn bench_generate(&mut self) {
+        let result = self.bench_items().and_then(|items| {
+            let symbol = items.first().map(|i| i.name.clone()).unwrap_or_default();
+            self.bench.generate(&items, &symbol)
+        });
+        match result {
+            Ok(()) => self.bench.message.clear(),
+            Err(e) => self.bench.message = e.message,
+        }
+    }
+
+    pub fn bench_action(&mut self, action: &str) {
+        if let Some(ui) = self.ui.upgrade() {
+            let om = OutputModel::get(&ui);
+            self.bench.characters = om.get_characters().to_string();
+            self.bench.image_path = om.get_image_path().to_string();
+        }
+        match action {
+            "generate" => self.bench_generate(),
+            "clear" => {
+                self.bench.last = None;
+                self.bench.message.clear();
+            }
+            "copy" => {
+                if let Some(text) = self.bench.copy_text() {
+                    self.bench.message =
+                        match arboard::Clipboard::new().and_then(|mut c| c.set_text(text)) {
+                            Ok(()) => self.t("bench.copied"),
+                            Err(e) => e.to_string(),
+                        };
+                }
+            }
+            "save" => {
+                if self.bench.last.is_none() {
+                    self.bench_generate();
+                } else if let Err(e) = self.bench_save() {
+                    self.bench.message = e.message;
+                }
+            }
+            "save-as" => {
+                if self.project.is_some() {
+                    let (title, label) = (self.t("bench.save_as"), self.t("bench.profile_id"));
+                    self.show_prompt(Prompt::ProfileId, &title, &label, "");
+                }
+            }
+            "delete-profile" => {
+                let id = self.bench.profile_id.clone();
+                let (_, saved) = self.saved_profiles();
+                if !saved.iter().any(|(s, _)| *s == id) {
+                    self.bench.message = self.t("bench.builtin_not_saved");
+                } else if let Some(project) = self.project.as_mut() {
+                    match project.delete_output_profile(&id) {
+                        Ok(()) => self.bench_load_active(),
+                        Err(e) => self.bench.message = e.message,
+                    }
+                }
+            }
+            "browse-image" => {
+                if let Some(path) = pick_image() {
+                    self.bench.image_path = posix(&path);
+                    if let Some(ui) = self.ui.upgrade() {
+                        OutputModel::get(&ui).set_image_path(ss(&self.bench.image_path));
+                    }
+                    self.bench_generate();
+                }
+            }
+            _ => {}
+        }
+        self.refresh_bench();
+    }
+
+    fn bench_save(&mut self) -> Result<(), CoreError> {
+        let Some((raw, sidecar)) = self.bench.save_payload() else {
+            return Ok(());
+        };
+        let binary = self.bench.is_binary();
+        let mut dialog =
+            rfd::FileDialog::new().set_file_name(if binary { "bitmap.bin" } else { "bitmap.h" });
+        dialog = if binary {
+            dialog.add_filter("BIN", &["bin"])
+        } else {
+            dialog
+                .add_filter("Header", &["h"])
+                .add_filter("Text", &["txt"])
+        };
+        if let Some(root) = self.project_root() {
+            dialog = dialog.set_directory(root);
+        }
+        let Some(path) = dialog.save_file() else {
+            return Ok(());
+        };
+        atomic_write(&path, &raw)?;
+        if let Some(text) = sidecar {
+            let stem = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            atomic_write(
+                &path.with_file_name(format!("{stem}_index.h")),
+                text.as_bytes(),
+            )?;
+        }
+        self.bench.message = trf(&self.lang, "bench.saved", &[("sha", hex_digest(&raw))]);
+        Ok(())
+    }
+}
+
+fn tr_static(lang: &str, key: &str) -> String {
+    crate::i18n::tr(lang, key)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn glyph_dir_matches_v1_layout_and_prunes_stale_pngs() {
+        let dir = std::env::temp_dir().join(format!("mono-glyphs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cells = mono_font::render_centered_cells("AB", None, 12, GLYPH_CELL, 128).unwrap();
+        assert_eq!(write_glyph_dir(&cells, &dir, 12).unwrap(), 2);
+        assert!(dir.join("U+0041.png").is_file());
+        let header = std::fs::read_to_string(dir.join("glyphs.h")).unwrap();
+        assert!(
+            header.starts_with("#pragma once\n\nstatic const unsigned char glyph_0041[24] = {0x")
+        );
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(dir.join("glyph_manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["glyphs"]["B"]["file"], "U+0042.png");
+        assert_eq!(manifest["cell"]["h"], 16);
+        let cells = mono_font::render_centered_cells("A", None, 12, GLYPH_CELL, 128).unwrap();
+        write_glyph_dir(&cells, &dir, 12).unwrap();
+        assert!(!dir.join("U+0042.png").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn vlsb_packs_pages_lsb_top() {
+        let mut rows = vec![vec![0u8; 2]; 16];
+        rows[0][0] = 1;
+        rows[9][1] = 1;
+        assert_eq!(vlsb(&rows, 2), vec![0x01, 0x00, 0x00, 0x02]);
+    }
+}

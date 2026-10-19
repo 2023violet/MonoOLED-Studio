@@ -5,6 +5,7 @@ members = [
   "crates/mono-project",
   "crates/mono-font",
   "apps/mono-cli",
+  "apps/mono-desktop",
 ]
 
 [workspace.package]
