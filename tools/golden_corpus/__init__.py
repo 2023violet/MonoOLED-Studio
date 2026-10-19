@@ -5,7 +5,7 @@ from importlib import import_module
 
 from .common import Category
 
-MODULES: tuple[str, ...] = ('encoding', 'formatting', 'raster', 'scenes', 'projects', 'handoff')
+MODULES: tuple[str, ...] = ('encoding', 'formatting', 'raster', 'scenes', 'projects', 'handoff', 'automation')
 
 CATEGORIES: list[Category] = [
     Category(module.NAME, module.build, module.SOURCES)

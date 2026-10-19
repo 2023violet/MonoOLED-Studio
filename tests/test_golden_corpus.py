@@ -114,3 +114,15 @@ def test_handoff_cases_record_entries():
     assert 'ui_contract.json' in names and 'HANDOFF_README.md' in names
     assert any(entry['kind'] == 'png' for entry in entries)
     assert any(name.startswith('golden/') and name.endswith('.bin') for name in names)
+
+
+def test_automation_session_records_contract_without_absolute_paths():
+    cases = _build('automation')
+    session = cases['api-session-curing_lite-main']['expected']
+    methods = [step['request']['method'] for step in session['steps']]
+    assert 'export.c_header' in methods and 'history.rollback' in methods
+    codes = [step['response'].get('error', {}).get('code') for step in session['steps']]
+    assert 'STALE_REVISION' in codes and 'METHOD_OR_FIELD_NOT_FOUND' in codes
+    blob = json.dumps(session)
+    assert ROOT.as_posix() not in blob and str(ROOT) not in blob
+    assert 'exports/current.h' in session['export_files']
