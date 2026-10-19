@@ -25,7 +25,8 @@ sha2 = "0.10"
 indexmap = "2"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# deny (not forbid): Slint-generated UI code needs a local allow; hand-written unsafe stays rejected.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

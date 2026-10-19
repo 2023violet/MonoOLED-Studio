@@ -71,17 +71,41 @@ fn field<'a>(element: &'a Map<String, Value>, key: &str) -> CoreResult<&'a Value
     element.get(key).ok_or_else(|| key_error(key))
 }
 
+/// Renderer geometry is clamped to +-1e9 px: far outside any canvas, so drawing is
+/// unchanged, and every later sum/product stays inside i64 (V1 uses bigints).
+pub const GEOMETRY_LIMIT: i64 = 1_000_000_000;
+
+fn to_int(value: &Value) -> CoreResult<i64> {
+    match value {
+        Value::Null | Value::Array(_) | Value::Object(_) => Err(CoreError::new(
+            "E-CORE-TYPE",
+            format!(
+                "int() argument must be a string, a bytes-like object or a real number, not '{}'",
+                match value {
+                    Value::Null => "NoneType",
+                    Value::Array(_) => "list",
+                    _ => "dict",
+                }
+            ),
+        )),
+        _ => py_int(value)
+            .map(|v| v.clamp(-GEOMETRY_LIMIT, GEOMETRY_LIMIT))
+            .ok_or_else(|| {
+                CoreError::invalid(format!(
+                    "invalid literal for int() with base 10: {}",
+                    py_str(value)
+                ))
+            }),
+    }
+}
+
 fn int_field(element: &Map<String, Value>, key: &str) -> CoreResult<i64> {
-    let value = field(element, key)?;
-    py_int(value)
-        .ok_or_else(|| CoreError::invalid(format!("invalid literal for int(): {}", py_str(value))))
+    to_int(field(element, key)?)
 }
 
 fn int_or(element: &Map<String, Value>, key: &str, default: i64) -> CoreResult<i64> {
     match element.get(key) {
-        Some(value) => py_int(value).ok_or_else(|| {
-            CoreError::invalid(format!("invalid literal for int(): {}", py_str(value)))
-        }),
+        Some(value) => to_int(value),
         None => Ok(default),
     }
 }
@@ -129,9 +153,7 @@ fn render_image<R: Resources>(
     } else {
         let name = py_str(field(element, "bind")?);
         let raw = ctx.state.get(&name).ok_or_else(|| key_error(&name))?;
-        let value = py_int(raw).ok_or_else(|| {
-            CoreError::invalid(format!("invalid literal for int(): {}", py_str(raw)))
-        })?;
+        let value = to_int(raw)?;
         let filename = py_str(field(element, "pattern")?).replace("{n}", &value.to_string());
         let dir = resolve(ctx.root, &py_str(field(element, "dir")?));
         (normalize_path(&dir.join(filename)), Some((name, value)))
@@ -183,7 +205,8 @@ fn render_digits<R: Resources>(
 ) -> CoreResult<Value> {
     let name = py_str(field(element, "bind")?);
     let mut raw = py_str(ctx.state.get(&name).ok_or_else(|| key_error(&name))?);
-    let min_digits = int_or(element, "min_digits", 1)?;
+    // Digit strings longer than 4096 are not a meaningful OLED layout; bound the padding work.
+    let min_digits = int_or(element, "min_digits", 1)?.min(4096);
     let is_digit = !raw.is_empty() && raw.chars().all(|c| c.is_numeric());
     if is_digit && (raw.chars().count() as i64) < min_digits {
         let pad = py_str(&str_or(element, "pad_char", "0"));
@@ -239,7 +262,11 @@ fn render_text<R: Resources>(
     } else {
         (count - 1) * advance + cell_w
     };
-    let (x, y) = match element.get("zone").and_then(Value::as_object) {
+    let (x, y) = match element
+        .get("zone")
+        .and_then(Value::as_object)
+        .filter(|z| !z.is_empty())
+    {
         Some(zone) => {
             let zx = int_field(zone, "x")?;
             let x = match py_str(&str_or(element, "align", "left")).as_str() {

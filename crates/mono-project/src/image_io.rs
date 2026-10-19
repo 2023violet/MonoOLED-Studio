@@ -18,6 +18,23 @@ fn image_error(message: impl Into<String>) -> CoreError {
     CoreError::new("E-IMAGE", message)
 }
 
+/// Pillow's decompression-bomb warning threshold; larger images are refused before
+/// any pixel buffer is allocated.
+pub const MAX_IMAGE_PIXELS: u64 = 89_478_485;
+
+fn check_size(width: u64, height: u64) -> CoreResult<()> {
+    if width == 0 || height == 0 {
+        return Err(image_error("image must not be empty"));
+    }
+    if width.saturating_mul(height) > MAX_IMAGE_PIXELS {
+        return Err(image_error(format!(
+            "Image size ({} pixels) exceeds limit of {MAX_IMAGE_PIXELS} pixels, could be decompression bomb DOS attack.",
+            width.saturating_mul(height)
+        )));
+    }
+    Ok(())
+}
+
 fn le_u16(b: &[u8], at: usize) -> Option<u32> {
     b.get(at..at + 2)
         .map(|s| u32::from(u16::from_le_bytes([s[0], s[1]])))
@@ -40,14 +57,21 @@ pub fn decode_bmp(bytes: &[u8]) -> CoreResult<DecodedImage> {
     if width <= 0 || raw_height == 0 || !(compression == 0 || (compression == 3 && bpp == 32)) {
         return Err(bad());
     }
+    check_size(
+        u64::from(width.unsigned_abs()),
+        u64::from(raw_height.unsigned_abs()),
+    )?;
     let (width, height, top_down) = (
         width as usize,
         raw_height.unsigned_abs() as usize,
         raw_height < 0,
     );
+    if !matches!(bpp, 1 | 4 | 8 | 24 | 32) {
+        return Err(bad());
+    }
     let colors = match le_u32(bytes, 46).unwrap_or(0) {
         0 if bpp <= 8 => 1usize << bpp,
-        n => n as usize,
+        n => (n as usize).min(256),
     };
     let palette_at = 14 + header;
     let palette: Vec<[u8; 3]> = (0..if bpp <= 8 { colors } else { 0 })
@@ -59,6 +83,12 @@ pub fn decode_bmp(bytes: &[u8]) -> CoreResult<DecodedImage> {
         })
         .collect();
     let stride = (width * bpp as usize).div_ceil(32) * 4;
+    if offset
+        .checked_add(stride.saturating_mul(height))
+        .is_none_or(|end| end > bytes.len())
+    {
+        return Err(image_error("image file is truncated"));
+    }
     let mut rgba = Vec::with_capacity(width * height * 4);
     for y in 0..height {
         let src_row = if top_down { y } else { height - 1 - y };
@@ -108,6 +138,7 @@ pub fn decode_png(bytes: &[u8]) -> CoreResult<DecodedImage> {
         .read_info()
         .map_err(|e| image_error(format!("cannot identify image file: {e}")))?;
     let info = reader.info();
+    check_size(u64::from(info.width), u64::from(info.height))?;
     let mode = match (info.color_type, info.bit_depth) {
         (png::ColorType::Grayscale, png::BitDepth::One) => "1",
         (png::ColorType::Grayscale, png::BitDepth::Sixteen) => "I;16",

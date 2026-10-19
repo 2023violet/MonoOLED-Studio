@@ -85,7 +85,9 @@ fn check_box(
         ));
         return;
     }
-    let [x, y, w, h] = values.map(|v| v.and_then(Value::as_i64).unwrap_or(0));
+    // i128 so huge JSON integers cannot wrap past the OUT_OF_BOUNDS gate.
+    let [x, y, w, h] = values.map(|v| i128::from(v.and_then(Value::as_i64).unwrap_or(0)));
+    let (cw, ch) = (i128::from(cw), i128::from(ch));
     if w <= 0 || h <= 0 {
         findings.push(Finding::new(
             "BLOCKER",
@@ -300,7 +302,7 @@ pub fn validate_scene(
         ));
         return findings;
     }
-    let expected_bytes = cw * (ch / 8);
+    let expected_bytes = cw.saturating_mul(ch / 8);
     if let Some(declared) = scene
         .get("storage")
         .and_then(|s| s.get("bytes_per_frame"))
@@ -445,7 +447,11 @@ pub fn validate_scene(
                         get("digit_h").and_then(Value::as_i64).unwrap_or(0),
                         tracking.as_i64().unwrap_or(0),
                     );
-                    let width = Value::from(digits * dw + (digits - 1).max(0) * tr);
+                    let width = Value::from(
+                        digits
+                            .saturating_mul(dw)
+                            .saturating_add((digits - 1).max(0).saturating_mul(tr)),
+                    );
                     check_box(
                         &mut findings,
                         &eid,
@@ -1133,7 +1139,14 @@ fn prune(directory: &Path, suffix: &str, keep: &BTreeSet<String>) {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() {
+            // Never follow or delete through symlinks/junctions: they may point outside the export.
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
                 walk(&path, base, suffix, keep);
                 let _ = std::fs::remove_dir(&path);
             } else if path.to_string_lossy().ends_with(suffix) {
@@ -1205,7 +1218,7 @@ pub fn export_scene(
         py_int(&canvas["w"]).unwrap_or(0),
         py_int(&canvas["h"]).unwrap_or(0),
     );
-    let expected = (width * (height / 8)) as usize;
+    let expected = width.max(0).saturating_mul(height.max(0) / 8) as usize;
     let mut frames: BTreeMap<String, Value> = BTreeMap::new();
     let mut hashes = BTreeMap::new();
     let mut used: BTreeSet<PathBuf> = BTreeSet::new();
@@ -1309,7 +1322,7 @@ pub fn export_scene(
 }
 
 /// V1 `build_thumbnail_wall`. Labels use the built-in 5x7 font (V1 uses Pillow's
-/// default font), so label pixels are not V1-identical; thumbnails are.
+/// default font); only the canvas size is checked against V1.
 pub fn build_thumbnail_wall(
     images: &[PathBuf],
     output: &Path,
@@ -1400,7 +1413,8 @@ pub fn asset_health(
             for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
                 let path = entry.path();
                 out.push(path.clone());
-                if path.is_dir() {
+                // Like Python's rglob: do not recurse through directory links.
+                if entry.file_type().is_ok_and(|k| k.is_dir()) {
                     walk(&path, out);
                 }
             }
@@ -1462,10 +1476,10 @@ pub fn deterministic_zip(source: &Path, target: &Path) -> CoreResult<()> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
             let path = entry.path();
-            if path.is_dir() {
-                walk(&path, out)
-            } else {
-                out.push(path)
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => walk(&path, out),
+                Ok(kind) if kind.is_file() => out.push(path),
+                _ => {}
             }
         }
     }

@@ -59,6 +59,16 @@ impl Report {
         }
     }
 
+    /// Like `finish`, but also proves no case was skipped.
+    pub fn finish_exact(self, label: &str, expected: usize) {
+        assert_eq!(
+            self.checked, expected,
+            "{label}: checked {} cases, corpus has {expected}",
+            self.checked
+        );
+        self.finish(label);
+    }
+
     pub fn finish(self, label: &str) {
         assert!(self.checked > 0, "{label}: no cases checked");
         assert!(
@@ -69,4 +79,12 @@ impl Report {
             self.failures.join("\n")
         );
     }
+}
+
+/// Number of corpus cases whose `kind` satisfies `keep`.
+pub fn count_cases(category: &str, keep: impl Fn(&str) -> bool) -> usize {
+    cases(category)
+        .iter()
+        .filter(|c| keep(c["kind"].as_str().unwrap_or("")))
+        .count()
 }

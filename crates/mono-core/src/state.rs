@@ -416,12 +416,17 @@ fn int_values(spec: &Map<String, Value>, policy: IntegerPolicy) -> CoreResult<Ve
     let hi = spec.get("max").and_then(py_int).unwrap_or(lo);
     let init = spec.get("init").and_then(py_int).unwrap_or(lo);
     let mut out: Vec<i64> = match policy {
-        IntegerPolicy::Boundaries => vec![lo, (lo + hi).div_euclid(2), init, hi],
+        IntegerPolicy::Boundaries => vec![
+            lo,
+            ((i128::from(lo) + i128::from(hi)).div_euclid(2)) as i64,
+            init,
+            hi,
+        ],
         IntegerPolicy::Representative => {
-            if hi - lo <= 12 {
+            if i128::from(hi) - i128::from(lo) <= 12 {
                 (lo..=hi).collect()
             } else {
-                let mut candidates = vec![lo, hi.min(lo + 1), init, hi];
+                let mut candidates = vec![lo, hi.min(lo.saturating_add(1)), init, hi];
                 candidates.extend(
                     [9, 10, 99, 100, 300, 999]
                         .into_iter()
@@ -431,7 +436,7 @@ fn int_values(spec: &Map<String, Value>, policy: IntegerPolicy) -> CoreResult<Ve
             }
         }
         IntegerPolicy::Full => {
-            if hi - lo > 2000 {
+            if i128::from(hi) - i128::from(lo) > 2000 {
                 return Err(CoreError::invalid("full integer range too large"));
             }
             (lo..=hi).collect()
@@ -730,10 +735,30 @@ pub fn eval_do(expr: &str, state: &mut State) -> CoreResult<()> {
             format!("'timeline 引用了未定义的状态变量: {name}'"),
         )
     })?;
+    // V1: `cur + num` raises TypeError for non-numeric state values.
+    if !(is_py_int(&current) || current.is_boolean()) {
+        let kind = match &current {
+            Value::String(_) => "str",
+            Value::Null => "NoneType",
+            Value::Array(_) => "list",
+            Value::Object(_) => "dict",
+            _ => "float",
+        };
+        if op != "=" {
+            return Err(CoreError::new(
+                "E-CORE-TYPE",
+                format!(
+                    "unsupported operand type(s) for {}: '{kind}' and 'int'",
+                    &op[..1]
+                ),
+            ));
+        }
+    }
     let cur = py_int(&current).unwrap_or(0);
+    let overflow = || CoreError::invalid("timeline arithmetic overflow");
     let next = match op {
-        "+=" => cur + num,
-        "-=" => cur - num,
+        "+=" => cur.checked_add(num).ok_or_else(overflow)?,
+        "-=" => cur.checked_sub(num).ok_or_else(overflow)?,
         _ => num,
     };
     state.insert(name.to_string(), Value::from(next));

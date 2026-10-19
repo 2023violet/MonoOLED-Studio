@@ -12,6 +12,7 @@ pub mod error;
 pub mod font;
 pub mod formatter;
 pub mod framebuffer;
+pub mod pixel;
 pub mod profiles;
 pub mod pyvalue;
 pub mod raster;

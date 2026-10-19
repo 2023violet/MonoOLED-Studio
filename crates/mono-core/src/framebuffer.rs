@@ -3,6 +3,9 @@
 use crate::bitmap::MonoBitmap;
 use crate::error::{CoreError, CoreResult};
 
+/// Largest accepted framebuffer edge; far beyond any monochrome OLED panel.
+pub const MAX_DIMENSION: usize = 8192;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrameBuffer {
     width: usize,
@@ -16,6 +19,13 @@ impl FrameBuffer {
             return Err(CoreError::invalid(
                 "framebuffer dimensions must be positive",
             ));
+        }
+        // OLED panels are tiny; refuse sizes that could only come from corrupt or
+        // hostile scene JSON instead of attempting a huge allocation.
+        if width > MAX_DIMENSION || height > MAX_DIMENSION {
+            return Err(CoreError::invalid(format!(
+                "framebuffer {width}x{height} exceeds {MAX_DIMENSION}x{MAX_DIMENSION}"
+            )));
         }
         Ok(Self {
             width,
@@ -59,8 +69,8 @@ impl FrameBuffer {
                 if *value == 0 {
                     continue;
                 }
-                let tx = x + mx as i64;
-                let ty = y + my as i64;
+                let tx = x.saturating_add(mx as i64);
+                let ty = y.saturating_add(my as i64);
                 if tx >= 0 && ty >= 0 && (tx as usize) < self.width && (ty as usize) < self.height {
                     self.pixels[ty as usize * self.width + tx as usize] = 1;
                 }

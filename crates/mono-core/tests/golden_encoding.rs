@@ -74,7 +74,7 @@ fn encoding_and_framebuffer_cases_match_v1() {
             other => panic!("unknown kind {other}"),
         }
     }
-    report.finish("encoding");
+    report.finish_exact("encoding", common::count_cases("encoding", |_| true));
 }
 
 #[test]
@@ -146,7 +146,10 @@ fn formatting_and_legacy_header_cases_match_v1() {
             .collect();
         check_format(&mut report, id, &items, input, expected);
     }
-    report.finish("formatting");
+    report.finish_exact(
+        "formatting",
+        common::count_cases("formatting", |k| k != "profile_validation"),
+    );
 }
 
 fn pattern(width: usize, height: usize) -> MonoBitmap {
@@ -233,5 +236,8 @@ fn profile_validation_cases_match_v1() {
             format!("{:?}", OutputProfile::from_json(&case["input"]["profile"]))
         });
     }
-    report.finish("profile validation");
+    report.finish_exact(
+        "profile validation",
+        common::count_cases("formatting", |k| k == "profile_validation"),
+    );
 }

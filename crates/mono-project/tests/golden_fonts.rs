@@ -147,7 +147,10 @@ fn strict_font_pack_cases_match_v1() {
             && e["cell"] == json!([loaded.cell.0, loaded.cell.1]),
         || "committed pack mismatch".into(),
     );
-    report.finish("fonts strict");
+    report.finish_exact(
+        "fonts strict",
+        common::count_cases("fonts", |k| k == "font_pack"),
+    );
 }
 
 /// Semantic cases (D6): metrics must match exactly; pixel agreement is measured and bounded.
@@ -192,8 +195,29 @@ fn generated_font_cases_are_semantically_equivalent() {
         .unwrap();
         let got = glyphs(&pack);
         let (mut same, mut total, mut metric_mismatch) = (0usize, 0usize, 0usize);
+        let (mut worst_glyph, mut shape_mismatch) = (1.0f64, 0usize);
         for (key, want) in expected["glyphs"].as_object().unwrap() {
             let have = &got[key];
+            let (have_rows, want_rows) = (
+                have["rows"].as_array().unwrap(),
+                want["rows"].as_array().unwrap(),
+            );
+            if have_rows.len() != want_rows.len()
+                || have_rows
+                    .iter()
+                    .zip(want_rows)
+                    .any(|(a, b)| a.as_str().unwrap().len() != b.as_str().unwrap().len())
+            {
+                shape_mismatch += 1;
+            }
+            let (mut glyph_same, mut glyph_total) = (0usize, 0usize);
+            for (a, b) in have_rows.iter().zip(want_rows) {
+                for (p, q) in a.as_str().unwrap().chars().zip(b.as_str().unwrap().chars()) {
+                    glyph_total += 1;
+                    glyph_same += usize::from(p == q);
+                }
+            }
+            worst_glyph = worst_glyph.min(glyph_same as f64 / glyph_total.max(1) as f64);
             if have["bearing_x"] != want["bearing_x"]
                 || have["bearing_y"] != want["bearing_y"]
                 || have["advance"] != want["advance"]
@@ -213,20 +237,35 @@ fn generated_font_cases_are_semantically_equivalent() {
             }
         }
         let agreement = same as f64 / total.max(1) as f64;
-        summary.push(format!("{id}: pixel agreement {:.4}", agreement));
+        summary.push(format!(
+            "{id}: pixel agreement {agreement:.4}, worst glyph {worst_glyph:.4}"
+        ));
         let metrics_ok = expected["cell"] == json!([pack.cell.0, pack.cell.1])
             && expected["baseline"] == json!(pack.baseline)
             && expected["advance"] == json!(pack.advance)
-            && metric_mismatch == 0;
+            && metric_mismatch == 0
+            && shape_mismatch == 0;
         report.check(
             &id,
-            metrics_ok && agreement >= SEMANTIC_PIXEL_AGREEMENT,
-            || format!("metrics_ok={metrics_ok} agreement={agreement:.4}"),
+            metrics_ok
+                && agreement >= SEMANTIC_PIXEL_AGREEMENT
+                && worst_glyph >= SEMANTIC_GLYPH_FLOOR,
+            || {
+                format!(
+                    "metrics_ok={metrics_ok} agreement={agreement:.4} worst_glyph={worst_glyph:.4}"
+                )
+            },
         );
     }
     eprintln!("{}", summary.join("\n"));
-    report.finish("fonts semantic");
+    report.finish_exact(
+        "fonts semantic",
+        common::count_cases("fonts", |k| k == "font_generate"),
+    );
 }
 
 /// G1 threshold for TrueType-generated glyphs (D6), measured against V1 FreeType output.
 const SEMANTIC_PIXEL_AGREEMENT: f64 = 0.92;
+
+/// Per-glyph floor so one badly broken glyph cannot hide inside the pooled average.
+const SEMANTIC_GLYPH_FLOOR: f64 = 0.70;

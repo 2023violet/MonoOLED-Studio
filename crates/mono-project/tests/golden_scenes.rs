@@ -134,5 +134,5 @@ fn scene_cases_match_v1() {
             Err(e) => format!("in_matrix={in_matrix} error {} {}", e.code, e.message),
         });
     }
-    report.finish("scenes");
+    report.finish_exact("scenes", common::count_cases("scenes", |_| true));
 }

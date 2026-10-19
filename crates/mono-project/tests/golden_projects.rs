@@ -445,5 +445,5 @@ fn project_cases_match_v1() {
         p.rename_screen("main", "renamed", None).map(|_| ())
     });
 
-    report.finish("projects");
+    report.finish_exact("projects", common::count_cases("projects", |_| true));
 }

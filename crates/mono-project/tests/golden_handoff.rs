@@ -133,5 +133,9 @@ fn handoff_zip_entries_match_v1() {
             });
         }
     }
-    report.finish("handoff");
+    let expected: usize = cases("handoff")
+        .iter()
+        .map(|c| c["expected"]["entries"].as_array().map_or(0, Vec::len) + 1)
+        .sum();
+    report.finish_exact("handoff", expected);
 }

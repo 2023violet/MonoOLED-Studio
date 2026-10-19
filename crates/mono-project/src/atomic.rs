@@ -1,6 +1,6 @@
 //! Atomic writes and Python-compatible JSON serialisation (V1 `atomic_io.py`).
 
-use std::fs::{self, File};
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -15,7 +15,10 @@ fn temp_sibling(target: &Path) -> PathBuf {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let nonce = std::process::id() as u128
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let unique = u128::from(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    let nonce = (std::process::id() as u128) << 64
+        ^ unique
         ^ std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
@@ -31,7 +34,11 @@ pub fn atomic_write(target: &Path, data: &[u8]) -> CoreResult<()> {
     }
     let temp = temp_sibling(target);
     let result = (|| -> std::io::Result<()> {
-        let mut file = File::create(&temp)?;
+        // create_new: never reuse or follow an existing path (V1 uses mkstemp).
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
         file.write_all(data)?;
         file.sync_all()?;
         drop(file);

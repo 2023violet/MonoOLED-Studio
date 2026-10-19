@@ -4,6 +4,7 @@
 //! project manifests and atomic writes. `mono-core` stays IO-free.
 
 pub mod atomic;
+pub mod editor;
 pub mod export;
 pub mod fontpack_io;
 pub mod image_io;

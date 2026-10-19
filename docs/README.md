@@ -15,3 +15,4 @@ Current documentation for MonoOLED Studio:
 - `rewrite/G0_RUST_BRANCH_HARVEST.md` — what the rewrite kept from the `rust` validation branch.
 - `rewrite/G0_EVIDENCE.md` — G0 evidence: golden corpus statistics, deviations, verification.
 - `rewrite/G2_EVIDENCE.md` — G2 UI framework spike: Slint vs Tauri measurements and the Slint decision.
+- `rewrite/G1_EVIDENCE.md` — G1 evidence: Rust core parity results, deviations, agent review and rework.

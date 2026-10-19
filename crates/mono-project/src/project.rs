@@ -118,6 +118,26 @@ pub fn validate_screen_id(value: &str) -> CoreResult<&str> {
     Ok(value)
 }
 
+/// Python `str.casefold()` for the cases that matter in file names (adds ß→ss etc.).
+pub fn casefold(value: &str) -> String {
+    value.to_lowercase().replace('ß', "ss").replace('ς', "σ")
+}
+
+/// Python `Path(p).as_posix()` normalisation used for collision checks:
+/// backslash to `/`, empty and `.` segments dropped, trailing `/` removed.
+fn posix_key(path: &str) -> String {
+    let segments: Vec<&str> = path
+        .split(['/', '\\'])
+        .filter(|s| !s.is_empty() && *s != ".")
+        .collect();
+    let prefix = if path.starts_with(['/', '\\']) {
+        "/"
+    } else {
+        ""
+    };
+    casefold(&format!("{prefix}{}", segments.join("/")))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScreenRef {
     pub id: String,
@@ -221,7 +241,7 @@ impl ProjectWorkspace {
             if seen.contains(&sid) {
                 return Err(CoreError::invalid(format!("duplicate screen id: {sid}")));
             }
-            let folded = sid.to_lowercase();
+            let folded = casefold(&sid);
             if seen_folded.contains(&folded) {
                 return Err(CoreError::invalid(format!(
                     "case-insensitive screen id collision: {sid}"
@@ -236,7 +256,7 @@ impl ProjectWorkspace {
                     "screen {sid} path must identify a file"
                 )));
             }
-            let folded_path = path.replace('\\', "/").to_lowercase();
+            let folded_path = posix_key(&path);
             if seen_paths.contains(&folded_path) {
                 return Err(CoreError::invalid(format!(
                     "case-insensitive screen path collision: {path}"
@@ -536,8 +556,8 @@ impl ProjectWorkspace {
         canvas: Option<(i64, i64)>,
     ) -> CoreResult<ScreenRef> {
         validate_screen_id(screen_id)?;
-        let folded = screen_id.to_lowercase();
-        if self.screens().iter().any(|s| s.id.to_lowercase() == folded) {
+        let folded = casefold(screen_id);
+        if self.screens().iter().any(|s| casefold(&s.id) == folded) {
             return Err(CoreError::invalid(format!(
                 "duplicate screen id: {screen_id}"
             )));
@@ -545,10 +565,7 @@ impl ProjectWorkspace {
         let rel = format!("scenes/{screen_id}.json");
         let target = resolve_under_root(&self.root, &rel, "new screen path")?;
         if target.exists() {
-            return Err(CoreError::new(
-                EXISTS,
-                format!("[Errno 17] File exists: '{}'", posix(&target)),
-            ));
+            return Err(CoreError::new(EXISTS, posix(&target)));
         }
         let payload = match source {
             Some(source) => {
@@ -582,7 +599,10 @@ impl ProjectWorkspace {
             }
         };
         atomic_write_json(&target, &payload)?;
-        let label = label.unwrap_or(screen_id).to_string();
+        let label = label
+            .filter(|l| !l.is_empty())
+            .unwrap_or(screen_id)
+            .to_string();
         let item = json!({"id": screen_id, "label": label, "path": rel});
         let result = self.transact(|data| {
             match data.entry("screens").or_insert_with(|| json!([])) {
@@ -609,7 +629,12 @@ impl ProjectWorkspace {
         label: Option<&str>,
     ) -> CoreResult<ScreenRef> {
         let source = self.screen_path(screen_id)?;
-        self.add_screen(new_id, Some(label.unwrap_or(new_id)), Some(&source), None)
+        self.add_screen(
+            new_id,
+            Some(label.filter(|l| !l.is_empty()).unwrap_or(new_id)),
+            Some(&source),
+            None,
+        )
     }
 
     pub fn rename_screen(
@@ -620,11 +645,11 @@ impl ProjectWorkspace {
     ) -> CoreResult<ScreenRef> {
         self.screen(screen_id)?;
         validate_screen_id(new_id)?;
-        if new_id.to_lowercase() != screen_id.to_lowercase()
+        if casefold(new_id) != casefold(screen_id)
             && self
                 .screens()
                 .iter()
-                .any(|s| s.id.to_lowercase() == new_id.to_lowercase())
+                .any(|s| casefold(&s.id) == casefold(new_id))
         {
             return Err(CoreError::invalid(format!("duplicate screen id: {new_id}")));
         }
@@ -639,7 +664,8 @@ impl ProjectWorkspace {
                             .map(py_str)
                             .filter(|l| !l.is_empty())
                             .unwrap_or_else(|| new_id.to_string());
-                        item["label"] = Value::from(label.unwrap_or(current));
+                        item["label"] =
+                            Value::from(label.filter(|l| !l.is_empty()).unwrap_or(current));
                     }
                 }
                 Ok(())
@@ -649,17 +675,17 @@ impl ProjectWorkspace {
         let new_rel = format!("scenes/{new_id}.json");
         let new_path = resolve_under_root(&self.root, &new_rel, "renamed screen path")?;
         if new_path.exists() {
-            return Err(CoreError::new(
-                EXISTS,
-                format!("[Errno 17] File exists: '{}'", posix(&new_path)),
-            ));
+            return Err(CoreError::new(EXISTS, posix(&new_path)));
         }
         if let Some(parent) = new_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| io_error(parent, &e))?;
         }
         std::fs::rename(&old_path, &new_path).map_err(|e| io_error(&old_path, &e))?;
         let active = self.active_screen();
-        let label = label.unwrap_or(new_id).to_string();
+        let label = label
+            .filter(|l| !l.is_empty())
+            .unwrap_or(new_id)
+            .to_string();
         let result = self.transact(|data| {
             if let Some(Value::Array(items)) = data.get_mut("screens") {
                 if let Some(item) = items.iter_mut().find(|i| py_str(&i["id"]) == screen_id) {
@@ -717,10 +743,7 @@ pub fn create_project(root: &Path, name: &str, canvas: (i64, i64)) -> CoreResult
     let main_scene = root.join("scenes").join("main.json");
     for path in [&manifest, &main_scene] {
         if path.exists() {
-            return Err(CoreError::new(
-                EXISTS,
-                format!("[Errno 17] File exists: '{}'", posix(path)),
-            ));
+            return Err(CoreError::new(EXISTS, posix(path)));
         }
     }
     for dir in [root.clone(), root.join("assets"), root.join("exports")] {

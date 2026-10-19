@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use mono_core::font::{FontPack, GlyphMetrics};
-use mono_core::render::{normalize_path, posix};
+use mono_core::render::posix;
 use mono_core::{CoreError, CoreResult};
 use serde_json::{Map, Value, json};
 
@@ -35,10 +35,19 @@ pub fn fontpack_fingerprint(root: &Path) -> CoreResult<String> {
     Ok(hex_digest(combined.as_bytes()))
 }
 
-fn int(value: Option<&Value>, default: i64) -> i64 {
-    value
-        .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
-        .unwrap_or(default)
+/// V1 `int(meta.get(key, default))`: Python int() semantics, errors are reported.
+fn int(value: Option<&Value>, default: i64) -> CoreResult<i64> {
+    match value {
+        None => Ok(default),
+        Some(v) => mono_core::pyvalue::py_int(v)
+            .filter(|n| n.unsigned_abs() <= i64::from(i32::MAX) as u64)
+            .ok_or_else(|| {
+                CoreError::invalid(format!(
+                    "invalid literal for int() with base 10: {}",
+                    mono_core::pyvalue::py_repr(v)
+                ))
+            }),
+    }
 }
 
 /// V1 `FontPack.load`.
@@ -46,7 +55,7 @@ pub fn load_font_pack(root: &Path) -> CoreResult<FontPack> {
     let raw = read_file(&root.join(MANIFEST))?;
     let data: Map<String, Value> = serde_json::from_slice(&raw)
         .map_err(|e| CoreError::invalid(format!("{}: {e}", posix(&root.join(MANIFEST)))))?;
-    let schema = int(data.get("schema"), 1);
+    let schema = int(data.get("schema"), 1)?;
     if schema != 1 {
         return Err(CoreError::invalid(format!(
             "unsupported font pack schema: {}",
@@ -58,7 +67,7 @@ pub fn load_font_pack(root: &Path) -> CoreResult<FontPack> {
     let cell = data
         .get("cell")
         .ok_or_else(|| CoreError::new("E-CORE-KEY", "'cell'"))?;
-    let (w, h) = (int(cell.get("w"), 0), int(cell.get("h"), 0));
+    let (w, h) = (int(cell.get("w"), 0)?, int(cell.get("h"), 0)?);
     let name = data
         .get("name")
         .map(mono_core::pyvalue::py_str)
@@ -66,8 +75,8 @@ pub fn load_font_pack(root: &Path) -> CoreResult<FontPack> {
     let mut pack = FontPack::new(
         name,
         (w, h),
-        int(data.get("baseline"), h - 1),
-        int(data.get("advance"), w),
+        int(data.get("baseline"), h - 1)?,
+        int(data.get("advance"), w)?,
     )?;
     if let Some(Value::Object(glyphs)) = data.get("glyphs") {
         for (key, meta) in glyphs {
@@ -81,8 +90,9 @@ pub fn load_font_pack(root: &Path) -> CoreResult<FontPack> {
                 .get("asset")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let asset = normalize_path(&root.join(asset_rel));
-            if !asset.starts_with(normalize_path(root)) {
+            // Resolve links like V1 `.resolve().relative_to(root)`.
+            let asset = crate::project::py_resolve(&root.join(asset_rel));
+            if !asset.starts_with(crate::project::py_resolve(root)) {
                 return Err(CoreError::invalid("glyph asset must stay inside font pack"));
             }
             if !asset.is_file() {
@@ -108,9 +118,9 @@ pub fn load_font_pack(root: &Path) -> CoreResult<FontPack> {
                 })
                 .collect();
             let metrics = GlyphMetrics {
-                bearing_x: int(meta.get("bearing_x"), 0) as i32,
-                bearing_y: int(meta.get("bearing_y"), 0) as i32,
-                advance: int(meta.get("advance"), i64::from(pack.advance)) as i32,
+                bearing_x: int(meta.get("bearing_x"), 0)? as i32,
+                bearing_y: int(meta.get("bearing_y"), 0)? as i32,
+                advance: int(meta.get("advance"), i64::from(pack.advance))? as i32,
             };
             pack.set_glyph(ch, rows, Some(metrics))?;
         }

@@ -50,5 +50,5 @@ fn raster_cases_match_v1() {
     if !resize_failures.is_empty() {
         eprintln!("resize mismatches: {resize_failures:?}");
     }
-    report.finish("raster");
+    report.finish_exact("raster", common::count_cases("raster", |_| true));
 }
