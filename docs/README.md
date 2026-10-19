@@ -11,3 +11,4 @@ Current documentation for MonoOLED Studio:
 - `WINDOWS_BUILD.md` — end-user distribution and developer build paths.
 - `ENGINEERING_HISTORY.md` — consolidated pre-1.0 hardening history.
 - `rewrite/2026-10-19-rust-rewrite-design.md` — Rust V2 rewrite design: scope, architecture, gates, golden corpus, performance budgets.
+- `rewrite/2026-10-19-g0-plan.md` — G0 implementation plan: ADR-005, TASK-003 closure, V1 golden corpus, rust branch archive.
