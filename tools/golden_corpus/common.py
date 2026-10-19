@@ -55,6 +55,9 @@ def replace_root(value, root: Path):
     if isinstance(value, str):
         for variant in sorted(variants, key=len, reverse=True):
             value = value.replace(variant, PROJECT_ROOT_TOKEN)
+        if PROJECT_ROOT_TOKEN in value:
+            # Project-relative paths are platform-neutral in the corpus.
+            value = value.replace('\\', '/')
         return value
     if isinstance(value, list | tuple):
         return [replace_root(item, root) for item in value]

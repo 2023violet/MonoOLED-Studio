@@ -97,3 +97,11 @@ def test_scene_cases_cover_builtin_and_project_frames():
     assert all(item['level'] == 'strict' for item in cases.values())
     blob = json.dumps(list(cases.values())[:50])
     assert ROOT.as_posix() not in blob and str(ROOT) not in blob
+
+
+def test_legacy_project_open_is_byte_preserving():
+    cases = _build('projects')
+    assert cases['project-legacy-open-no-output-workbench']['expected']['rewritten'] is False
+    assert cases['project-curing_lite-open']['expected']['loaded']['manifest_unchanged_after_open'] is True
+    assert sum(1 for item in cases.values() if item['kind'] == 'path_safety') >= 8
+    assert cases['project-save-rejects-external-modification']['expected']['error'] == 'ExternalProjectModificationError'
