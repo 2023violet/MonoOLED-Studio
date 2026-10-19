@@ -65,3 +65,15 @@ def test_encoding_cases_cover_padding_sizes():
     assert 'enc-13x17-horizontal-column_major-msb_first-zero_is_lit' in cases
     assert sum(1 for item in cases.values() if item['kind'] == 'encoding') >= 128
     assert cases['fb-8x7-vlsb-rejects-partial-page']['expected']['error'] == 'ValueError'
+
+
+def test_preview_boundary_cases_present():
+    cases = _build('formatting')
+    exact = cases['preview-limit-exact']['expected']
+    over = cases['preview-limit-over-by-one']['expected']
+    assert exact['preview_truncated'] is False
+    assert over['preview_truncated'] is True
+    assert exact['text'] == over['text']
+    assert cases['preview-limit-default-over']['expected']['preview_truncated'] is True
+    assert 'legacy-c-header-128x32-oled_frame' in cases
+    assert any(case_id.startswith('fmt-legacy_pixel_c-') for case_id in cases)
