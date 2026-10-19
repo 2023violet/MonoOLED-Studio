@@ -6,7 +6,10 @@
 
 - Project: MonoOLED Studio
 - Product version: 1.2.3
-- Current phase: Phase 3 — Context Builder
+- Current phase: Rust Rewrite G0
+- Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
+- Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
+- Decision: ADR-005 (Rust full rewrite, main-only)
 
 ## Workflow
 
