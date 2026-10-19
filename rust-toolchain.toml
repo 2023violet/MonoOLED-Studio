@@ -1,0 +1,5 @@
+# Pinned to the same toolchain as FirmwareSight; a floating channel would let
+# release builds drift without a decision record.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
