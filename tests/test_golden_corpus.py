@@ -57,3 +57,11 @@ def test_replace_root_only_substitutes_project_root(tmp_path):
     replaced = common.replace_root(value, tmp_path)
     assert replaced['path'].startswith(common.PROJECT_ROOT_TOKEN)
     assert replaced['other'] == 'C:/unrelated'
+
+
+def test_encoding_cases_cover_padding_sizes():
+    cases = _build('encoding')
+    assert 'enc-1x1-vertical-row_major-lsb_first-one_is_lit' in cases
+    assert 'enc-13x17-horizontal-column_major-msb_first-zero_is_lit' in cases
+    assert sum(1 for item in cases.values() if item['kind'] == 'encoding') >= 128
+    assert cases['fb-8x7-vlsb-rejects-partial-page']['expected']['error'] == 'ValueError'

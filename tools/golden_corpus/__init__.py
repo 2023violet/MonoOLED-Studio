@@ -5,7 +5,7 @@ from importlib import import_module
 
 from .common import Category
 
-MODULES: tuple[str, ...] = ()
+MODULES: tuple[str, ...] = ('encoding',)
 
 CATEGORIES: list[Category] = [
     Category(module.NAME, module.build, module.SOURCES)
