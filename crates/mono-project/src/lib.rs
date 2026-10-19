@@ -9,3 +9,4 @@ pub mod fontpack_io;
 pub mod image_io;
 pub mod project;
 pub mod resources;
+pub mod scene_io;

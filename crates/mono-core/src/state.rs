@@ -657,3 +657,140 @@ pub fn init_state(scene: &Map<String, Value>) -> State {
     }
     state
 }
+
+/// V1 `scene.clamp_state`: out-of-domain values snap back to `init` (ints clamp to range).
+pub fn clamp_state(scene: &Map<String, Value>, state: &mut State) -> CoreResult<()> {
+    let Some(Value::Object(states)) = scene.get("states") else {
+        return Ok(());
+    };
+    for (name, spec) in states {
+        let value = state
+            .get(name)
+            .cloned()
+            .ok_or_else(|| CoreError::new("E-CORE-KEY", format!("'{name}'")))?;
+        let init = spec.get("init").cloned().unwrap_or(Value::Null);
+        let values = spec.get("values").and_then(Value::as_array);
+        let next = if spec.get("type").and_then(Value::as_str) == Some("int") {
+            if spec.get("values").is_some() {
+                if values.is_some_and(|items| py_in(&value, items)) {
+                    value
+                } else {
+                    init
+                }
+            } else {
+                let lo = spec.get("min").and_then(py_int).unwrap_or(0);
+                let hi = spec.get("max").and_then(py_int).unwrap_or(1_000_000_000);
+                let v = py_int(&value).ok_or_else(|| {
+                    CoreError::invalid(format!("invalid literal for int(): {}", py_str(&value)))
+                })?;
+                Value::from(lo.max(hi.min(v)))
+            }
+        } else if values.is_some_and(|items| py_in(&value, items)) {
+            value
+        } else {
+            init
+        };
+        state.insert(name.clone(), next);
+    }
+    Ok(())
+}
+
+/// V1 `scene.eval_do`: `var = n`, `var += n`, `var -= n`.
+pub fn eval_do(expr: &str, state: &mut State) -> CoreResult<()> {
+    let text = expr.trim();
+    let unsupported = || {
+        CoreError::invalid(format!(
+            "不支持的 timeline 表达式: {}（仅支持 var = n / += n / -= n）",
+            py_repr(&Value::from(expr))
+        ))
+    };
+    let name_end = text
+        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .unwrap_or(text.len());
+    let name = &text[..name_end];
+    let rest = text[name_end..].trim_start();
+    let (op, number) = if let Some(n) = rest.strip_prefix("+=") {
+        ("+=", n)
+    } else if let Some(n) = rest.strip_prefix("-=") {
+        ("-=", n)
+    } else if let Some(n) = rest.strip_prefix('=') {
+        ("=", n)
+    } else {
+        return Err(unsupported());
+    };
+    let number = number.trim_start();
+    let digits = number.strip_prefix('-').unwrap_or(number);
+    if name.is_empty() || digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(unsupported());
+    }
+    let num: i64 = number.parse().map_err(|_| unsupported())?;
+    let current = state.get(name).cloned().ok_or_else(|| {
+        CoreError::new(
+            "E-CORE-KEY",
+            format!("'timeline 引用了未定义的状态变量: {name}'"),
+        )
+    })?;
+    let cur = py_int(&current).unwrap_or(0);
+    let next = match op {
+        "+=" => cur + num,
+        "-=" => cur - num,
+        _ => num,
+    };
+    state.insert(name.to_string(), Value::from(next));
+    Ok(())
+}
+
+/// V1 `select_export_states`: `all`, case indices or case names.
+pub fn select_export_states(
+    states: Vec<(String, State)>,
+    tokens: &[String],
+) -> CoreResult<Vec<(String, State)>> {
+    let raw: Vec<String> = tokens.iter().map(|t| t.trim().to_string()).collect();
+    if raw.is_empty() || raw.iter().any(|t| t.eq_ignore_ascii_case("all")) {
+        if raw.len() == 1 && raw[0].eq_ignore_ascii_case("all") {
+            return Ok(states);
+        }
+        return Err(CoreError::invalid(
+            "'all' cannot be combined with individual state cases",
+        ));
+    }
+    let examples = states
+        .iter()
+        .take(3)
+        .map(|(n, _)| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut selected: Vec<(String, State)> = Vec::new();
+    for token in raw.iter().filter(|t| !t.is_empty()) {
+        let found = if token.bytes().all(|b| b.is_ascii_digit()) {
+            let index: usize = token.parse().unwrap_or(usize::MAX);
+            states.get(index).cloned().ok_or_else(|| {
+                CoreError::invalid(format!(
+                    "unknown state index {index}; available cases={}",
+                    states.len()
+                ))
+            })?
+        } else {
+            states
+                .iter()
+                .find(|(n, _)| n == token)
+                .cloned()
+                .ok_or_else(|| {
+                    CoreError::invalid(format!(
+                        "unknown state {}; available cases={}; examples: {examples}",
+                        py_repr(&Value::from(token.as_str())),
+                        states.len()
+                    ))
+                })?
+        };
+        if let Some(slot) = selected.iter_mut().find(|(n, _)| *n == found.0) {
+            *slot = found;
+        } else {
+            selected.push(found);
+        }
+    }
+    if selected.is_empty() {
+        return Err(CoreError::invalid("at least one state case is required"));
+    }
+    Ok(selected)
+}

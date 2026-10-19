@@ -1,0 +1,55 @@
+name: Rust
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests (golden corpus parity)
+        run: cargo test --workspace --locked
+      - name: CLI smoke
+        shell: bash
+        run: |
+          cargo run --locked -p mono-cli -- validate --project test_assets/projects/curing_lite/project.oled.json
+          cargo run --locked -p mono-cli -- export --project test_assets/projects/curing_lite/project.oled.json --output target/ci-export
+
+  deny:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources advisories

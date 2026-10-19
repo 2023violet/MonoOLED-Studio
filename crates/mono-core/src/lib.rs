@@ -16,6 +16,7 @@ pub mod profiles;
 pub mod pyvalue;
 pub mod raster;
 pub mod render;
+pub mod runtime;
 pub mod state;
 
 pub use bitmap::MonoBitmap;

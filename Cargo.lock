@@ -223,6 +223,7 @@ version = "2.0.0-alpha.1"
 dependencies = [
  "mono-core",
  "mono-project",
+ "serde_json",
 ]
 
 [[package]]
