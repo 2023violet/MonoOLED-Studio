@@ -4,14 +4,19 @@
 //! this crate produces is checked against the frozen V1 golden corpus in
 //! `fixtures/golden/`.
 
+pub mod assets;
 pub mod bitmap;
 pub mod c_header;
 pub mod encoding;
 pub mod error;
+pub mod font;
 pub mod formatter;
 pub mod framebuffer;
 pub mod profiles;
+pub mod pyvalue;
 pub mod raster;
+pub mod render;
+pub mod state;
 
 pub use bitmap::MonoBitmap;
 pub use encoding::{

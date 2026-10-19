@@ -324,3 +324,335 @@ pub fn validate_profile_id(id: &str) -> CoreResult<&str> {
         ))
     }
 }
+
+// ---------------------------------------------------------------------------
+// V1 `normalize_profile` with identical validation order and messages.
+
+use serde_json::{Map, Value};
+
+use crate::pyvalue::{py_int, py_repr, py_str};
+
+fn type_error(class: &str, key: &str) -> CoreError {
+    CoreError::new(
+        "E-CORE-TYPE",
+        format!("{class}.__init__() got an unexpected keyword argument '{key}'"),
+    )
+}
+
+fn section(raw: &Map<String, Value>, key: &str) -> CoreResult<Map<String, Value>> {
+    match raw.get(key) {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(Map::new()),
+        Some(Value::Object(map)) => Ok(map.clone()),
+        Some(Value::Array(items)) if items.is_empty() => Ok(Map::new()),
+        Some(Value::String(s)) if s.is_empty() => Ok(Map::new()),
+        Some(other) => Err(CoreError::new(
+            "E-CORE-TYPE",
+            format!(
+                "cannot convert dictionary update sequence element #0 to a sequence: {}",
+                py_repr(other)
+            ),
+        )),
+    }
+}
+
+fn check_keys(map: &Map<String, Value>, class: &str, allowed: &[&str]) -> CoreResult<()> {
+    match map.keys().find(|k| !allowed.contains(&k.as_str())) {
+        Some(key) => Err(type_error(class, key)),
+        None => Ok(()),
+    }
+}
+
+fn choice<T: Copy>(
+    map: &Map<String, Value>,
+    key: &str,
+    default: T,
+    options: &[(&str, T)],
+    message: &str,
+) -> CoreResult<T> {
+    match map.get(key) {
+        None => Ok(default),
+        Some(value) => options
+            .iter()
+            .find(|(name, _)| value.as_str() == Some(*name))
+            .map(|(_, v)| *v)
+            .ok_or_else(|| CoreError::invalid(message.to_string())),
+    }
+}
+
+fn int_value(map: &Map<String, Value>, key: &str, default: i64) -> CoreResult<i64> {
+    match map.get(key) {
+        None => Ok(default),
+        Some(value) => py_int(value).ok_or_else(|| {
+            CoreError::invalid(format!(
+                "invalid literal for int() with base 10: {}",
+                py_repr(value)
+            ))
+        }),
+    }
+}
+
+fn bool_value(map: &Map<String, Value>, key: &str, default: bool) -> bool {
+    match map.get(key) {
+        None => default,
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(Value::Null) => false,
+        Some(Value::Array(a)) => !a.is_empty(),
+        Some(Value::Object(o)) => !o.is_empty(),
+    }
+}
+
+const RASTER_FIELDS: [&str; 10] = [
+    "alignment",
+    "threshold_mode",
+    "luma_threshold",
+    "red_threshold",
+    "green_threshold",
+    "blue_threshold",
+    "invert_source",
+    "antialias_scale",
+    "offset_x",
+    "offset_y",
+];
+const TEXT_FIELDS: [&str; 17] = [
+    "container",
+    "radix",
+    "uppercase",
+    "bytes_per_line",
+    "index_entries_per_line",
+    "index_mode",
+    "minimal_data",
+    "compact_spacing",
+    "segment_prefix",
+    "segment_suffix",
+    "comment_prefix",
+    "comment_suffix",
+    "data_prefix",
+    "data_suffix",
+    "line_prefix",
+    "line_suffix",
+    "line_end",
+];
+
+impl RasterProfile {
+    pub fn from_map(map: &Map<String, Value>) -> CoreResult<Self> {
+        check_keys(map, "RasterProfile", &RASTER_FIELDS)?;
+        let d = Self::default();
+        let alignment = choice(
+            map,
+            "alignment",
+            d.alignment,
+            &[
+                ("font_set", Alignment::FontSet),
+                ("glyph_width", Alignment::GlyphWidth),
+            ],
+            "alignment must be font_set or glyph_width",
+        )?;
+        let threshold_mode = choice(
+            map,
+            "threshold_mode",
+            d.threshold_mode,
+            &[
+                ("luma", ThresholdMode::Luma),
+                ("rgb_all", ThresholdMode::RgbAll),
+            ],
+            "threshold_mode must be luma or rgb_all",
+        )?;
+        let mut thresholds = [0u8; 4];
+        let names = [
+            ("luma_threshold", 128),
+            ("red_threshold", 255),
+            ("green_threshold", 255),
+            ("blue_threshold", 255),
+        ];
+        for (slot, (name, default)) in thresholds.iter_mut().zip(names) {
+            let value = int_value(map, name, default)?;
+            if !(0..=255).contains(&value) {
+                return Err(CoreError::invalid(format!(
+                    "{name} must be between 0 and 255"
+                )));
+            }
+            *slot = value as u8;
+        }
+        let antialias = int_value(map, "antialias_scale", 1)?;
+        if !matches!(antialias, 1 | 2 | 4) {
+            return Err(CoreError::invalid("antialias_scale must be 1, 2, or 4"));
+        }
+        Ok(Self {
+            alignment,
+            threshold_mode,
+            luma_threshold: thresholds[0],
+            red_threshold: thresholds[1],
+            green_threshold: thresholds[2],
+            blue_threshold: thresholds[3],
+            invert_source: bool_value(map, "invert_source", false),
+            antialias_scale: antialias as u8,
+            offset_x: int_value(map, "offset_x", 0)? as i32,
+            offset_y: int_value(map, "offset_y", 0)? as i32,
+        })
+    }
+}
+
+impl EncodingProfile {
+    pub fn from_map(map: &Map<String, Value>) -> CoreResult<Self> {
+        use crate::encoding::Polarity;
+        check_keys(
+            map,
+            "EncodingProfile",
+            &["bit_axis", "group_order", "bit_order", "polarity"],
+        )?;
+        let d = Self::default();
+        Ok(Self {
+            bit_axis: choice(
+                map,
+                "bit_axis",
+                d.bit_axis,
+                &[
+                    ("horizontal", BitAxis::Horizontal),
+                    ("vertical", BitAxis::Vertical),
+                ],
+                "bit_axis must be one of ['horizontal', 'vertical']",
+            )?,
+            group_order: choice(
+                map,
+                "group_order",
+                d.group_order,
+                &[
+                    ("column_major", GroupOrder::ColumnMajor),
+                    ("row_major", GroupOrder::RowMajor),
+                ],
+                "group_order must be one of ['column_major', 'row_major']",
+            )?,
+            bit_order: choice(
+                map,
+                "bit_order",
+                d.bit_order,
+                &[
+                    ("lsb_first", BitOrder::LsbFirst),
+                    ("msb_first", BitOrder::MsbFirst),
+                ],
+                "bit_order must be one of ['lsb_first', 'msb_first']",
+            )?,
+            polarity: choice(
+                map,
+                "polarity",
+                d.polarity,
+                &[
+                    ("one_is_lit", Polarity::OneIsLit),
+                    ("zero_is_lit", Polarity::ZeroIsLit),
+                ],
+                "polarity must be one of ['one_is_lit', 'zero_is_lit']",
+            )?,
+        })
+    }
+}
+
+impl TextFormatProfile {
+    pub fn from_map(map: &Map<String, Value>) -> CoreResult<Self> {
+        check_keys(map, "TextFormatProfile", &TEXT_FIELDS)?;
+        let d = Self::default();
+        let container = choice(
+            map,
+            "container",
+            d.container,
+            &[("binary", Container::Binary), ("text", Container::Text)],
+            "container must be binary or text",
+        )?;
+        let radix = choice(
+            map,
+            "radix",
+            d.radix,
+            &[("hex", Radix::Hex), ("decimal", Radix::Decimal)],
+            "radix must be hex or decimal",
+        )?;
+        let index_mode = choice(
+            map,
+            "index_mode",
+            d.index_mode,
+            &[
+                ("none", IndexMode::None),
+                ("inline", IndexMode::Inline),
+                ("sidecar", IndexMode::Sidecar),
+            ],
+            "index_mode must be none, inline, or sidecar",
+        )?;
+        let mut counts = [0u16; 2];
+        for (slot, name) in counts
+            .iter_mut()
+            .zip(["bytes_per_line", "index_entries_per_line"])
+        {
+            let value = int_value(map, name, 16)?;
+            if !(1..=256).contains(&value) {
+                return Err(CoreError::invalid(format!(
+                    "{name} must be between 1 and 256"
+                )));
+            }
+            *slot = value as u16;
+        }
+        let mut profile = Self {
+            container,
+            radix,
+            uppercase: bool_value(map, "uppercase", true),
+            bytes_per_line: counts[0],
+            index_entries_per_line: counts[1],
+            index_mode,
+            minimal_data: bool_value(map, "minimal_data", false),
+            compact_spacing: bool_value(map, "compact_spacing", false),
+            ..d
+        };
+        for name in &TEXT_FIELDS[8..] {
+            if let Some(value) = map.get(*name) {
+                let Value::String(text) = value else {
+                    return Err(CoreError::invalid(format!("{name} must be text")));
+                };
+                let slot = match *name {
+                    "segment_prefix" => &mut profile.segment_prefix,
+                    "segment_suffix" => &mut profile.segment_suffix,
+                    "comment_prefix" => &mut profile.comment_prefix,
+                    "comment_suffix" => &mut profile.comment_suffix,
+                    "data_prefix" => &mut profile.data_prefix,
+                    "data_suffix" => &mut profile.data_suffix,
+                    "line_prefix" => &mut profile.line_prefix,
+                    "line_suffix" => &mut profile.line_suffix,
+                    _ => &mut profile.line_end,
+                };
+                *slot = text.clone();
+            }
+        }
+        profile.validate()?;
+        Ok(profile)
+    }
+}
+
+impl OutputProfile {
+    /// V1 `normalize_profile(raw_dict)`.
+    pub fn from_json(raw: &Value) -> CoreResult<Self> {
+        let Value::Object(map) = raw else {
+            return Err(CoreError::invalid("output profile must be an object"));
+        };
+        let name = map
+            .get("name")
+            .map(py_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let length = name.chars().count();
+        if length == 0 || length > 64 {
+            return Err(CoreError::invalid(
+                "profile name must contain 1 to 64 characters",
+            ));
+        }
+        Ok(Self {
+            name,
+            raster: RasterProfile::from_map(&section(map, "raster")?)?,
+            encoding: EncodingProfile::from_map(&section(map, "encoding")?)?,
+            text: TextFormatProfile::from_map(&section(map, "text")?)?,
+        })
+    }
+
+    /// V1 `OutputProfile.to_dict()`.
+    pub fn to_json(&self) -> Value {
+        serde_json::to_value(self).unwrap_or(Value::Null)
+    }
+}

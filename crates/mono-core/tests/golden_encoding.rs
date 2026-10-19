@@ -207,3 +207,31 @@ fn sha256_hex(data: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     hex(&Sha256::digest(data))
 }
+
+#[test]
+fn profile_validation_cases_match_v1() {
+    use mono_core::profiles::OutputProfile;
+    let mut report = Report::default();
+    for case in cases("formatting") {
+        if case["kind"] != "profile_validation" {
+            continue;
+        }
+        let id = case["id"].as_str().unwrap();
+        let expected = &case["expected"];
+        let ok = match OutputProfile::from_json(&case["input"]["profile"]) {
+            Ok(profile) => expected["accepted"] == profile.to_json(),
+            Err(error) => {
+                let kind = if error.code == "E-CORE-TYPE" {
+                    "TypeError"
+                } else {
+                    "ValueError"
+                };
+                expected["error"] == kind && expected["message"] == error.message
+            }
+        };
+        report.check(id, ok, || {
+            format!("{:?}", OutputProfile::from_json(&case["input"]["profile"]))
+        });
+    }
+    report.finish("profile validation");
+}
