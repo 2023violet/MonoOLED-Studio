@@ -32,6 +32,10 @@ Findings:
 
 The rework is limited to output safety and regression coverage. TASK-003 remains `Status: VERIFY` and `Review Status: PENDING`; no Closure is performed.
 
+Second review (agent review, 2026-10-19). Review Baseline: `64c67b6`. Result: `REWORK REQUIRED`.
+
+3. `--output` could escape through Windows directory junctions and 8.3 short names: `--output gitj/hooks/post-checkout` (junction to `.git`) and `--output outj/escaped.md` (junction outside the repository) both exited 0 and wrote files in a scratch repository; `GIT~1/hooks/pre-commit` also wrote into `.git`. `Path.is_symlink()` does not detect junctions and the `.git` check only inspected the first path component.
+
 ## Current Problem and Failure Evidence
 
 - Cold start requires many separate manual reads and Git queries.
@@ -152,6 +156,13 @@ Deleting `.ai/GENERATED_CONTEXT.md` loses no authoritative information; it only 
 - Authority preservation now records SHA-256 values for `AGENTS.md`, `.ai/CURRENT_STATE.md`, `.ai/DECISIONS.md`, and `src/VERSION` before and after stdout/default generation.
 - Rework verification: `python -m pytest tests\\test_ai_context_builder.py -q -rs` → 13 passed, 1 skipped. The symlink test was skipped because this Windows environment does not grant symlink creation privilege (`WinError 1314`); the production path check remains implemented.
 - No staging, commit, push, Closure, or TASK status promotion was performed during this rework.
+
+## Second Rework Result
+
+- `_output_path` now resolves the output parent (`Path.resolve(strict=True)`) before the repository-boundary and Git-metadata checks; the Git directory comes from `git rev-parse --absolute-git-dir`. Tracked/existing checks use the resolved path.
+- Added regression tests for a junction into `.git`, a junction outside the repository, and the `.git` 8.3 short name. Junction tests need no privilege on Windows, so they run here.
+- Failure evidence before the fix: `python -m pytest tests\test_ai_context_builder.py -q -rs -k "junction or short_name"` → 3 failed (each exited 0 and wrote the file).
+- After the fix: `python -m pytest tests\test_ai_context_builder.py -q -rs` → 16 passed, 1 skipped (symlink creation, `WinError 1314`). `python tools\BUILD_AI_CONTEXT.py` default regeneration still succeeds.
 
 ## Review Status
 

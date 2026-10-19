@@ -206,6 +206,61 @@ def test_custom_output_rejects_symlink_when_supported(tmp_path: Path) -> None:
     assert real_target.read_text(encoding="utf-8") == "SYMLINK_TARGET_CONTENT\n"
 
 
+def _junction(link: Path, target: Path) -> None:
+    if os.name != "nt":
+        pytest.skip("directory junctions are Windows-only")
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        pytest.skip(f"junction creation unavailable: {result.stderr.strip()}")
+
+
+def _short_name(path: Path) -> str:
+    if os.name != "nt":
+        pytest.skip("8.3 short names are Windows-only")
+    import ctypes
+
+    buffer = ctypes.create_unicode_buffer(1024)
+    length = ctypes.windll.kernel32.GetShortPathNameW(str(path), buffer, len(buffer))
+    short = Path(buffer.value).name if length else ""
+    if not short or short.lower() == path.name.lower():
+        pytest.skip("8.3 short name unavailable on this volume")
+    return short
+
+
+def test_custom_output_rejects_junction_into_git_metadata(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _junction(repo / "gitj", repo / ".git")
+    result = _run(repo, "--output", "gitj/hooks/post-checkout")
+    assert result.returncode != 0
+    assert ".git directory" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (repo / ".git" / "hooks" / "post-checkout").exists()
+
+
+def test_custom_output_rejects_junction_outside_repository(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    _junction(repo / "outj", outside)
+    result = _run(repo, "--output", "outj/escaped.md")
+    assert result.returncode != 0
+    assert "inside the repository root" in result.stderr
+    assert not (outside / "escaped.md").exists()
+
+
+def test_custom_output_rejects_git_short_name(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    short = _short_name(repo / ".git")
+    result = _run(repo, "--output", f"{short}/hooks/pre-commit")
+    assert result.returncode != 0
+    assert not (repo / ".git" / "hooks" / "pre-commit").exists()
+
+
 def test_required_source_and_detached_head_fail_without_traceback(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "src" / "VERSION").unlink()

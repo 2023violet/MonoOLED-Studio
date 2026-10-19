@@ -240,16 +240,35 @@ def _is_tracked(repo_root: Path, relative: str) -> bool:
     return any(os.path.normcase(path.replace("/", os.sep)) == target for path in tracked_paths.split("\0") if path)
 
 
+def _git_dir(repo_root: Path) -> Path:
+    return Path(_run_git(repo_root, "rev-parse", "--absolute-git-dir")).resolve()
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 def _output_path(repo_root: Path, value: str, *, default_output: bool) -> Path:
     raw = Path(value)
     candidate = Path(os.path.abspath(str(raw if raw.is_absolute() else repo_root / raw)))
-    try:
-        candidate.relative_to(repo_root)
-    except ValueError as exc:
-        raise ContextBuildError("--output must remain inside the repository root") from exc
-    relative = candidate.relative_to(repo_root)
+    if not _is_within(candidate, repo_root):
+        raise ContextBuildError("--output must remain inside the repository root")
     if _has_symlink_component(repo_root, candidate):
         raise ContextBuildError("--output may not use a symlink path")
+    if not candidate.parent.is_dir():
+        raise ContextBuildError("Output directory does not exist")
+    # Resolve the parent so junctions and 8.3 short names cannot escape the
+    # repository or reach Git metadata under a different spelling.
+    candidate = candidate.parent.resolve(strict=True) / candidate.name
+    if not _is_within(candidate, repo_root):
+        raise ContextBuildError("--output must remain inside the repository root")
+    if _is_within(candidate, _git_dir(repo_root)):
+        raise ContextBuildError("--output may not target the .git directory")
+    relative = candidate.relative_to(repo_root)
     if relative.parts and relative.parts[0].lower() == ".git":
         raise ContextBuildError("--output may not target the .git directory")
     relative_text = relative.as_posix()
@@ -257,8 +276,6 @@ def _output_path(repo_root: Path, value: str, *, default_output: bool) -> Path:
         raise ContextBuildError(f"--output may not target a Git-tracked path: {relative_text}")
     if not default_output and os.path.lexists(candidate):
         raise ContextBuildError(f"--output already exists: {relative_text}")
-    if not candidate.parent.is_dir():
-        raise ContextBuildError("Output directory does not exist")
     return candidate
 
 
