@@ -49,7 +49,9 @@ worktree 中有**未提交**的修改：
 - 主布局：工作区工具条 + 左侧工具栏 + 中央 OLED 画布 + 右侧 Inspector + 状态栏；
 - OLED 画布的颜色、网格和缩放不进入导出数据。
 
-决定（代理在本会话依据用户委托作出）：G3 以该方向作为深色主题基线，同时补齐 V1 已有的浅色、高对比主题和中英文多语言。其中针对 egui 的映射（第 7 节）不采用，因为 egui 已在 ADR-005 中排除。
+更正（2026-10-19，G3 开始前）：前一版本记录写的是"G3 采用该 Raycast 方向"。但 `.ai/DECISIONS.md` 的 ADR-004 是用户已确认的决定：深色外观使用批准的 MonoOLED 深色 token，并落实到 `one-dark-pro`。而该 Raycast 稿既未提交，也未经用户确认。按 `.ai/README.md` 的权威顺序，已确认的 ADR 优先。
+
+因此 G3 沿用 V1 `theme_system.py` 的三套主题（`monooled-light`、`one-dark-pro`、`high-contrast`），保持 token 值不变。Raycast 稿只作为参考保留在 worktree 中，不采用。
 
 ## 4. 归档动作
 

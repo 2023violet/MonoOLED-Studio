@@ -14,3 +14,4 @@ Current documentation for MonoOLED Studio:
 - `rewrite/2026-10-19-g0-plan.md` — G0 implementation plan: ADR-005, TASK-003 closure, V1 golden corpus, rust branch archive.
 - `rewrite/G0_RUST_BRANCH_HARVEST.md` — what the rewrite kept from the `rust` validation branch.
 - `rewrite/G0_EVIDENCE.md` — G0 evidence: golden corpus statistics, deviations, verification.
+- `rewrite/G2_EVIDENCE.md` — G2 UI framework spike: Slint vs Tauri measurements and the Slint decision.
