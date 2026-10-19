@@ -13,12 +13,13 @@
 
 ## Workflow
 
-- Last completed workflow task: TASK-002
+- Last completed workflow task: TASK-003
 - TASK-001 status: DONE
 - TASK-002 status: DONE
-- Independent Review: PENDING (TASK-003)
-- Active task: TASK-003
-- Next workflow action: Implement and independently review the minimal read-only Context Builder
+- TASK-003 status: DONE
+- Independent Review: PASS (TASK-003, agent review)
+- Active task: NONE (Rust Rewrite G0 plan in progress)
+- Next workflow action: Execute docs/rewrite/2026-10-19-g0-plan.md
 
 ## Current workstream
 
