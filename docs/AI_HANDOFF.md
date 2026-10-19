@@ -219,6 +219,14 @@ API 1.3.0 是兼容性增量。`export.c_header`、`export.current`、`export.al
 
 ### 8.1 按改动选择最小充分证据
 
+Rust 重写期间（ADR-005），任何 V1 修复之后都必须运行：
+
+```powershell
+python tools\EXPORT_GOLDEN_CORPUS.py --check
+```
+
+如果有差异，说明修复改变了契约输出。此时必须重新生成 `fixtures/golden/`，并把原因写入重写证据。
+
 纯取模与格式修改：
 
 ```powershell

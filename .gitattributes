@@ -5,3 +5,7 @@
 # sensitive to exact line endings, so no EOL conversion may be applied. Store
 # and check out these files byte-for-byte.
 test_assets/projects/curing_lite/** -text
+
+# The V1 golden corpus is byte-verified (manifest SHA-256 and Rust parity);
+# keep it LF-only on every platform.
+fixtures/golden/** -text

@@ -136,3 +136,7 @@ def test_font_cases_split_strict_and_semantic():
     generated = cases['fontgen-dejavu-8x16-aa1']
     assert generated['level'] == 'semantic'
     assert len(generated['expected']['glyphs']) == 95
+
+
+def test_committed_corpus_matches_v1():
+    assert exporter.check(ROOT / 'fixtures' / 'golden') == []

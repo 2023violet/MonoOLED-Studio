@@ -12,3 +12,5 @@ Current documentation for MonoOLED Studio:
 - `ENGINEERING_HISTORY.md` — consolidated pre-1.0 hardening history.
 - `rewrite/2026-10-19-rust-rewrite-design.md` — Rust V2 rewrite design: scope, architecture, gates, golden corpus, performance budgets.
 - `rewrite/2026-10-19-g0-plan.md` — G0 implementation plan: ADR-005, TASK-003 closure, V1 golden corpus, rust branch archive.
+- `rewrite/G0_RUST_BRANCH_HARVEST.md` — what the rewrite kept from the `rust` validation branch.
+- `rewrite/G0_EVIDENCE.md` — G0 evidence: golden corpus statistics, deviations, verification.
