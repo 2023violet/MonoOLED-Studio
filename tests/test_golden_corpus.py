@@ -77,3 +77,13 @@ def test_preview_boundary_cases_present():
     assert cases['preview-limit-default-over']['expected']['preview_truncated'] is True
     assert 'legacy-c-header-128x32-oled_frame' in cases
     assert any(case_id.startswith('fmt-legacy_pixel_c-') for case_id in cases)
+
+
+def test_raster_cases_cover_threshold_and_resize():
+    cases = _build('raster')
+    assert 'raster-gradient_64x32-luma-128' in cases
+    resized = cases['raster-gradient_64x32-resize-32x16-aa4']
+    assert resized['input']['output_size'] == [32, 16]
+    assert len(resized['expected']['rows']) == 16
+    source = cases['raster-checker_alpha_17x9-luma-1']['input']['source']
+    assert source['rgba']['byte_count'] == 17 * 9 * 4
