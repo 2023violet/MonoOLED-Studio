@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 
@@ -87,3 +88,12 @@ def test_raster_cases_cover_threshold_and_resize():
     assert len(resized['expected']['rows']) == 16
     source = cases['raster-checker_alpha_17x9-luma-1']['input']['source']
     assert source['rgba']['byte_count'] == 17 * 9 * 4
+
+
+def test_scene_cases_cover_builtin_and_project_frames():
+    cases = _build('scenes')
+    assert any(case_id.startswith('scene-curing_lite_main-') for case_id in cases)
+    assert any(case_id.startswith('scene-builtin_example_placeholder-') for case_id in cases)
+    assert all(item['level'] == 'strict' for item in cases.values())
+    blob = json.dumps(list(cases.values())[:50])
+    assert ROOT.as_posix() not in blob and str(ROOT) not in blob
