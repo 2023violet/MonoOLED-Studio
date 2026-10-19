@@ -72,7 +72,7 @@ fn handoff_zip_entries_match_v1() {
             .unwrap();
         let mut archive = zip::ZipArchive::new(std::fs::File::open(&target).unwrap()).unwrap();
         let mut got = Vec::new();
-        let mut names: Vec<String> = archive.file_names().map(str::to_string).collect();
+        let mut names: Vec<String> = archive.file_names().map(|n| n.unwrap().into_owned()).collect();
         names.sort();
         for name in &names {
             let mut data = Vec::new();

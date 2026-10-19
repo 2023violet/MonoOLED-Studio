@@ -27,7 +27,8 @@ DEFAULT_OUTPUT = ROOT / 'fixtures' / 'golden'
 
 
 def _blob(relative: str) -> str:
-    result = subprocess.run(['git', 'hash-object', '--no-filters', relative], cwd=ROOT,
+    # Filtered hash = the index blob id, independent of the checkout's EOL conversion.
+    result = subprocess.run(['git', 'hash-object', relative], cwd=ROOT,
                             capture_output=True, text=True, check=False)
     if result.returncode:
         raise RuntimeError(f'git hash-object failed for {relative}: {result.stderr.strip()}')

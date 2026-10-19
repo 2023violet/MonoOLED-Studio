@@ -43,3 +43,8 @@ src/reports/
 
 # Rust build output
 /target/
+
+# G2 spikes build into their own target directories
+/spike/*/target/
+/spike/*/Cargo.lock
+/spike/tauri/gen/

@@ -6,9 +6,14 @@ all-features = false
 
 [advisories]
 yanked = "deny"
+ignore = [
+  # ttf-parser (via ab_glyph, TrueType glyph generation in mono-font) is flagged unmaintained;
+  # no safe upgrade exists. Inputs are user-chosen local font files; revisit with skrifa.
+  { id = "RUSTSEC-2026-0192", reason = "unmaintained, not a vulnerability; no alternative release" },
+]
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "Unicode-3.0", "Unlicense", "MPL-2.0"]
+allow = ["MIT", "Apache-2.0", "Zlib", "Unicode-3.0"]
 confidence-threshold = 0.9
 
 [bans]
