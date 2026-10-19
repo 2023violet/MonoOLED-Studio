@@ -10,3 +10,4 @@ Current documentation for MonoOLED Studio:
 - `DESIGN_SYSTEM.md` — UI design system.
 - `WINDOWS_BUILD.md` — end-user distribution and developer build paths.
 - `ENGINEERING_HISTORY.md` — consolidated pre-1.0 hardening history.
+- `rewrite/2026-10-19-rust-rewrite-design.md` — Rust V2 rewrite design: scope, architecture, gates, golden corpus, performance budgets.
