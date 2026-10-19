@@ -1,0 +1,19 @@
+[package]
+name = "mono-font"
+description = "MonoOLED Studio TrueType glyph generation for Font Packs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+mono-core.workspace = true
+# Pure-Rust TrueType/OpenType outline rasterizer (MIT/Apache-2.0); replaces V1's Pillow/FreeType path.
+ab_glyph = "0.2"
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

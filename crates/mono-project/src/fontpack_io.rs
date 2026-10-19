@@ -8,7 +8,7 @@ use mono_core::{CoreError, CoreResult};
 use serde_json::{Map, Value, json};
 
 use crate::atomic::{atomic_write, atomic_write_json};
-use crate::image_io::{decode_png, encode_bitmap_png};
+use crate::image_io::{decode_image, encode_bitmap_png};
 use crate::resources::{hex_digest, read_file};
 
 pub const MANIFEST: &str = "fontpack.json";
@@ -90,7 +90,7 @@ pub fn load_font_pack(root: &Path) -> CoreResult<FontPack> {
                     "missing glyph asset: {asset_rel}"
                 )));
             }
-            let image = decode_png(&read_file(&asset)?)?;
+            let image = decode_image(&read_file(&asset)?)?;
             // Pillow `convert('1')`; glyph PNGs are already bilevel, so a 128 luma cut is exact.
             let rows = image
                 .rgba

@@ -13,9 +13,12 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 png = "0.18"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+zip = { version = "2", default-features = false, features = ["deflate"] }
 serde_json.workspace = true
+mono-font.workspace = true
 
 [lints]
 workspace = true

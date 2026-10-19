@@ -14,7 +14,7 @@ use mono_core::{CoreError, CoreResult};
 use sha2::{Digest, Sha256};
 
 use crate::fontpack_io::{fontpack_fingerprint, load_font_pack};
-use crate::image_io::decode_png;
+use crate::image_io::decode_image;
 
 pub fn hex_digest(data: &[u8]) -> String {
     Sha256::digest(data)
@@ -52,7 +52,7 @@ impl DiskResources {
     }
 
     pub fn decode_bitmap(path: &Path, raw: &[u8]) -> CoreResult<BitmapAsset> {
-        let image = decode_png(raw)?;
+        let image = decode_image(raw)?;
         bitmap_from_rgba(
             &posix(path),
             image.width,

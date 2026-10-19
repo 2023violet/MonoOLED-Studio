@@ -18,6 +18,89 @@ fn image_error(message: impl Into<String>) -> CoreError {
     CoreError::new("E-IMAGE", message)
 }
 
+fn le_u16(b: &[u8], at: usize) -> Option<u32> {
+    b.get(at..at + 2)
+        .map(|s| u32::from(u16::from_le_bytes([s[0], s[1]])))
+}
+
+fn le_u32(b: &[u8], at: usize) -> Option<u32> {
+    b.get(at..at + 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+}
+
+/// Uncompressed Windows BMP (1/4/8-bit palette, 24/32-bit), as Pillow reads it.
+pub fn decode_bmp(bytes: &[u8]) -> CoreResult<DecodedImage> {
+    let bad = || image_error("cannot identify image file: unsupported BMP");
+    let offset = le_u32(bytes, 10).ok_or_else(bad)? as usize;
+    let header = le_u32(bytes, 14).ok_or_else(bad)? as usize;
+    let width = le_u32(bytes, 18).ok_or_else(bad)? as i32;
+    let raw_height = le_u32(bytes, 22).ok_or_else(bad)? as i32;
+    let bpp = le_u16(bytes, 28).ok_or_else(bad)?;
+    let compression = le_u32(bytes, 30).ok_or_else(bad)?;
+    if width <= 0 || raw_height == 0 || !(compression == 0 || (compression == 3 && bpp == 32)) {
+        return Err(bad());
+    }
+    let (width, height, top_down) = (
+        width as usize,
+        raw_height.unsigned_abs() as usize,
+        raw_height < 0,
+    );
+    let colors = match le_u32(bytes, 46).unwrap_or(0) {
+        0 if bpp <= 8 => 1usize << bpp,
+        n => n as usize,
+    };
+    let palette_at = 14 + header;
+    let palette: Vec<[u8; 3]> = (0..if bpp <= 8 { colors } else { 0 })
+        .map(|i| {
+            bytes
+                .get(palette_at + i * 4..palette_at + i * 4 + 3)
+                .map(|p| [p[2], p[1], p[0]])
+                .unwrap_or([0, 0, 0])
+        })
+        .collect();
+    let stride = (width * bpp as usize).div_ceil(32) * 4;
+    let mut rgba = Vec::with_capacity(width * height * 4);
+    for y in 0..height {
+        let src_row = if top_down { y } else { height - 1 - y };
+        let row = bytes
+            .get(offset + src_row * stride..offset + (src_row + 1) * stride)
+            .ok_or_else(bad)?;
+        for x in 0..width {
+            let rgb = match bpp {
+                1 | 4 | 8 => {
+                    let bit = x * bpp as usize;
+                    let byte = row[bit / 8];
+                    let index = (byte >> (8 - bpp as usize - bit % 8)) & ((1u16 << bpp) - 1) as u8;
+                    palette.get(index as usize).copied().unwrap_or([0, 0, 0])
+                }
+                24 => [row[3 * x + 2], row[3 * x + 1], row[3 * x]],
+                32 => [row[4 * x + 2], row[4 * x + 1], row[4 * x]],
+                _ => return Err(bad()),
+            };
+            rgba.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+        }
+    }
+    let mode = match bpp {
+        1 => "1",
+        4 | 8 => "P",
+        _ => "RGB",
+    };
+    Ok(DecodedImage {
+        width,
+        height,
+        rgba,
+        mode: mode.into(),
+    })
+}
+
+/// Decode by content (PNG or BMP), regardless of the file extension, like Pillow.
+pub fn decode_image(bytes: &[u8]) -> CoreResult<DecodedImage> {
+    if bytes.starts_with(b"BM") {
+        return decode_bmp(bytes);
+    }
+    decode_png(bytes)
+}
+
 pub fn decode_png(bytes: &[u8]) -> CoreResult<DecodedImage> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
