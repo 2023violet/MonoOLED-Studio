@@ -144,5 +144,96 @@ def _rejection_cases(work: Path) -> list[dict]:
     return cases
 
 
+def _manifest(**overrides) -> dict:
+    data = {'schema_version': 1, 'name': 'Load', 'default_canvas': [128, 32], 'active_screen': 'main',
+            'asset_dirs': ['assets'], 'screens': [{'id': 'main', 'label': 'Main', 'path': 'scenes/main.json'}]}
+    data.update(overrides)
+    return data
+
+
+def _profile(**overrides) -> dict:
+    return {'schema': 1, 'active_profile': 'ssd1306_vlsb_c', 'profiles': {'ssd1306_vlsb_c': builtin_profiles()['ssd1306_vlsb_c'].to_dict()}, **overrides}
+
+
+LOAD_VARIANTS = {
+    'schema-2': _manifest(schema_version=2),
+    'schema-text': _manifest(schema_version='one'),
+    'not-object': [1, 2],
+    'screens-not-list': _manifest(screens={'main': 'scenes/main.json'}),
+    'screen-entry-missing-path': _manifest(screens=[{'id': 'main'}]),
+    'duplicate-screen-id': _manifest(screens=[{'id': 'main', 'path': 'scenes/a.json'}, {'id': 'main', 'path': 'scenes/b.json'}]),
+    'casefold-screen-id': _manifest(screens=[{'id': 'main', 'path': 'scenes/a.json'}, {'id': 'MAIN', 'path': 'scenes/b.json'}]),
+    'casefold-screen-path': _manifest(screens=[{'id': 'main', 'path': 'scenes/a.json'}, {'id': 'other', 'path': 'Scenes/A.json'}]),
+    'screen-path-escapes': _manifest(screens=[{'id': 'main', 'path': '../main.json'}]),
+    'screen-path-is-root': _manifest(screens=[{'id': 'main', 'path': '.'}]),
+    'unsafe-screen-id': _manifest(screens=[{'id': 'CON', 'path': 'scenes/con.json'}], active_screen='CON'),
+    'missing-active-screen': _manifest(active_screen='ghost'),
+    'asset-dirs-not-list': _manifest(asset_dirs='assets'),
+    'asset-dir-escapes': _manifest(asset_dirs=['../shared']),
+    'workbench-schema-2': _manifest(output_workbench=_profile(schema=2)),
+    'workbench-empty-profiles': _manifest(output_workbench=_profile(profiles={})),
+    'workbench-unknown-active': _manifest(output_workbench=_profile(active_profile='ghost')),
+    'workbench-bad-profile-id': _manifest(output_workbench={**_profile(), 'profiles': {'Bad': builtin_profiles()['raw_hex'].to_dict()}, 'active_profile': 'Bad'}),
+    'workbench-bad-placeholder': _manifest(output_workbench=_profile(profiles={'ssd1306_vlsb_c': {
+        **builtin_profiles()['ssd1306_vlsb_c'].to_dict(), 'text': {'segment_prefix': '${evil}'}}})),
+    'valid-minimal': _manifest(),
+}
+
+
+def _load_cases(work: Path) -> list[dict]:
+    cases = []
+    for label, data in LOAD_VARIANTS.items():
+        root = work / f'load-{label}'
+        (root / 'scenes').mkdir(parents=True)
+        manifest = root / 'project.oled.json'
+        manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
+        try:
+            project = ProjectWorkspace.load(manifest)
+            outcome = {'loaded': True, 'screens': [s.__dict__ for s in project.screens], 'output': _profiles_summary(project)}
+        except Exception as exc:  # noqa: BLE001 - every rejection type is part of the contract
+            outcome = _error(exc, root)
+        cases.append(case(f'project-load-{label}', 'project_open', 'strict', {'manifest': data}, outcome))
+    return cases
+
+
+def _mutation_cases(work: Path) -> list[dict]:
+    root = work / 'mutate'
+    project = create_project(root, name='Mutate', canvas=(128, 32))
+    project.add_screen('second', label='Second', source=root / 'scenes' / 'main.json')
+    project.save()
+    cases = [case('project-op-add-screen-from-source', 'project_operation', 'strict',
+                  {'base': 'create_project(Mutate)', 'operation': "add_screen('second', source=scenes/main.json)"},
+                  {'files': _snapshot(root)})]
+
+    def attempt(label: str, action) -> None:
+        before = json.dumps(project.data, ensure_ascii=False, sort_keys=True)
+        try:
+            action()
+            outcome = {'ok': True}
+        except Exception as exc:  # noqa: BLE001
+            outcome = _error(exc, root)
+        outcome['data_unchanged'] = json.dumps(project.data, ensure_ascii=False, sort_keys=True) == before
+        outcome['files'] = _snapshot(root)
+        cases.append(case(f'project-op-{label}', 'project_operation', 'strict', {'base': 'project-op-add-screen-from-source', 'operation': label}, outcome))
+
+    attempt('set-active-screen-unknown', lambda: project.set_active_screen('ghost'))
+    attempt('get-profile-unknown', lambda: project.set_active_output_profile('ghost'))
+    attempt('delete-last-profile', lambda: project.delete_output_profile('ssd1306_vlsb_c'))
+    attempt('set-asset-dirs', lambda: project.set_asset_dirs(['assets', 'art']))
+    attempt('set-asset-dirs-escape', lambda: project.set_asset_dirs(['../x']))
+    attempt('remove-screen-keep-file', lambda: project.remove_screen('second', delete_file=False))
+    attempt('remove-last-screen', lambda: project.remove_screen('main'))
+
+    # Save failures must restore the previous in-memory project (AI_HANDOFF 6.1).
+    manifest = root / 'project.oled.json'
+    manifest.write_bytes(manifest.read_bytes().replace(b'"Mutate"', b'"External"'))
+    attempt('rollback-upsert-profile', lambda: project.upsert_output_profile('rolled', builtin_profiles()['raw_hex'], activate=True))
+    attempt('rollback-set-asset-dirs', lambda: project.set_asset_dirs(['assets', 'other']))
+    attempt('rollback-add-screen', lambda: project.add_screen('third'))
+    attempt('rollback-rename-screen', lambda: project.rename_screen('main', new_id='renamed'))
+    return cases
+
+
 def build(work: Path) -> list[dict]:
-    return _roundtrip_cases(work) + _create_cases(work) + _legacy_cases(work) + _rejection_cases(work)
+    return (_roundtrip_cases(work) + _create_cases(work) + _legacy_cases(work) + _rejection_cases(work)
+            + _load_cases(work) + _mutation_cases(work))

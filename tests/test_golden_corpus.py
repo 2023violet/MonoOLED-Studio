@@ -92,6 +92,10 @@ def test_raster_cases_cover_threshold_and_resize():
 
 def test_scene_cases_cover_builtin_and_project_frames():
     cases = _build('scenes')
+    kinds = {element['type'] for item in cases.values() for element in item['expected'].get('resolved_elements', [])}
+    assert {'image', 'image_seq', 'digits', 'text', 'bitmap_text', 'placeholder'} <= kinds
+    errors = {item['expected']['error'] for item in cases.values() if 'error' in item['expected']}
+    assert {'FileNotFoundError', 'ValueError', 'AssetFormatError'} <= errors
     assert any(case_id.startswith('scene-curing_lite_main-') for case_id in cases)
     assert any(case_id.startswith('scene-builtin_example_placeholder-') for case_id in cases)
     assert all(item['level'] == 'strict' for item in cases.values())
@@ -116,16 +120,17 @@ def test_handoff_cases_record_entries():
     assert any(name.startswith('golden/') and name.endswith('.bin') for name in names)
 
 
-def test_automation_session_records_contract_without_absolute_paths():
+def test_automation_sessions_cover_every_method_without_absolute_paths():
+    from automation_service import METHOD_SPECS
     cases = _build('automation')
-    session = cases['api-session-curing_lite-main']['expected']
-    methods = [step['request']['method'] for step in session['steps']]
-    assert 'export.c_header' in methods and 'history.rollback' in methods
-    codes = [step['response'].get('error', {}).get('code') for step in session['steps']]
-    assert 'STALE_REVISION' in codes and 'METHOD_OR_FIELD_NOT_FOUND' in codes
-    blob = json.dumps(session)
+    methods = {step['request']['method'] for item in cases.values() for step in item['expected'].get('steps', [])}
+    assert set(METHOD_SPECS) <= methods
+    codes = {step['response'].get('error', {}).get('code') for item in cases.values() for step in item['expected'].get('steps', [])}
+    assert {'STALE_REVISION', 'METHOD_OR_FIELD_NOT_FOUND', 'PERMISSION_DENIED', 'UNSAVED_CHANGES', 'TRANSACTION_ERROR', 'INVALID_REQUEST'} <= codes
+    blob = json.dumps(list(cases.values()))
     assert ROOT.as_posix() not in blob and str(ROOT) not in blob
-    assert 'exports/current.h' in session['export_files']
+    assert '$doc' not in blob and '$builtin' not in blob
+    assert 'pixel:assets/golden_icon.png' in blob and 'tx-1' in blob
 
 
 def test_font_cases_split_strict_and_semantic():
@@ -140,3 +145,28 @@ def test_font_cases_split_strict_and_semantic():
 
 def test_committed_corpus_matches_v1():
     assert exporter.check(ROOT / 'fixtures' / 'golden') == []
+
+
+def _demo(name, value, sources=('src/framebuffer.py',)):
+    return Category(name, lambda work: [common.case('one', name, 'strict', {}, {'v': value})], sources)
+
+
+def test_check_reports_category_changes_blob_drift_and_bytes(tmp_path, monkeypatch):
+    monkeypatch.setattr(golden_corpus, 'CATEGORIES', [_demo('demo', 1)])
+    exporter.generate(tmp_path / 'g')
+    monkeypatch.setattr(golden_corpus, 'CATEGORIES', [_demo('demo', 1), _demo('added', 1)])
+    assert exporter.check(tmp_path / 'g') == ['added:*']
+    monkeypatch.setattr(golden_corpus, 'CATEGORIES', [_demo('demo', 1, ('src/framebuffer.py', 'src/render.py'))])
+    assert exporter.check(tmp_path / 'g') == ['reference:source_blobs:src/render.py']
+    monkeypatch.setattr(golden_corpus, 'CATEGORIES', [_demo('demo', 1)])
+    path = tmp_path / 'g' / 'demo.json'
+    path.write_bytes(path.read_bytes().replace(b'\n', b'\r\n'))
+    (tmp_path / 'g' / 'stray.json').write_text('{}', encoding='utf-8')
+    assert exporter.check(tmp_path / 'g') == ['extra:stray.json', 'bytes:demo.json']
+
+
+def test_check_detects_type_changes_hidden_by_python_equality(tmp_path, monkeypatch):
+    monkeypatch.setattr(golden_corpus, 'CATEGORIES', [_demo('demo', 1)])
+    exporter.generate(tmp_path / 'g')
+    monkeypatch.setattr(golden_corpus, 'CATEGORIES', [_demo('demo', True)])
+    assert exporter.check(tmp_path / 'g') == ['demo:one']

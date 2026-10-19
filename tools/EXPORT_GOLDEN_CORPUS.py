@@ -42,8 +42,8 @@ def _reference(categories) -> dict:
     except ImportError:  # pragma: no cover - Pillow is a V1 runtime dependency
         pillow = 'missing'
     return {
-        'python_version': platform.python_version(),
-        'pillow_version': pillow,
+        # Environment is metadata only; `check` does not treat it as drift.
+        'environment': {'python_version': platform.python_version(), 'pillow_version': pillow},
         'source_blobs': {source: _blob(source) for source in sources},
     }
 
@@ -86,24 +86,39 @@ def generate(out_dir: Path) -> dict:
     return manifest
 
 
-def _load_cases(path: Path) -> dict[str, dict]:
+def _load_cases(path: Path) -> dict[str, bytes]:
+    """Case id -> canonical bytes (so `True`/`1`/`1.0` differences are not hidden)."""
     if not path.is_file():
         return {}
-    return {item['id']: item for item in json.loads(path.read_text(encoding='utf-8'))['cases']}
+    return {item['id']: canonical_json(item) for item in json.loads(path.read_text(encoding='utf-8'))['cases']}
 
 
 def check(committed: Path) -> list[str]:
-    """Regenerate into a temporary directory and list changed `<category>:<case id>` entries."""
+    """Regenerate into a temporary directory and list every drift.
+
+    Reports `<category>:<case id>` for changed/added/removed cases, `<category>:*`
+    for added/removed categories, `bytes:<file>` when a committed file does not
+    match its manifest SHA-256, `extra:<file>` for unlisted files, and
+    `reference:source_blobs:<path>` when a pinned V1 source changed.
+    """
     committed = Path(committed)
     changes: list[str] = []
+    old_manifest_path = committed / 'manifest.json'
+    old = json.loads(old_manifest_path.read_text(encoding='utf-8')) if old_manifest_path.is_file() else {'categories': {}, 'reference': {}}
+    old_categories = old.get('categories', {})
+    listed = {'manifest.json'} | {entry['file'] for entry in old_categories.values()}
+    for path in sorted(committed.glob('*')) if committed.is_dir() else []:
+        if path.is_file() and path.name not in listed:
+            changes.append(f'extra:{path.name}')
+    for name, entry in sorted(old_categories.items()):
+        target = committed / entry['file']
+        if not target.is_file() or sha256(target.read_bytes()).hexdigest() != entry['sha256']:
+            changes.append(f'bytes:{entry["file"]}')
     with tempfile.TemporaryDirectory(prefix='mono-golden-check-') as temp:
         fresh_dir = Path(temp)
         fresh = generate(fresh_dir)
-        old_manifest_path = committed / 'manifest.json'
-        old = json.loads(old_manifest_path.read_text(encoding='utf-8')) if old_manifest_path.is_file() else {'categories': {}, 'reference': {}}
-        names = sorted(set(fresh['categories']) | set(old.get('categories', {})))
-        for name in names:
-            if name not in fresh['categories'] or name not in old.get('categories', {}):
+        for name in sorted(set(fresh['categories']) | set(old_categories)):
+            if name not in fresh['categories'] or name not in old_categories:
                 changes.append(f'{name}:*')
                 continue
             new_cases = _load_cases(fresh_dir / f'{name}.json')
@@ -111,12 +126,11 @@ def check(committed: Path) -> list[str]:
             for case_id in sorted(set(new_cases) | set(old_cases)):
                 if new_cases.get(case_id) != old_cases.get(case_id):
                     changes.append(f'{name}:{case_id}')
-        if fresh.get('reference') != old.get('reference'):
-            for key in sorted(set(fresh['reference']) | set(old.get('reference', {}))):
-                if fresh['reference'].get(key) != old.get('reference', {}).get(key):
-                    changes.append(f'reference:{key}')
-        if not changes and (fresh_dir / 'manifest.json').read_bytes() != old_manifest_path.read_bytes():
-            changes.append('manifest:*')
+        new_blobs = fresh['reference'].get('source_blobs', {})
+        old_blobs = old.get('reference', {}).get('source_blobs', {})
+        for source in sorted(set(new_blobs) | set(old_blobs)):
+            if new_blobs.get(source) != old_blobs.get(source):
+                changes.append(f'reference:source_blobs:{source}')
     return changes
 
 

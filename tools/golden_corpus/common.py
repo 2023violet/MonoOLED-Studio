@@ -5,6 +5,7 @@ from collections import namedtuple
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,6 +15,7 @@ if str(SRC) not in sys.path:
 
 LEVELS = ('strict', 'semantic')
 PROJECT_ROOT_TOKEN = '${PROJECT_ROOT}'
+_PATH_AFTER_TOKEN = re.compile(re.escape(PROJECT_ROOT_TOKEN) + r'''[^\s'"<>|*?:,;)\]}]*''')
 
 Category = namedtuple('Category', 'name build sources')
 
@@ -51,14 +53,15 @@ def text_result(text: str, inline_limit: int = 4096) -> dict:
 
 def replace_root(value, root: Path):
     """Replace the absolute temporary project root with PROJECT_ROOT_TOKEN, nothing else."""
-    variants = {str(root), str(root).replace('\\', '/'), str(Path(root).resolve()), str(Path(root).resolve()).replace('\\', '/')}
+    variants = set()
+    for base in (str(root), str(Path(root).resolve())):
+        # Plain, POSIX-style, and repr()-escaped spellings (OSError messages use repr).
+        variants.update({base, base.replace('\\', '/'), base.replace('\\', '\\\\')})
     if isinstance(value, str):
         for variant in sorted(variants, key=len, reverse=True):
             value = value.replace(variant, PROJECT_ROOT_TOKEN)
-        if PROJECT_ROOT_TOKEN in value:
-            # Project-relative paths are platform-neutral in the corpus.
-            value = value.replace('\\', '/')
-        return value
+        # Only the path that follows the token is made platform-neutral.
+        return _PATH_AFTER_TOKEN.sub(lambda m: re.sub(r'\\+', '/', m.group(0)), value)
     if isinstance(value, list | tuple):
         return [replace_root(item, root) for item in value]
     if isinstance(value, dict):

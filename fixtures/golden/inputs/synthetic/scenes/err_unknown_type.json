@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "product": "Synthetic",
+  "canvas": {
+    "w": 64,
+    "h": 32,
+    "preview_scale": 4
+  },
+  "storage": {
+    "layout": "VLSB column-page (SSD1306)",
+    "bytes_per_frame": 256,
+    "polarity": "1 = lit"
+  },
+  "timeline": [],
+  "zones": [],
+  "states": {},
+  "elements": [
+    {
+      "id": "u",
+      "type": "sprite",
+      "x": 0,
+      "y": 0
+    }
+  ]
+}

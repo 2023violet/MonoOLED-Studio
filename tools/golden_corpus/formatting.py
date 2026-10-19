@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
+import json
 from pathlib import Path
 
 from .common import byte_result, case, digest_result, rows_to_strings, text_result
@@ -11,7 +12,7 @@ from bitmap_encoding import MonoBitmap, encode_bitmap
 from c_export import framebuffer_to_c_header
 from framebuffer import FrameBuffer
 from output_formatter import OutputItem, format_output
-from output_profiles import builtin_profiles
+from output_profiles import TextFormatProfile, builtin_profiles, normalize_profile
 
 NAME = 'formatting'
 SOURCES = ('src/output_formatter.py', 'src/output_profiles.py', 'src/c_export.py', 'src/bitmap_encoding.py')
@@ -102,7 +103,7 @@ def _preview_cases() -> list[dict]:
                            ('preview-limit-over-by-one', length - 1), ('preview-small-limit', 64)):
         result = format_output(items, profile.text, symbol='big', preview_limit=limit)
         spec = _input(big, profile, 'big', limit)
-        spec['items'] = [{'name': item['name'], 'pattern': 'golden_corpus.encoding.pattern(256, 128)', 'rows_sha256': digest_result(''.join(item['rows']).encode())['sha256']} for item in spec['items']]
+        spec['items'] = [{'name': item['name'], 'pattern': '256x128 rows, pixel(x, y) = 1 if (x*7 + y*13 + x*y) % 5 < 2 else 0', 'rows_sha256': digest_result(''.join(item['rows']).encode())['sha256']} for item in spec['items']]
         expected = _expected(result)
         cases.append(case(case_id, 'format', 'strict', spec, expected))
     cjk = _item_specs()['glyphs']
@@ -130,5 +131,79 @@ def _legacy_header_cases() -> list[dict]:
     return cases
 
 
+CUSTOM_TEXT = TextFormatProfile(
+    bytes_per_line=5,
+    index_entries_per_line=2,
+    index_mode='inline',
+    segment_prefix='// ${symbol} first=${name} cp=${codepoint} ${width}x${height} n=${byte_count} at ${offset}\r\nconst u8 ${symbol}[] = {\r\n',
+    segment_suffix='}; // end ${symbol}\r\n',
+    comment_prefix='  /* [${offset}+${byte_count}] U+${codepoint} ',
+    comment_suffix=' ${width}x${height} */\r\n',
+    data_prefix='$',
+    data_suffix='',
+    line_prefix='  .db ',
+    line_suffix=' ;',
+    line_end='\r\n',
+)
+
+
+def _custom_cases() -> list[dict]:
+    cases = []
+    glyphs = _item_specs()['glyphs']
+    encoding = builtin_profiles()['ssd1306_vlsb_c'].encoding
+    for label, text in (('custom-templates', CUSTOM_TEXT),
+                        ('custom-sidecar-binary', replace(CUSTOM_TEXT, index_mode='sidecar', container='binary')),
+                        ('custom-sidecar-text', replace(CUSTOM_TEXT, index_mode='sidecar')),
+                        ('custom-index-per-line-1', replace(CUSTOM_TEXT, index_entries_per_line=1, compact_spacing=True))):
+        profile = replace(builtin_profiles()['ssd1306_vlsb_c'], text=text)
+        result = format_output(_items(glyphs, encoding), text, symbol='glyph set')
+        cases.append(case(f'fmt-{label}', 'format', 'strict', _input(glyphs, profile, 'glyph set', 256 * 1024), _expected(result)))
+    return cases
+
+
+def _rejection_cases() -> list[dict]:
+    """Profile validation (templates are data, never code)."""
+    base = builtin_profiles()['ssd1306_vlsb_c'].to_dict()
+    variants = {
+        'unknown-placeholder': {'text': {'segment_prefix': '${__import__}'}},
+        'bytes-per-line-0': {'text': {'bytes_per_line': 0}},
+        'bytes-per-line-257': {'text': {'bytes_per_line': 257}},
+        'index-per-line-0': {'text': {'index_entries_per_line': 0}},
+        'template-too-long': {'text': {'line_prefix': 'x' * 1025}},
+        'template-not-text': {'text': {'data_prefix': 7}},
+        'bad-container': {'text': {'container': 'hex'}},
+        'bad-radix': {'text': {'radix': 'octal'}},
+        'bad-index-mode': {'text': {'index_mode': 'footer'}},
+        'unknown-text-field': {'text': {'eval': 'x'}},
+        'bad-bit-axis': {'encoding': {'bit_axis': 'diagonal'}},
+        'bad-polarity': {'encoding': {'polarity': 'inverted'}},
+        'raster-threshold-256': {'raster': {'luma_threshold': 256}},
+        'raster-antialias-3': {'raster': {'antialias_scale': 3}},
+        'raster-alignment': {'raster': {'alignment': 'center'}},
+        'empty-name': {'name': '   '},
+        'long-name': {'name': 'n' * 65},
+        'name-64': {'name': 'n' * 64},
+        'not-object': None,
+    }
+    cases = []
+    for label, change in variants.items():
+        if change is None:
+            raw = ['not', 'a', 'profile']
+        else:
+            raw = json.loads(json.dumps(base))
+            for key, value in change.items():
+                if isinstance(value, dict):
+                    raw[key] = {**raw[key], **value}
+                else:
+                    raw[key] = value
+        try:
+            normalized = normalize_profile(raw)
+            outcome = {'accepted': normalized.to_dict()}
+        except (TypeError, ValueError) as exc:
+            outcome = {'error': type(exc).__name__, 'message': str(exc)}
+        cases.append(case(f'profile-reject-{label}', 'profile_validation', 'strict', {'profile': raw}, outcome))
+    return cases
+
+
 def build(work: Path) -> list[dict]:
-    return _profile_cases() + _preview_cases() + _legacy_header_cases()
+    return _profile_cases() + _preview_cases() + _legacy_header_cases() + _custom_cases() + _rejection_cases()

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "product": "Synthetic",
+  "canvas": {
+    "w": 64,
+    "h": 32,
+    "preview_scale": 4
+  },
+  "storage": {
+    "layout": "VLSB column-page (SSD1306)",
+    "bytes_per_frame": 256,
+    "polarity": "1 = lit"
+  },
+  "timeline": [],
+  "zones": [],
+  "states": {},
+  "elements": [
+    {
+      "id": "t",
+      "type": "text",
+      "text": "A",
+      "font_header": "assets/mode_font_5x7.h",
+      "zone": {
+        "x": 0,
+        "y": 0,
+        "w": 10,
+        "h": 7
+      },
+      "align": "justify"
+    }
+  ]
+}

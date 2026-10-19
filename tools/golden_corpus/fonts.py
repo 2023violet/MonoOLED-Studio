@@ -58,6 +58,12 @@ def _strict_cases(work: Path) -> list[dict]:
                       {'name': 'Manual 中文', 'cell': [8, 8], 'baseline': 6, 'advance': 9,
                        'glyphs': {'U+4E2D': 'bars', 'U+0041': 'diagonal (x+y)%3==0, metrics 1,-1,7'}},
                       _persisted(pack)))
+    committed = ROOT / 'fixtures' / 'golden' / 'inputs' / 'synthetic' / 'fonts' / 'builtin_5x8'
+    loaded = FontPack.load(committed)
+    cases.append(case('fontpack-committed-builtin-5x8-load', 'font_pack', 'strict',
+                      {'font_pack': committed.relative_to(ROOT).as_posix()},
+                      {'name': loaded.name, 'cell': list(loaded.cell), 'baseline': loaded.baseline, 'advance': loaded.advance,
+                       'manifest': byte_result((committed / 'fontpack.json').read_bytes()), 'glyphs': _glyphs(loaded)}))
     return cases
 
 

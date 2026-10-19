@@ -1,0 +1,234 @@
+{
+  "schema": 1,
+  "name": "Synthetic Builtin",
+  "cell": {
+    "w": 5,
+    "h": 8
+  },
+  "baseline": 6,
+  "advance": 6,
+  "glyphs": {
+    "A": {
+      "asset": "glyphs/U+0041.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "B": {
+      "asset": "glyphs/U+0042.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "C": {
+      "asset": "glyphs/U+0043.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "D": {
+      "asset": "glyphs/U+0044.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "E": {
+      "asset": "glyphs/U+0045.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "F": {
+      "asset": "glyphs/U+0046.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "G": {
+      "asset": "glyphs/U+0047.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "H": {
+      "asset": "glyphs/U+0048.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "I": {
+      "asset": "glyphs/U+0049.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "J": {
+      "asset": "glyphs/U+004A.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "K": {
+      "asset": "glyphs/U+004B.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "L": {
+      "asset": "glyphs/U+004C.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "M": {
+      "asset": "glyphs/U+004D.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "N": {
+      "asset": "glyphs/U+004E.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "O": {
+      "asset": "glyphs/U+004F.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "P": {
+      "asset": "glyphs/U+0050.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "Q": {
+      "asset": "glyphs/U+0051.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "R": {
+      "asset": "glyphs/U+0052.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "S": {
+      "asset": "glyphs/U+0053.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "T": {
+      "asset": "glyphs/U+0054.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "U": {
+      "asset": "glyphs/U+0055.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "V": {
+      "asset": "glyphs/U+0056.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "W": {
+      "asset": "glyphs/U+0057.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "X": {
+      "asset": "glyphs/U+0058.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "Y": {
+      "asset": "glyphs/U+0059.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "Z": {
+      "asset": "glyphs/U+005A.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "0": {
+      "asset": "glyphs/U+0030.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "1": {
+      "asset": "glyphs/U+0031.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "2": {
+      "asset": "glyphs/U+0032.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "3": {
+      "asset": "glyphs/U+0033.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "4": {
+      "asset": "glyphs/U+0034.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "5": {
+      "asset": "glyphs/U+0035.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "6": {
+      "asset": "glyphs/U+0036.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "7": {
+      "asset": "glyphs/U+0037.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "8": {
+      "asset": "glyphs/U+0038.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "9": {
+      "asset": "glyphs/U+0039.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    },
+    "/": {
+      "asset": "glyphs/U+002F.png",
+      "bearing_x": 0,
+      "bearing_y": 0,
+      "advance": 6
+    }
+  }
+}

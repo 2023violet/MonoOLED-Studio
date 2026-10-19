@@ -1,0 +1,214 @@
+{
+  "schema_version": 1,
+  "product": "Synthetic",
+  "canvas": {
+    "w": 64,
+    "h": 32,
+    "preview_scale": 4
+  },
+  "storage": {
+    "layout": "VLSB column-page (SSD1306)",
+    "bytes_per_frame": 256,
+    "polarity": "1 = lit"
+  },
+  "timeline": [],
+  "zones": [],
+  "states": {
+    "level": {
+      "type": "int",
+      "min": 0,
+      "max": 2,
+      "init": 1
+    },
+    "count": {
+      "type": "int",
+      "values": [
+        3,
+        42,
+        107
+      ],
+      "init": 3
+    },
+    "mode": {
+      "type": "enum",
+      "values": [
+        "AB",
+        "CAB"
+      ],
+      "init": "AB"
+    },
+    "show": {
+      "type": "enum",
+      "values": [
+        "yes",
+        "no"
+      ],
+      "init": "yes"
+    }
+  },
+  "state_relations": [
+    {
+      "left": "level",
+      "operator": "<=",
+      "right": "level"
+    }
+  ],
+  "elements": [
+    {
+      "id": "mark",
+      "type": "image",
+      "asset": "assets/mark_rgba.png",
+      "x": -2,
+      "y": 0
+    },
+    {
+      "id": "ink",
+      "type": "image",
+      "asset": "assets/ink_rgb.png",
+      "x": 10,
+      "y": 0,
+      "w": 9,
+      "blend": "or",
+      "resize_policy": "native_only"
+    },
+    {
+      "id": "bits",
+      "type": "image",
+      "asset": "assets/bits_1.png",
+      "x": 62,
+      "y": 30
+    },
+    {
+      "id": "level_bar",
+      "type": "image_seq",
+      "dir": "assets/seq",
+      "pattern": "level_{n}.png",
+      "bind": "level",
+      "x": 20,
+      "y": 0
+    },
+    {
+      "id": "counter",
+      "type": "digits",
+      "dir": "assets/digits",
+      "pattern": "d_{d}.png",
+      "bind": "count",
+      "digit_w": 3,
+      "digit_h": 5,
+      "tracking": 1,
+      "min_digits": 3,
+      "pad_char": "0",
+      "x": 26,
+      "y": 0
+    },
+    {
+      "id": "label_left",
+      "type": "text",
+      "text": "{mode}",
+      "font_header": "assets/mode_font_5x7.h",
+      "zone": {
+        "x": 0,
+        "y": 8,
+        "w": 30,
+        "h": 7
+      },
+      "align": "left"
+    },
+    {
+      "id": "label_center",
+      "type": "text",
+      "text": "x{mode}",
+      "font_header": "assets/mode_font_5x7.h",
+      "cell_w": 5,
+      "cell_h": 7,
+      "advance": 7,
+      "zone": {
+        "x": 30,
+        "y": 8,
+        "w": 34,
+        "h": 7
+      },
+      "align": "center"
+    },
+    {
+      "id": "label_right",
+      "type": "text",
+      "text": "ok",
+      "font_header": "assets/mode_font_5x7.h",
+      "zone": {
+        "x": 0,
+        "y": 16,
+        "w": 64,
+        "h": 7
+      },
+      "align": "right",
+      "y": 17
+    },
+    {
+      "id": "label_xy",
+      "type": "text",
+      "text": "",
+      "font_header": "assets/mode_font_5x7.h",
+      "x": 1,
+      "y": 1
+    },
+    {
+      "id": "pack_text",
+      "type": "bitmap_text",
+      "text": "A1/{mode}",
+      "font_pack": "fonts/builtin_5x8",
+      "x": 0,
+      "y": 24
+    },
+    {
+      "id": "future",
+      "type": "placeholder",
+      "x": 40,
+      "y": 24,
+      "w": 20,
+      "h": 6,
+      "label": "FUTURE"
+    },
+    {
+      "id": "future_default_label",
+      "type": "placeholder",
+      "x": 1,
+      "y": 1,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "only_when_shown",
+      "type": "image",
+      "asset": "assets/mark_rgba.png",
+      "x": 50,
+      "y": 0,
+      "visible_when": {
+        "show": "yes"
+      }
+    },
+    {
+      "id": "hidden",
+      "type": "image",
+      "asset": "assets/missing.png",
+      "hidden": true,
+      "zone": {
+        "x": 3,
+        "y": 4,
+        "w": 5,
+        "h": 6
+      }
+    },
+    {
+      "id": "lower_var",
+      "type": "image",
+      "asset": "assets/{show}_never.png",
+      "var_lower": true,
+      "x": 0,
+      "y": 0,
+      "visible_when": {
+        "show": "never"
+      }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "product": "Synthetic",
+  "canvas": {
+    "w": 64,
+    "h": 32,
+    "preview_scale": 4
+  },
+  "storage": {
+    "layout": "VLSB column-page (SSD1306)",
+    "bytes_per_frame": 256,
+    "polarity": "1 = lit"
+  },
+  "timeline": [],
+  "zones": [],
+  "states": {},
+  "elements": [
+    {
+      "id": "p",
+      "type": "bitmap_text",
+      "text": "a",
+      "font_pack": "fonts/builtin_5x8",
+      "x": 0,
+      "y": 0
+    }
+  ]
+}
