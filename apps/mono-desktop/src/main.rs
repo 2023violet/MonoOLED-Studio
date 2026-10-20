@@ -1,6 +1,7 @@
 //! MonoOLED Studio desktop application (Slint, ADR-005 / G2 decision).
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod agent;
 mod app;
 mod canvas;
 mod extras;
@@ -322,6 +323,12 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             }
             a.scan_project_files();
             a.refresh_all();
+        }
+        "agent-bridge" => {
+            let mut a = app.borrow_mut();
+            if let Err(e) = a.toggle_agent() {
+                a.error(&e);
+            }
         }
         "canvas-only" => {
             let shell = Shell::get(ui);
@@ -712,6 +719,7 @@ fn main() {
         let mut a = app.borrow_mut();
         a.apply_pixel_preferences();
         a.bench_load_active();
+        a.refresh_agent_status();
     }
     // Background jobs (Font Lab generation) report through this tick.
     let jobs = slint::Timer::default();
@@ -722,6 +730,7 @@ fn main() {
         move || {
             if let Ok(mut app) = a.try_borrow_mut() {
                 app.poll_font();
+                app.poll_agent();
             }
         },
     );

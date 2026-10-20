@@ -36,6 +36,7 @@ COMMANDS:
     handoff          build the deterministic Code AI handoff ZIP
     asset-audit      scan project asset health
     c-header         export the current framebuffer as a C header
+    bridge           serve the Automation API 1.3.0 on 127.0.0.1 (JSON-RPC, one line per call)
     version          print the version
 
 SOURCE OPTIONS (all commands):
@@ -44,6 +45,9 @@ SOURCE OPTIONS (all commands):
 
 STATE OPTIONS (validate, simulate, c-header):
     --mode <v> --phase <v> --seconds <n> --battery <n>
+
+BRIDGE OPTIONS:
+    --permission <observe|edit|full>  (default observe)   --port <n> (default 0 = any free port)
 
 MATRIX OPTIONS (export, handoff):
     --states <all|i,j|name>   --integer-policy <representative|boundaries|full>
@@ -372,6 +376,32 @@ fn cmd_c_header(args: &Args) -> CoreResult<u8> {
     Ok(0)
 }
 
+/// V1 `agent_bridge.main`: print the endpoint (host, port, token) as one JSON
+/// line, then serve requests until the process is stopped.
+fn cmd_bridge(args: &Args) -> CoreResult<u8> {
+    let permission = args.get("permission").unwrap_or("observe");
+    let mut service = match (args.get("project"), args.get("scene")) {
+        (Some(project), _) => {
+            mono_automation::Service::for_project(Path::new(project), None, permission)
+        }
+        (None, Some(scene)) => load_scene(Path::new(scene), None)
+            .map_err(mono_automation::RpcError::from)
+            .and_then(|doc| mono_automation::Service::new(doc, None, permission)),
+        (None, None) => return Err(CoreError::invalid("--project or --scene is required")),
+    }
+    .map_err(|e| CoreError::invalid(e.message().to_string()))?;
+    let port = u16::try_from(args.int("port", 0)?)
+        .map_err(|_| CoreError::invalid("--port must be 0..65535"))?;
+    let bridge = mono_automation::Bridge::start(port)
+        .map_err(|e| CoreError::invalid(format!("cannot listen on 127.0.0.1:{port}: {e}")))?;
+    println!("{}", bridge.endpoint(permission));
+    loop {
+        if bridge.drain(&mut service).is_empty() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+}
+
 fn run(raw: &[String]) -> CoreResult<u8> {
     let Some((command, rest)) = raw.split_first() else {
         print!("{USAGE}");
@@ -394,6 +424,7 @@ fn run(raw: &[String]) -> CoreResult<u8> {
         "handoff" => cmd_handoff(&args),
         "asset-audit" => cmd_asset_audit(&args),
         "c-header" => cmd_c_header(&args),
+        "bridge" => cmd_bridge(&args),
         other => Err(CoreError::invalid(format!(
             "unknown command: {other}\n\n{USAGE}"
         ))),

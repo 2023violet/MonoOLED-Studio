@@ -2679,9 +2679,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mono-automation"
+version = "2.0.0-alpha.1"
+dependencies = [
+ "mono-core",
+ "mono-font",
+ "mono-project",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "mono-cli"
 version = "2.0.0-alpha.1"
 dependencies = [
+ "mono-automation",
  "mono-core",
  "mono-project",
  "serde_json",
@@ -2702,6 +2714,7 @@ name = "mono-desktop"
 version = "2.0.0-alpha.1"
 dependencies = [
  "arboard",
+ "mono-automation",
  "mono-core",
  "mono-font",
  "mono-project",

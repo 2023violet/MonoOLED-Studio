@@ -4,6 +4,7 @@ members = [
   "crates/mono-core",
   "crates/mono-project",
   "crates/mono-font",
+  "crates/mono-automation",
   "apps/mono-cli",
   "apps/mono-desktop",
 ]
@@ -20,6 +21,7 @@ repository = "https://github.com/2023violet/MonoOLED-Studio"
 mono-core = { path = "crates/mono-core" }
 mono-project = { path = "crates/mono-project" }
 mono-font = { path = "crates/mono-font" }
+mono-automation = { path = "crates/mono-automation" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

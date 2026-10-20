@@ -787,7 +787,7 @@ pub fn validate_matrix(
     matrix: &[State],
     progress: Progress<'_>,
 ) -> CoreResult<MatrixSummary> {
-    let mut resources = DiskResources::new();
+    let mut resources = DiskResources::frozen();
     let mut by_case = Vec::new();
     let (mut total, mut blockers) = (0, 0);
     for (index, state) in matrix.iter().enumerate() {
@@ -1188,7 +1188,7 @@ pub fn export_scene(
     for dir in [&reference_dir, &golden_dir] {
         std::fs::create_dir_all(dir).map_err(|e| crate::resources::io_error(dir, &e))?;
     }
-    let mut resources = DiskResources::new();
+    let mut resources = DiskResources::frozen();
     let total_steps = (states.len() * 2).max(1);
     let mut all: BTreeMap<String, Vec<Finding>> = BTreeMap::new();
     for (index, (name, state)) in states.iter().enumerate() {
@@ -1569,7 +1569,7 @@ pub fn build_handoff_package(
             )?;
         }
         let headers = work.join("c_headers");
-        let mut resources = DiskResources::new();
+        let mut resources = DiskResources::frozen();
         for (name, state) in states {
             let fb = render_scene(scene, root, state, &mut resources)?.framebuffer;
             atomic_write(

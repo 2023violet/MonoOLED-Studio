@@ -44,11 +44,23 @@ pub struct DiskResources {
     bitmaps: HashMap<PathBuf, (String, Arc<BitmapAsset>)>,
     fonts: HashMap<PathBuf, (String, Arc<ModeFont>)>,
     packs: HashMap<PathBuf, (String, Arc<FontPack>)>,
+    /// Batch mode: inputs are fixed for this cache's lifetime, so a decoded
+    /// entry is reused without re-reading and re-hashing the file.
+    frozen: bool,
 }
 
 impl DiskResources {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Cache for one matrix-wide operation (render/validate/export of every
+    /// state): each file is read and decoded at most once per batch.
+    pub fn frozen() -> Self {
+        Self {
+            frozen: true,
+            ..Self::default()
+        }
     }
 
     pub fn decode_bitmap(path: &Path, raw: &[u8]) -> CoreResult<BitmapAsset> {
@@ -66,6 +78,11 @@ impl DiskResources {
 
 impl Resources for DiskResources {
     fn bitmap(&mut self, path: &Path) -> CoreResult<Arc<BitmapAsset>> {
+        if self.frozen {
+            if let Some((_, asset)) = self.bitmaps.get(path) {
+                return Ok(asset.clone());
+            }
+        }
         let raw = read_file(path)?;
         let digest = hex_digest(&raw);
         if let Some((cached, asset)) = self.bitmaps.get(path) {
@@ -80,6 +97,11 @@ impl Resources for DiskResources {
     }
 
     fn mode_font(&mut self, path: &Path) -> CoreResult<Arc<ModeFont>> {
+        if self.frozen {
+            if let Some((_, font)) = self.fonts.get(path) {
+                return Ok(font.clone());
+            }
+        }
         let raw = read_file(path)?;
         let digest = hex_digest(&raw);
         if let Some((cached, font)) = self.fonts.get(path) {
@@ -96,6 +118,11 @@ impl Resources for DiskResources {
     }
 
     fn font_pack(&mut self, root: &Path) -> CoreResult<Arc<FontPack>> {
+        if self.frozen {
+            if let Some((_, pack)) = self.packs.get(root) {
+                return Ok(pack.clone());
+            }
+        }
         let fingerprint = fontpack_fingerprint(root)?;
         if let Some((cached, pack)) = self.packs.get(root) {
             if *cached == fingerprint {

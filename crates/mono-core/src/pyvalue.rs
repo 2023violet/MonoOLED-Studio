@@ -137,6 +137,18 @@ pub fn py_cmp(a: &Value, b: &Value) -> Option<std::cmp::Ordering> {
     }
 }
 
+/// Python `bool(value)` for JSON values.
+pub fn py_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(items) => !items.is_empty(),
+        Value::Object(map) => !map.is_empty(),
+    }
+}
+
 /// Python `isinstance(v, int) and not isinstance(v, bool)`.
 pub fn is_py_int(value: &Value) -> bool {
     matches!(value, Value::Number(n) if n.is_i64() || n.is_u64())

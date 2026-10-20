@@ -15,6 +15,7 @@ path = "src/main.rs"
 mono-core.workspace = true
 mono-project.workspace = true
 mono-font.workspace = true
+mono-automation.workspace = true
 serde_json.workspace = true
 # G2 decision: Slint 1.18.1, femtovg GPU renderer with software fallback (Royalty-free 2.0 + AboutSlint).
 slint = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility"] }

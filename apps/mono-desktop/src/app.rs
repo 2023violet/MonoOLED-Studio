@@ -20,6 +20,7 @@ use mono_project::scene_io::{SceneDoc, load_project_scene, load_scene};
 use serde_json::{Value, json};
 use slint::{Global, ModelRc, SharedString, VecModel};
 
+use crate::agent::Agent;
 use crate::canvas::image_from_pixels;
 use crate::extras::{Picker, Profiler};
 use crate::fontlab::FontLab;
@@ -81,6 +82,7 @@ pub struct App {
     pub picker_matches: Vec<(String, String)>,
     pub profiler: Profiler,
     pub last_autosave: std::time::Instant,
+    pub agent: Option<Agent>,
 }
 
 pub(crate) fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
@@ -123,6 +125,7 @@ impl App {
             picker_matches: Vec::new(),
             profiler: Profiler::default(),
             last_autosave: std::time::Instant::now(),
+            agent: None,
         }
     }
 
