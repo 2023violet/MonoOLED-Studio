@@ -10,11 +10,37 @@ ignore = [
   # ttf-parser (via ab_glyph, TrueType glyph generation in mono-font) is flagged unmaintained;
   # no safe upgrade exists. Inputs are user-chosen local font files; revisit with skrifa.
   { id = "RUSTSEC-2026-0192", reason = "unmaintained, not a vulnerability; no alternative release" },
+  # zvariant / zbus_names / zvariant_derive were merged into zbus 6 and flagged
+  # unmaintained. They arrive on Linux only, via Slint 1.18.1 accessibility
+  # (accesskit/atspi) and rfd's xdg portal; no release of either pins zbus 6 yet.
+  { id = "RUSTSEC-2026-0370", reason = "unmaintained (merged into zbus 6), not a vulnerability; transitive via pinned Slint/rfd" },
+  { id = "RUSTSEC-2026-0371", reason = "unmaintained (merged into zbus 6), not a vulnerability; transitive via pinned Slint/rfd" },
+  { id = "RUSTSEC-2026-0372", reason = "unmaintained (merged into zbus 6), not a vulnerability; transitive via pinned Slint/rfd" },
 ]
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "Zlib", "Unicode-3.0"]
+# Permissive licences only; BSD/BSL/ISC come in through the desktop stack
+# (tiny-skia, clipboard-win, libloading, bindgen).
+allow = ["MIT", "Apache-2.0", "Zlib", "Unicode-3.0", "BSD-2-Clause", "BSD-3-Clause", "BSL-1.0", "ISC"]
 confidence-threshold = 0.9
+# G2 decision (G2_EVIDENCE.md): Slint is used under its Royalty-free 2.0
+# licence, which requires the AboutSlint attribution shown in the About dialog.
+exceptions = [
+  { name = "i-slint-backend-linuxkms", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-backend-selector", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-backend-testing", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-backend-winit", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-common", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-compiler", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-core", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-core-macros", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-renderer-femtovg", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-renderer-skia", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "i-slint-renderer-software", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "slint", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "slint-build", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+  { name = "slint-macros", allow = ["LicenseRef-Slint-Royalty-free-2.0"] },
+]
 
 [bans]
 multiple-versions = "warn"
