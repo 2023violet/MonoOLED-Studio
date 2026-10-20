@@ -398,35 +398,35 @@ component PixelInspector inherits Panel {
                     SectionTitle { text: I18n.tr(I18n.lang, "pixel.section.transform"); }
                     ActionGrid {
                         Row {
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.invert"); clicked => { PixelModel.action("invert"); } }
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.flip_h"); clicked => { PixelModel.action("flip-h"); } }
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.flip_v"); clicked => { PixelModel.action("flip-v"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.invert"); clicked => { PixelModel.action("invert"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.flip_h"); clicked => { PixelModel.action("flip-h"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.flip_v"); clicked => { PixelModel.action("flip-v"); } }
                         }
                         Row {
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.rotate90"); clicked => { PixelModel.action("rotate90"); } }
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.rotate180"); clicked => { PixelModel.action("rotate180"); } }
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.rotate270"); clicked => { PixelModel.action("rotate270"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.rotate90"); clicked => { PixelModel.action("rotate90"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.rotate180"); clicked => { PixelModel.action("rotate180"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.rotate270"); clicked => { PixelModel.action("rotate270"); } }
                         }
                         Row {
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.canvas_size"); clicked => { PixelModel.action("canvas-size"); } }
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.crop_selection"); enabled: PixelModel.has-selection; clicked => { PixelModel.action("crop"); } }
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.clear"); role: ButtonRole.danger; clicked => { PixelModel.action("clear"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.canvas_size"); clicked => { PixelModel.action("canvas-size"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.crop_selection"); enabled: PixelModel.has-selection; clicked => { PixelModel.action("crop"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.clear"); role: ButtonRole.danger; clicked => { PixelModel.action("clear"); } }
                         }
                     }
                     Divider { }
                     SectionTitle { text: I18n.tr(I18n.lang, "pixel.tab.export"); }
                     ActionGrid {
                         Row {
-                            Button { text: I18n.tr(I18n.lang, "bench.new"); clicked => { PixelModel.action("new"); } }
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.open"); clicked => { PixelModel.action("open"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "bench.new"); clicked => { PixelModel.action("new"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.open"); clicked => { PixelModel.action("open"); } }
                         }
                         Row {
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.save"); role: ButtonRole.primary; clicked => { PixelModel.action("save"); } }
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.export_bin"); clicked => { PixelModel.action("save-bin"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.save"); role: ButtonRole.primary; clicked => { PixelModel.action("save"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.export_bin"); clicked => { PixelModel.action("save-bin"); } }
                         }
                         Row {
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.export_c"); clicked => { PixelModel.action("save-c"); } }
-                            Button { text: I18n.tr(I18n.lang, "pixel.action.font"); clicked => { PixelModel.action("font-generator"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.export_c"); clicked => { PixelModel.action("save-c"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.font"); clicked => { PixelModel.action("font-generator"); } }
                         }
                     }
                 }

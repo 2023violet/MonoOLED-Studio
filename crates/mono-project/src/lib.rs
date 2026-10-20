@@ -3,7 +3,9 @@
 //! Everything that touches disk lives here: PNG decoding, Font Pack files,
 //! project manifests and atomic writes. `mono-core` stays IO-free.
 
+pub mod asset_ops;
 pub mod atomic;
+pub mod autosave;
 pub mod editor;
 pub mod export;
 pub mod fontpack_io;
@@ -11,3 +13,4 @@ pub mod image_io;
 pub mod project;
 pub mod resources;
 pub mod scene_io;
+pub mod templates;

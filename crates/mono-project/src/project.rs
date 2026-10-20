@@ -363,6 +363,29 @@ impl ProjectWorkspace {
             .unwrap_or_else(|| vec!["assets".into()])
     }
 
+    /// V1 `data.setdefault('asset_dirs', []).append(dir); save()` when `dir` is absent.
+    pub fn add_asset_dir(&mut self, dir: &str) -> CoreResult<()> {
+        let present = self
+            .data
+            .get("asset_dirs")
+            .and_then(Value::as_array)
+            .is_some_and(|dirs| dirs.iter().any(|d| d.as_str() == Some(dir)));
+        if present {
+            return Ok(());
+        }
+        let dir = dir.to_string();
+        self.transact(|data| {
+            let dirs = data.entry("asset_dirs").or_insert_with(|| json!([]));
+            match dirs {
+                Value::Array(list) => {
+                    list.push(Value::from(dir));
+                    Ok(())
+                }
+                _ => Err(CoreError::invalid("asset_dirs must be a list")),
+            }
+        })
+    }
+
     pub fn resolve_member(&self, member: &str, label: &str) -> CoreResult<PathBuf> {
         resolve_under_root(&self.root, member, label)
     }

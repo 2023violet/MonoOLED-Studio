@@ -1,8 +1,8 @@
 // MonoOLED Studio main window.
 import { Theme, Metrics } from "theme.slint";
-import { LineEdit, AboutSlint, Palette } from "std-widgets.slint";
+import { LineEdit, AboutSlint, Palette, ListView } from "std-widgets.slint";
 import { Icon } from "icons.slint";
-import { Shell, I18n, Button, ButtonRole, Segmented, StatusPill, PillTone, Caption, Scrim, Dialog } from "widgets.slint";
+import { Shell, I18n, Button, ButtonRole, Segmented, StatusPill, PillTone, Caption, Scrim, Dialog, ListRow } from "widgets.slint";
 import { PreferencesDialog, PrefsModel, PrefRow } from "preferences.slint";
 import { DesignerView, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar } from "designer.slint";
 import { PixelView, PixelDialogs, PixelModel, OutputModel, ProfileItem } from "pixel.slint";
@@ -34,6 +34,12 @@ export global AppModel {
     in-out property <bool> about-visible;
     in-out property <bool> preferences-visible;
     in property <string> version: "2.0.0";
+    in-out property <bool> picker-visible;
+    in property <string> picker-title;
+    in property <[string]> picker-items;
+    in-out property <string> picker-filter;
+    callback picker-filter-changed(string);
+    callback picker-chosen(int);
     callback prompt-accepted(string);
     callback prompt-cancelled();
     callback action(string);
@@ -138,6 +144,38 @@ component PromptDialog inherits Scrim {
     init => { input.focus(); }
 }
 
+// Searchable list (V1 CommandPalette / QInputDialog.getItem).
+component PickerDialog inherits Scrim {
+    Dialog {
+        width: 520px;
+        height: 430px;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 10px;
+            Text { text: AppModel.picker-title; font-size: 16px; font-weight: 700; color: Theme.text-primary; }
+            filter := LineEdit {
+                text <=> AppModel.picker-filter;
+                placeholder-text: I18n.tr(I18n.lang, "command.search");
+                edited(t) => { AppModel.picker-filter-changed(t); }
+                accepted => { if (AppModel.picker-items.length > 0) { AppModel.picker-chosen(0); } }
+            }
+            ListView {
+                vertical-stretch: 1;
+                for item[index] in AppModel.picker-items: ListRow {
+                    text: item;
+                    selected: index == 0 && AppModel.picker-filter != "";
+                    clicked => { AppModel.picker-chosen(index); }
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { AppModel.picker-visible = false; } }
+            }
+        }
+    }
+    init => { filter.focus(); }
+}
+
 component AboutDialog inherits Scrim {
     Dialog {
         height: 360px;
@@ -220,6 +258,10 @@ export component MainWindow inherits Window {
             MenuItem { title: I18n.tr(I18n.lang, "workspace.review"); activated => { AppModel.action("workspace:3"); } }
             MenuSeparator { }
             MenuItem { title: I18n.tr(I18n.lang, "action.diagnostics"); activated => { AppModel.action("diagnostics"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "view.navigator"); activated => { AppModel.action("toggle-navigator"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "view.inspector"); activated => { AppModel.action("toggle-inspector"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "view.canvas_only"); activated => { AppModel.action("canvas-only"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "view.reset_workspace"); activated => { AppModel.action("reset-workspace"); } }
         }
         Menu {
             title: I18n.tr(I18n.lang, "menu.tools");
@@ -229,7 +271,11 @@ export component MainWindow inherits Window {
             MenuItem { title: I18n.tr(I18n.lang, "action.insert_template"); activated => { AppModel.action("insert-template"); } }
             MenuItem { title: I18n.tr(I18n.lang, "action.convert_asset"); activated => { AppModel.action("convert-asset"); } }
             MenuItem { title: I18n.tr(I18n.lang, "action.agent_bridge"); activated => { AppModel.action("agent-bridge"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.bitmap_text"); activated => { AppModel.action("bitmap-text"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.autosave"); activated => { AppModel.action("autosave"); } }
             MenuItem { title: I18n.tr(I18n.lang, "action.restore_autosave"); activated => { AppModel.action("restore-autosave"); } }
+            MenuSeparator { }
+            MenuItem { title: I18n.tr(I18n.lang, "command.title"); activated => { AppModel.action("command-palette"); } }
         }
         Menu {
             title: I18n.tr(I18n.lang, "menu.help");
@@ -263,6 +309,7 @@ export component MainWindow inherits Window {
     }
     if AppModel.workspace == 1 && PixelModel.dialog != 0: PixelDialogs { width: root.width; height: root.height; }
     if AppModel.preferences-visible: PreferencesDialog { width: root.width; height: root.height; }
+    if AppModel.picker-visible: PickerDialog { width: root.width; height: root.height; }
     if AppModel.prompt-visible: PromptDialog { width: root.width; height: root.height; }
     if AppModel.about-visible: AboutDialog { width: root.width; height: root.height; }
 }

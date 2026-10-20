@@ -46,6 +46,14 @@ pub fn trf(lang: &str, key: &str, values: &[(&str, String)]) -> String {
     let mut text = tr(lang, key);
     for (name, value) in values {
         text = text.replace(&format!("{{{name}}}"), value);
+        // `{name:.2f}`-style specs: callers pass the already formatted value.
+        let open = format!("{{{name}:");
+        while let Some(start) = text.find(&open) {
+            let Some(len) = text[start..].find('}') else {
+                break;
+            };
+            text.replace_range(start..start + len + 1, value);
+        }
     }
     text
 }

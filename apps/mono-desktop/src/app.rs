@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 use slint::{Global, ModelRc, SharedString, VecModel};
 
 use crate::canvas::image_from_pixels;
+use crate::extras::{Picker, Profiler};
 use crate::fontlab::FontLab;
 use crate::i18n::{tr, trf};
 use crate::pixel::PixelStudio;
@@ -39,6 +40,10 @@ pub enum Prompt {
     DuplicateScreen,
     CSymbol(PathBuf),
     NewFontPack,
+    TemplateName,
+    TemplatePrefix(String),
+    BitmapText(PathBuf),
+    BitmapTextId(PathBuf, String),
     GlyphCharacters,
     ProfileId,
     ProfileName(String),
@@ -72,6 +77,10 @@ pub struct App {
     pub import: Option<ImportState>,
     pub bench: Workbench,
     pub font: Option<FontLab>,
+    pub picker: Option<Picker>,
+    pub picker_matches: Vec<(String, String)>,
+    pub profiler: Profiler,
+    pub last_autosave: std::time::Instant,
 }
 
 pub(crate) fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
@@ -110,6 +119,10 @@ impl App {
             import: None,
             bench: Workbench::default(),
             font: None,
+            picker: None,
+            picker_matches: Vec::new(),
+            profiler: Profiler::default(),
+            last_autosave: std::time::Instant::now(),
         }
     }
 
@@ -172,7 +185,7 @@ impl App {
         self.open_project(&path)
     }
 
-    fn bind_scene(&mut self, scene: SceneDoc) -> Result<(), CoreError> {
+    pub(crate) fn bind_scene(&mut self, scene: SceneDoc) -> Result<(), CoreError> {
         let mut session = EditorSession::new(scene)?;
         let pixels = session
             .render()
@@ -287,6 +300,12 @@ impl App {
     // ------------------------------------------------------------- refreshing
 
     pub fn refresh_all(&mut self) {
+        let started = std::time::Instant::now();
+        self.refresh_all_inner();
+        Profiler::record(&mut self.profiler.full, started);
+    }
+
+    fn refresh_all_inner(&mut self) {
         self.refresh_navigator();
         self.refresh_canvas();
         self.refresh_inspector();
@@ -705,6 +724,14 @@ impl App {
     }
 
     pub fn canvas_pointer(&mut self, phase: &str, x: f32, y: f32, shift: bool, ctrl: bool) {
+        let started = std::time::Instant::now();
+        self.canvas_pointer_inner(phase, x, y, shift, ctrl);
+        if phase == "move" && self.drag.as_ref().is_some_and(|d| d.moved) {
+            Profiler::record(&mut self.profiler.drag, started);
+        }
+    }
+
+    fn canvas_pointer_inner(&mut self, phase: &str, x: f32, y: f32, shift: bool, ctrl: bool) {
         let point = (x.floor() as i64, y.floor() as i64);
         match phase {
             "down" => {

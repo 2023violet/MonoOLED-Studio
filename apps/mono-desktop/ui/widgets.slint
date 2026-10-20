@@ -10,6 +10,9 @@ export global I18n {
 // Window-level layout state shared by every workspace view.
 export global Shell {
     in-out property <bool> canvas-only;
+    in-out property <bool> hide-navigator;
+    in-out property <bool> hide-inspector;
+    in-out property <bool> hide-drawer;
 }
 
 export enum ButtonRole { primary, secondary, ghost, danger }
@@ -21,10 +24,12 @@ export component Button inherits Rectangle {
     in property <bool> checked: false;
     in property <string> tooltip;
     in property <length> min-width-hint: 0px;
+    // Grid buttons share the row width and elide long labels instead of overflowing.
+    in property <bool> shrink: false;
     callback clicked();
     min-height: Metrics.control-height;
     max-height: Metrics.control-height;
-    min-width: max(min-width-hint, label.preferred-width + 2 * 14px);
+    min-width: shrink ? 0px : max(min-width-hint, label.preferred-width + 2 * 14px);
     horizontal-stretch: 0;
     border-radius: Metrics.radius-control;
     accessible-role: button;
@@ -47,6 +52,9 @@ export component Button inherits Rectangle {
             : root.checked ? Theme.accent-hover : Theme.text-primary;
         horizontal-alignment: center;
         vertical-alignment: center;
+        overflow: elide;
+        x: 6px;
+        width: parent.width - 12px;
     }
     touch := TouchArea {
         enabled: root.enabled;

@@ -406,19 +406,19 @@ component Inspector inherits Panel {
                     GridLayout {
                         spacing: 6px;
                         Row {
-                            Button { text: I18n.tr(I18n.lang, "align.left"); clicked => { DesignerModel.inspector-action("align:left"); } }
-                            Button { text: I18n.tr(I18n.lang, "align.hcenter"); clicked => { DesignerModel.inspector-action("align:hcenter"); } }
-                            Button { text: I18n.tr(I18n.lang, "align.right"); clicked => { DesignerModel.inspector-action("align:right"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "align.left"); clicked => { DesignerModel.inspector-action("align:left"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "align.hcenter"); clicked => { DesignerModel.inspector-action("align:hcenter"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "align.right"); clicked => { DesignerModel.inspector-action("align:right"); } }
                         }
                         Row {
-                            Button { text: I18n.tr(I18n.lang, "align.top"); clicked => { DesignerModel.inspector-action("align:top"); } }
-                            Button { text: I18n.tr(I18n.lang, "align.vcenter"); clicked => { DesignerModel.inspector-action("align:vcenter"); } }
-                            Button { text: I18n.tr(I18n.lang, "align.bottom"); clicked => { DesignerModel.inspector-action("align:bottom"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "align.top"); clicked => { DesignerModel.inspector-action("align:top"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "align.vcenter"); clicked => { DesignerModel.inspector-action("align:vcenter"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "align.bottom"); clicked => { DesignerModel.inspector-action("align:bottom"); } }
                         }
                         Row {
-                            Button { text: I18n.tr(I18n.lang, "align.distribute_h"); clicked => { DesignerModel.inspector-action("distribute:horizontal"); } }
-                            Button { text: I18n.tr(I18n.lang, "align.distribute_v"); clicked => { DesignerModel.inspector-action("distribute:vertical"); } }
-                            Button { text: I18n.tr(I18n.lang, "align.snap"); clicked => { DesignerModel.inspector-action("snap"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "align.distribute_h"); clicked => { DesignerModel.inspector-action("distribute:horizontal"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "align.distribute_v"); clicked => { DesignerModel.inspector-action("distribute:vertical"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "align.snap"); clicked => { DesignerModel.inspector-action("snap"); } }
                         }
                     }
                     Caption { text: DesignerModel.measure-text; }
@@ -505,9 +505,9 @@ export component DesignerView inherits VerticalLayout {
     HorizontalLayout {
         spacing: 8px;
         vertical-stretch: 3;
-        if !Shell.canvas-only: Navigator { width: 280px; }
+        if !Shell.canvas-only && !Shell.hide-navigator: Navigator { width: 280px; }
         CanvasPanel { horizontal-stretch: 1; }
-        if !Shell.canvas-only: Inspector { width: 360px; }
+        if !Shell.canvas-only && !Shell.hide-inspector: Inspector { width: 360px; }
     }
-    if !Shell.canvas-only: Drawer { vertical-stretch: 0; height: 210px; }
+    if !Shell.canvas-only && !Shell.hide-drawer: Drawer { vertical-stretch: 0; height: 210px; }
 }

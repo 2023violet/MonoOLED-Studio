@@ -3,6 +3,7 @@
 
 mod app;
 mod canvas;
+mod extras;
 mod fontlab;
 mod fontlab_ui;
 mod i18n;
@@ -304,45 +305,46 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
                 }
             }
         }
-        "place-asset" | "import-asset" | "assign-bitmap" => {
-            let path = if action == "import-asset" || action == "assign-bitmap" {
-                rfd::FileDialog::new()
-                    .add_filter("Bitmap", &["png", "bmp"])
-                    .pick_file()
-            } else {
-                None
+        "assign-bitmap" => {
+            let Some(path) = rfd::FileDialog::new()
+                .set_title(t("dialog.assign_bitmap"))
+                .add_filter("Bitmap", &["png", "bmp"])
+                .pick_file()
+            else {
+                return;
             };
             let mut a = app.borrow_mut();
-            if let Some(path) = path {
-                let target = a.selection.primary().map(str::to_string);
-                let result = match (target, a.session.as_mut()) {
-                    (Some(id), Some(session)) if action == "assign-bitmap" => {
-                        session.assign_bitmap(&id, &path)
-                    }
-                    (_, Some(session)) => {
-                        let id = (1..)
-                            .map(|n| format!("image_{n}"))
-                            .find(|c| !session.element_ids().contains(c))
-                            .unwrap_or_default();
-                        session
-                            .add_placeholder(&id, 0, 0, 8, 8, None)
-                            .and_then(|_| session.assign_bitmap(&id, &path))
-                    }
-                    _ => Ok(()),
-                };
-                if let Err(e) = result {
+            let target = a.selection.primary().map(str::to_string);
+            if let (Some(id), Some(session)) = (target, a.session.as_mut()) {
+                if let Err(e) = session.assign_bitmap(&id, &path) {
                     a.error(&e);
                 }
-                a.scan_project_files();
-                a.refresh_all();
             }
+            a.scan_project_files();
+            a.refresh_all();
+        }
+        "canvas-only" => {
+            let shell = Shell::get(ui);
+            shell.set_canvas_only(!shell.get_canvas_only());
         }
         other if other.starts_with("workspace:") => {
             let index: i32 = other[10..].parse().unwrap_or(0);
             switch_workspace(app, ui, index);
         }
-        other => app.borrow_mut().action(other),
+        other => {
+            let mut a = app.borrow_mut();
+            if !a.extra_action(other) {
+                a.action(other);
+            }
+        }
     }
+}
+
+fn finish_prompt(app: &mut App, result: Result<(), mono_core::CoreError>) {
+    if let Err(e) = result {
+        app.error(&e);
+    }
+    app.refresh_all();
 }
 
 fn switch_workspace(app: &Rc<RefCell<App>>, ui: &MainWindow, index: i32) {
@@ -388,6 +390,26 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
                 app.create_font_pack(&text);
                 return;
             }
+            Prompt::TemplateName => {
+                let result = app.save_template(&text);
+                finish_prompt(&mut app, result);
+                return;
+            }
+            Prompt::TemplatePrefix(name) => {
+                let result = app.insert_template(&name, &text);
+                finish_prompt(&mut app, result);
+                return;
+            }
+            Prompt::BitmapText(dir) => {
+                let result = app.bitmap_text_entered(dir, &text);
+                finish_prompt(&mut app, result);
+                return;
+            }
+            Prompt::BitmapTextId(dir, value) => {
+                let result = app.insert_bitmap_text(&dir, &value, &text);
+                finish_prompt(&mut app, result);
+                return;
+            }
             other => {
                 app.pixel_prompt(other, &text);
                 return;
@@ -431,6 +453,13 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
                 }
             }
             "filter-assets" => a.borrow_mut().refresh_navigator(),
+            "place-asset" => {
+                let mut app = a.borrow_mut();
+                if let Err(e) = app.place_asset(&id) {
+                    app.error(&e);
+                }
+                app.refresh_all();
+            }
             "open-font-pack" => {
                 if let Some(ui) = ui {
                     switch_workspace(&a, &ui, 2);
@@ -482,12 +511,30 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     });
     wire_pixel(ui, app);
     wire_prefs(ui, app);
+    wire_picker(ui, app);
 }
 
 /// Configured shortcut → command (V1 command registry). Returns true if handled.
 fn run_shortcut(app: &Rc<RefCell<App>>, ui: &MainWindow, chord: &str) -> bool {
     let Some(command) = app.borrow_mut().shortcut(chord) else {
-        return false;
+        // V1 fixed menu shortcuts (not user-configurable).
+        let action = match prefs_ui::normalize_shortcut(chord).as_str() {
+            "ctrl+n" => "new-project",
+            "ctrl+shift+o" => "open-project",
+            "ctrl+o" => "open-scene",
+            "ctrl+shift+e" => "handoff",
+            "ctrl+g" => "group",
+            "ctrl+shift+g" => "ungroup",
+            "ctrl+j" => "diagnostics",
+            "ctrl+1" => "toggle-navigator",
+            "ctrl+2" => "toggle-inspector",
+            "ctrl+shift+p" => "workspace:1",
+            "ctrl+shift+f" => "workspace:2",
+            "ctrl+k" => "command-palette",
+            _ => return false,
+        };
+        handle_action(app, ui, action);
+        return true;
     };
     let workspace = app.borrow().workspace;
     match command {
@@ -512,6 +559,20 @@ fn run_shortcut(app: &Rc<RefCell<App>>, ui: &MainWindow, chord: &str) -> bool {
         _ => return false,
     }
     true
+}
+
+fn wire_picker(ui: &MainWindow, app: &Rc<RefCell<App>>) {
+    let a = app.clone();
+    AppModel::get(ui)
+        .on_picker_filter_changed(move |filter| a.borrow_mut().refresh_picker(&filter));
+    let (a, w) = (app.clone(), ui.as_weak());
+    AppModel::get(ui).on_picker_chosen(move |index| {
+        let Some(ui) = w.upgrade() else { return };
+        let action = a.borrow_mut().picker_chosen(index);
+        if let Some(action) = action {
+            handle_action(&a, &ui, &action);
+        }
+    });
 }
 
 fn wire_prefs(ui: &MainWindow, app: &Rc<RefCell<App>>) {
@@ -664,6 +725,21 @@ fn main() {
             }
         },
     );
+    // V1 autosave timer: checked every few seconds against the preference interval.
+    let autosave = slint::Timer::default();
+    let a = app.clone();
+    autosave.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(5),
+        move || {
+            if let Ok(mut app) = a.try_borrow_mut() {
+                app.autosave_due();
+            }
+        },
+    );
+    if args.screenshot.is_none() {
+        app.borrow_mut().prompt_recovery();
+    }
     if let Some(index) = args.workspace {
         switch_workspace(&app, &ui, index);
     }
