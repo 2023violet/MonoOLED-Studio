@@ -540,7 +540,9 @@
     "bench.no_selection": "No selection",
     "bench.brush": "Brush size",
     "bench.new": "New canvas",
-    "pixel.unsaved": "Unsaved Pixel Studio changes will be discarded"
+    "pixel.unsaved": "Unsaved Pixel Studio changes will be discarded",
+    "font.alignment.font_set": "Relative to font set",
+    "font.alignment.glyph_width": "Relative to glyph width"
   },
   "zh_CN": {
     "action.about": "关于 MonoOLED Studio",
@@ -1083,6 +1085,8 @@
     "bench.no_selection": "当前没有选区",
     "bench.brush": "笔刷大小",
     "bench.new": "新建画布",
-    "pixel.unsaved": "未保存的 Pixel Studio 改动将被丢弃"
+    "pixel.unsaved": "未保存的 Pixel Studio 改动将被丢弃",
+    "font.alignment.font_set": "相对于整体",
+    "font.alignment.glyph_width": "相对于字宽"
   }
 }

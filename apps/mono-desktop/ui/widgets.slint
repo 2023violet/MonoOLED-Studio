@@ -7,6 +7,11 @@ export global I18n {
     pure callback tr(string /* lang */, string /* key */) -> string;
 }
 
+// Window-level layout state shared by every workspace view.
+export global Shell {
+    in-out property <bool> canvas-only;
+}
+
 export enum ButtonRole { primary, secondary, ghost, danger }
 
 export component Button inherits Rectangle {

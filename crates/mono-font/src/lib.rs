@@ -142,6 +142,17 @@ pub fn rasterize_characters(
     font: Option<&FontArc>,
     options: &GenerateOptions,
 ) -> CoreResult<Vec<char>> {
+    rasterize_characters_with_progress(pack, characters, font, options, &mut |_, _| {})
+}
+
+/// `rasterize_characters` reporting `(done, total)` after each glyph (V1 `progress=`).
+pub fn rasterize_characters_with_progress(
+    pack: &mut FontPack,
+    characters: &str,
+    font: Option<&FontArc>,
+    options: &GenerateOptions,
+    progress: &mut dyn FnMut(usize, usize),
+) -> CoreResult<Vec<char>> {
     if options.font_size <= 0 {
         return Err(CoreError::invalid("font_size must be greater than 0"));
     }
@@ -168,8 +179,9 @@ pub fn rasterize_characters(
         && (ox, oy) == (0, 0)
         && supports_builtin_5x7(pack.cell)
         && chars.iter().all(|c| has_builtin_glyph(*c));
+    let total = chars.len();
     if use_builtin {
-        for ch in &chars {
+        for (index, ch) in chars.iter().enumerate() {
             let rows = builtin_glyph_rows(*ch, pack.cell, Some(pack.baseline))?;
             pack.set_glyph(
                 *ch,
@@ -180,6 +192,7 @@ pub fn rasterize_characters(
                     advance,
                 }),
             )?;
+            progress(index + 1, total);
         }
         return Ok(chars);
     }
@@ -205,7 +218,7 @@ pub fn rasterize_characters(
         shared_right = boxes.iter().map(|b| b.2).max().unwrap_or(0);
     }
     let (sw, sh) = (w * s as usize, h * s as usize);
-    for ch in &chars {
+    for (index, ch) in chars.iter().enumerate() {
         let (left, _, right, _) = if options.alignment == Alignment::FontSet {
             (shared_left, 0, shared_right, 0)
         } else {
@@ -244,8 +257,69 @@ pub fn rasterize_characters(
                 advance,
             }),
         )?;
+        progress(index + 1, total);
     }
     Ok(chars)
+}
+
+/// V1 `recommended_font_size`: a conservative preferred size for a cell.
+pub fn recommended_font_size(cell: (usize, usize)) -> i64 {
+    let height = cell.1 as f64;
+    // Python round() is banker's rounding.
+    let scaled = height * 0.9;
+    let floor = scaled.floor();
+    let rounded = if (scaled - floor - 0.5).abs() < f64::EPSILON {
+        if floor as i64 % 2 == 0 {
+            floor
+        } else {
+            floor + 1.0
+        }
+    } else {
+        scaled.round()
+    };
+    4.max((cell.1 as i64).min(rounded as i64))
+}
+
+/// V1 `recommended_truetype_layout`: fitted size and a shared baseline that
+/// centres the sample's ink union in the cell.
+pub fn recommended_truetype_layout(
+    font: &FontArc,
+    cell: (usize, usize),
+    characters: &str,
+    preferred_size: i64,
+) -> CoreResult<(i64, i64)> {
+    let (width, height) = (cell.0 as i64, cell.1 as i64);
+    if width <= 0 || height <= 0 || preferred_size <= 0 {
+        return Err(CoreError::invalid(
+            "font dimensions and preferred size must be positive",
+        ));
+    }
+    let chars: Vec<char> = characters.chars().collect();
+    let sample = fit_sample(&chars);
+    let default_baseline = i64::from(mono_core::font::recommended_baseline(cell));
+    if sample.is_empty() {
+        return Ok((preferred_size.max(4), default_baseline));
+    }
+    let lower = 4;
+    let mut fallback = (lower, default_baseline);
+    for size in (lower..=preferred_size.max(lower)).rev() {
+        let scale = scale_for(font, size as f32);
+        let boxes: Vec<_> = sample.iter().map(|c| ink_box(font, scale, *c)).collect();
+        let max_width = boxes.iter().map(|b| b.2 - b.0).max().unwrap_or(0);
+        let top = boxes.iter().map(|b| b.1).min().unwrap_or(0);
+        let bottom = boxes.iter().map(|b| b.3).max().unwrap_or(0);
+        let ink_height = bottom - top;
+        if max_width > width || ink_height > height {
+            continue;
+        }
+        let y0 = 0.max((height - ink_height).div_euclid(2));
+        let baseline = (y0 - top).clamp(0, height - 1);
+        if baseline + top >= 0 && baseline + bottom <= height {
+            return Ok((size, baseline));
+        }
+        fallback = (size, baseline);
+    }
+    Ok(fallback)
 }
 
 /// V1 `font_generator.generate_glyphs` cell rendering: each character's ink box
@@ -342,6 +416,31 @@ fn centered_builtin(ch: char, (w, h): (usize, usize)) -> Vec<Vec<u8>> {
 mod centered_tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    #[test]
+    fn recommended_font_size_matches_v1() {
+        // max(4, min(h, round(h * 0.9))) with banker's rounding.
+        assert_eq!(recommended_font_size((5, 8)), 7);
+        assert_eq!(recommended_font_size((16, 16)), 14);
+        assert_eq!(recommended_font_size((5, 4)), 4);
+        assert_eq!(recommended_font_size((8, 5)), 4);
+        assert_eq!(recommended_font_size((8, 25)), 22);
+    }
+
+    #[test]
+    fn progress_reports_every_glyph() {
+        let mut pack = FontPack::with_recommended("t", (5, 8)).unwrap();
+        let mut seen = Vec::new();
+        rasterize_characters_with_progress(
+            &mut pack,
+            "AAB",
+            None,
+            &GenerateOptions::default(),
+            &mut |done, total| seen.push((done, total)),
+        )
+        .unwrap();
+        assert_eq!(seen, vec![(1, 2), (2, 2)]);
+    }
 
     #[test]
     fn builtin_cells_are_centred_and_deduplicated() {

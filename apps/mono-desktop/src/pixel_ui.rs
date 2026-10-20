@@ -18,7 +18,7 @@ use slint::Global;
 use crate::app::{App, Prompt, model, ss};
 use crate::canvas::image_from_pixels;
 use crate::i18n::trf;
-use crate::pixel::{ZOOMS, default_symbol, load_import_source};
+use crate::pixel::{PixelStudio, ZOOMS, default_symbol, load_import_source};
 use crate::workbench::{MODES, SOURCES, bitmap_item, font_items, merged_profiles};
 use crate::{OutputModel, PixelModel, ProfileItem};
 
@@ -134,6 +134,21 @@ fn pick_image() -> Option<PathBuf> {
 }
 
 impl App {
+    /// The canvas the shared PixelCanvas edits: the Font Lab glyph in workspace 2.
+    pub fn studio(&self) -> &PixelStudio {
+        match (&self.font, self.workspace) {
+            (Some(font), 2) => &font.studio,
+            _ => &self.pixel,
+        }
+    }
+
+    pub fn studio_mut(&mut self) -> &mut PixelStudio {
+        match (&mut self.font, self.workspace) {
+            (Some(font), 2) => &mut font.studio,
+            _ => &mut self.pixel,
+        }
+    }
+
     pub fn project_root(&self) -> Option<PathBuf> {
         match (&self.project, &self.session) {
             (Some(p), _) => Some(p.root.clone()),
@@ -196,15 +211,18 @@ impl App {
     pub fn refresh_pixel(&mut self) {
         let Some(ui) = self.ui.upgrade() else { return };
         let pm = PixelModel::get(&ui);
-        let p = &self.pixel;
+        let p = self.studio();
         let (w, h) = (p.width(), p.height());
         pm.set_canvas(image_from_pixels(w, h, &p.display_pixels()));
         pm.set_doc_w(w as i32);
         pm.set_doc_h(h as i32);
-        let title = if p.path.is_some() {
-            p.title()
-        } else {
-            self.t("pixel.title")
+        let title = match (&self.font, self.workspace) {
+            (Some(font), 2) => font
+                .current
+                .map(|c| format!("{} · '{c}'", font.pack.name))
+                .unwrap_or_else(|| font.pack.name.clone()),
+            _ if p.path.is_some() => p.title(),
+            _ => self.t("pixel.title"),
         };
         pm.set_title(ss(format!(
             "{title}{}",
@@ -260,7 +278,7 @@ impl App {
 
     fn refresh_pixel_cursor(&self) {
         let Some(ui) = self.ui.upgrade() else { return };
-        let p = &self.pixel;
+        let p = self.studio();
         let text = match p.hover.or(p.key_cursor) {
             Some((x, y)) => {
                 let (xu, yu) = (x as usize, y as usize);
@@ -287,15 +305,15 @@ impl App {
     pub fn pixel_pointer(&mut self, phase: &str, x: i32, y: i32, button: i32) {
         let (x, y) = (i64::from(x), i64::from(y));
         let changed = match phase {
-            "down" => self.pixel.pointer_down(x, y, button == 1),
-            "move" => self.pixel.pointer_move(x, y),
-            "up" => self.pixel.pointer_up(x, y),
+            "down" => self.studio_mut().pointer_down(x, y, button == 1),
+            "move" => self.studio_mut().pointer_move(x, y),
+            "up" => self.studio_mut().pointer_up(x, y),
             "hover" => {
-                self.pixel.pointer_move(x, y);
+                self.studio_mut().pointer_move(x, y);
                 false
             }
             _ => {
-                self.pixel.hover = None;
+                self.studio_mut().hover = None;
                 false
             }
         };
@@ -310,7 +328,7 @@ impl App {
     }
 
     pub fn pixel_key(&mut self, key: &str) {
-        if self.pixel.key(key) {
+        if self.studio_mut().key(key) {
             self.refresh_pixel();
             self.bench_document_changed();
         }
@@ -419,7 +437,7 @@ impl App {
                     }
                 }
                 other => {
-                    if !self.pixel.try_action(other)? {
+                    if !self.studio_mut().try_action(other)? {
                         self.refresh_pixel();
                         return Ok(());
                     }

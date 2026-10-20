@@ -1,7 +1,7 @@
 // Scene Designer workspace: Navigator | OLED canvas | Inspector, plus the drawer.
 import { ScrollView, LineEdit, SpinBox, ComboBox, CheckBox, ListView } from "std-widgets.slint";
 import { Theme, Metrics } from "theme.slint";
-import { I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, ListRow } from "widgets.slint";
+import { Shell, I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, ListRow } from "widgets.slint";
 
 export struct ScreenItem { id: string, label: string, active: bool }
 export struct ElementItem { id: string, kind: string, detail: string, selected: bool, hidden: bool, locked: bool }
@@ -480,6 +480,8 @@ component Drawer inherits Panel {
                     padding: 4px;
                     spacing: 8px;
                     StatusPill {
+                        horizontal-stretch: 0;
+                        width: self.min-width;
                         text: finding.severity;
                         tone: finding.severity == "BLOCKER" || finding.severity == "ERROR" ? PillTone.error : finding.severity == "WARNING" ? PillTone.warning : PillTone.neutral;
                     }
@@ -503,9 +505,9 @@ export component DesignerView inherits VerticalLayout {
     HorizontalLayout {
         spacing: 8px;
         vertical-stretch: 3;
-        Navigator { width: 280px; }
+        if !Shell.canvas-only: Navigator { width: 280px; }
         CanvasPanel { horizontal-stretch: 1; }
-        Inspector { width: 360px; }
+        if !Shell.canvas-only: Inspector { width: 360px; }
     }
-    Drawer { vertical-stretch: 0; height: 210px; }
+    if !Shell.canvas-only: Drawer { vertical-stretch: 0; height: 210px; }
 }

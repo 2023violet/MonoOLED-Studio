@@ -2,11 +2,13 @@
 import { Theme, Metrics } from "theme.slint";
 import { LineEdit, AboutSlint, Palette } from "std-widgets.slint";
 import { Icon } from "icons.slint";
-import { I18n, Button, ButtonRole, Segmented, StatusPill, PillTone, Caption, Scrim, Dialog } from "widgets.slint";
+import { Shell, I18n, Button, ButtonRole, Segmented, StatusPill, PillTone, Caption, Scrim, Dialog } from "widgets.slint";
+import { PreferencesDialog, PrefsModel, PrefRow } from "preferences.slint";
 import { DesignerView, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar } from "designer.slint";
 import { PixelView, PixelDialogs, PixelModel, OutputModel, ProfileItem } from "pixel.slint";
+import { FontLabView, FontModel, GlyphItem } from "fontlab.slint";
 
-export { Theme, Metrics, I18n, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar, PillTone, PixelModel, OutputModel, ProfileItem }
+export { Theme, Metrics, I18n, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar, PillTone, PixelModel, OutputModel, ProfileItem, FontModel, GlyphItem, PrefsModel, PrefRow, Shell }
 
 export struct DocTab { title: string, kind: string, dirty: bool }
 
@@ -37,6 +39,8 @@ export global AppModel {
     callback action(string);
     callback tab-selected(int);
     callback tab-closed(int);
+    // Key chord such as "Ctrl+S" → true when a configured shortcut consumed it.
+    callback key-chord(string) -> bool;
 }
 
 component IconButton inherits Rectangle {
@@ -165,7 +169,10 @@ export component MainWindow inherits Window {
     // std-widgets follow the app theme, not the OS colour scheme.
     property <bool> dark-theme: Theme.dark;
     changed dark-theme => { Palette.color-scheme = self.dark-theme ? ColorScheme.dark : ColorScheme.light; }
-    init => { Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
+    init => {
+        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+        shortcuts.focus();
+    }
 
     MenuBar {
         Menu {
@@ -230,6 +237,14 @@ export component MainWindow inherits Window {
         }
     }
 
+    shortcuts := FocusScope {
+        key-pressed(event) => {
+            if (event.text == "" || event.text == Key.Shift || event.text == Key.Control || event.text == Key.Alt || event.text == Key.Meta) { return reject; }
+            if (AppModel.key-chord((event.modifiers.control ? "Ctrl+" : "") + (event.modifiers.alt ? "Alt+" : "") + (event.modifiers.shift ? "Shift+" : "") + (event.text == " " ? "Space" : event.text))) {
+                return accept;
+            }
+            return reject;
+        }
     VerticalLayout {
         CommandBar { }
         Rectangle { height: 1px; background: Theme.border-subtle; }
@@ -240,15 +255,14 @@ export component MainWindow inherits Window {
                 spacing: 8px;
                 if AppModel.workspace == 0 || AppModel.workspace == 3: DesignerView { vertical-stretch: 1; }
                 if AppModel.workspace == 1: PixelView { vertical-stretch: 1; }
-                if AppModel.workspace == 2: Rectangle {
-                    vertical-stretch: 1;
-                    Caption { text: "…"; }
-                }
+                if AppModel.workspace == 2: FontLabView { vertical-stretch: 1; }
             }
         }
         StatusBar { }
     }
+    }
     if AppModel.workspace == 1 && PixelModel.dialog != 0: PixelDialogs { width: root.width; height: root.height; }
+    if AppModel.preferences-visible: PreferencesDialog { width: root.width; height: root.height; }
     if AppModel.prompt-visible: PromptDialog { width: root.width; height: root.height; }
     if AppModel.about-visible: AboutDialog { width: root.width; height: root.height; }
 }

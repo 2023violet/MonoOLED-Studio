@@ -3,10 +3,13 @@
 
 mod app;
 mod canvas;
+mod fontlab;
+mod fontlab_ui;
 mod i18n;
 mod pixel;
 mod pixel_ui;
 mod prefs;
+mod prefs_ui;
 mod workbench;
 
 use std::cell::RefCell;
@@ -43,6 +46,13 @@ fn select_backend() {
     }
 }
 
+#[allow(unsafe_code)]
+fn set_scale_env(scale: f32) {
+    // SAFETY: called once at the very start of `main`, before Slint or any
+    // other thread is created, so no concurrent environment access exists.
+    unsafe { std::env::set_var("SLINT_SCALE_FACTOR", scale.to_string()) };
+}
+
 struct Args {
     project: Option<PathBuf>,
     screenshot: Option<PathBuf>,
@@ -50,6 +60,9 @@ struct Args {
     theme: Option<String>,
     lang: Option<String>,
     select: Option<String>,
+    /// Actions run after startup, in order (`--action preferences`); used for
+    /// scripted screenshots and smoke checks.
+    actions: Vec<String>,
 }
 
 fn parse_args() -> Args {
@@ -60,6 +73,7 @@ fn parse_args() -> Args {
         theme: None,
         lang: None,
         select: None,
+        actions: Vec::new(),
     };
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -71,6 +85,7 @@ fn parse_args() -> Args {
             "--theme" => args.theme = value,
             "--lang" => args.lang = value,
             "--select" => args.select = value,
+            "--action" => args.actions.extend(value),
             path if !path.starts_with("--") => {
                 args.project = Some(PathBuf::from(path));
                 i += 1;
@@ -118,7 +133,7 @@ fn dark_light_hint() -> Option<bool> {
     }
 }
 
-fn apply_appearance(ui: &MainWindow, app: &App, override_theme: Option<&str>) {
+pub(crate) fn apply_appearance(ui: &MainWindow, app: &App, override_theme: Option<&str>) {
     Theme::get(ui).set_mode(theme_mode(&app.prefs, override_theme));
     let density = match app.prefs.str("appearance.density").as_str() {
         "compact" => 0,
@@ -229,7 +244,7 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             }
             a.refresh_app();
         }
-        "preferences" => AppModel::get(ui).set_preferences_visible(true),
+        "preferences" => app.borrow_mut().open_preferences(),
         "about" => AppModel::get(ui).set_about_visible(true),
         "exit" => {
             let _ = slint::quit_event_loop();
@@ -248,6 +263,16 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
         ),
         "undo" | "redo" | "save" if app.borrow().workspace == 1 => {
             app.borrow_mut().pixel_action(action);
+        }
+        "save" if app.borrow().workspace == 2 => app.borrow_mut().font_action("save"),
+        "undo" | "redo" if app.borrow().workspace == 2 => {
+            let mut a = app.borrow_mut();
+            a.pixel_action(action);
+            a.refresh_font();
+        }
+        "new-font-pack" => {
+            switch_workspace(app, ui, 2);
+            app.borrow_mut().font_action("new");
         }
         "delete-screen" => {
             let mut a = app.borrow_mut();
@@ -330,6 +355,9 @@ fn switch_workspace(app: &Rc<RefCell<App>>, ui: &MainWindow, index: i32) {
     if index == 1 {
         a.refresh_pixel();
         a.refresh_bench();
+    } else if index == 2 {
+        a.refresh_font();
+        a.refresh_pixel();
     } else {
         a.refresh_app();
     }
@@ -356,6 +384,10 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
         let text = text.trim().to_string();
         let prompt = match prompt {
             Prompt::NewScreen | Prompt::DuplicateScreen => prompt,
+            Prompt::NewFontPack => {
+                app.create_font_pack(&text);
+                return;
+            }
             other => {
                 app.pixel_prompt(other, &text);
                 return;
@@ -399,6 +431,12 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
                 }
             }
             "filter-assets" => a.borrow_mut().refresh_navigator(),
+            "open-font-pack" => {
+                if let Some(ui) = ui {
+                    switch_workspace(&a, &ui, 2);
+                }
+                a.borrow_mut().font_action(&format!("open:{id}"));
+            }
             "rescan-fonts" => {
                 let mut app = a.borrow_mut();
                 app.scan_project_files();
@@ -443,6 +481,60 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
         let _ = &a;
     });
     wire_pixel(ui, app);
+    wire_prefs(ui, app);
+}
+
+/// Configured shortcut → command (V1 command registry). Returns true if handled.
+fn run_shortcut(app: &Rc<RefCell<App>>, ui: &MainWindow, chord: &str) -> bool {
+    let Some(command) = app.borrow_mut().shortcut(chord) else {
+        return false;
+    };
+    let workspace = app.borrow().workspace;
+    match command {
+        "preferences.open" => app.borrow_mut().open_preferences(),
+        "workspace.canvas_only" => {
+            let shell = Shell::get(ui);
+            shell.set_canvas_only(!shell.get_canvas_only());
+        }
+        "project.save" => handle_action(app, ui, "save"),
+        "designer.undo" => handle_action(app, ui, "undo"),
+        "designer.redo" => handle_action(app, ui, "redo"),
+        tool if workspace == 1 || workspace == 2 => {
+            let index = match tool {
+                "pixel.select" => 5,
+                "pixel.fill" => 4,
+                _ => 0,
+            };
+            let mut a = app.borrow_mut();
+            a.studio_mut().tool = pixel::Tool::from_index(index);
+            a.refresh_pixel();
+        }
+        _ => return false,
+    }
+    true
+}
+
+fn wire_prefs(ui: &MainWindow, app: &Rc<RefCell<App>>) {
+    let (a, w) = (app.clone(), ui.as_weak());
+    AppModel::get(ui).on_key_chord(move |chord| {
+        let Some(ui) = w.upgrade() else { return false };
+        run_shortcut(&a, &ui, &chord)
+    });
+    let pm = PrefsModel::get(ui);
+    let a = app.clone();
+    pm.on_section_chosen(move |_| a.borrow_mut().refresh_prefs());
+    let a = app.clone();
+    pm.on_search_changed(move |_| a.borrow_mut().refresh_prefs());
+    let a = app.clone();
+    pm.on_changed(move |key, value| a.borrow_mut().pref_changed(&key, &value));
+    let a = app.clone();
+    pm.on_button(move |key| a.borrow_mut().pref_button(&key));
+    let w = ui.as_weak();
+    pm.on_close(move || {
+        if let Some(ui) = w.upgrade() {
+            AppModel::get(&ui).set_preferences_visible(false);
+        }
+    });
 }
 
 fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
@@ -482,6 +574,14 @@ fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     let a = app.clone();
     pm.on_dialog_accepted(move || a.borrow_mut().pixel_dialog_accepted());
 
+    let fm = FontModel::get(ui);
+    let a = app.clone();
+    fm.on_glyph_chosen(move |index| a.borrow_mut().font_glyph_chosen(index));
+    let a = app.clone();
+    fm.on_edit(move |field, value| a.borrow_mut().font_edit(&field, &value));
+    let a = app.clone();
+    fm.on_font_action(move |action| a.borrow_mut().font_action(&action));
+
     let om = OutputModel::get(ui);
     let a = app.clone();
     om.on_field(move |key, value| a.borrow_mut().bench_field(&key, &value));
@@ -495,6 +595,13 @@ fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
 
 fn main() {
     let args = parse_args();
+    // V1 `appearance.ui_scale`: Slint reads its scale factor when the window is created.
+    if std::env::var_os("SLINT_SCALE_FACTOR").is_none() {
+        let scale = Preferences::load().str("appearance.ui_scale");
+        if let Some(percent) = scale.strip_suffix('%').and_then(|p| p.parse::<f32>().ok()) {
+            set_scale_env(percent / 100.0);
+        }
+    }
     select_backend();
     let ui = match MainWindow::new() {
         Ok(ui) => ui,
@@ -545,8 +652,26 @@ fn main() {
         a.apply_pixel_preferences();
         a.bench_load_active();
     }
+    // Background jobs (Font Lab generation) report through this tick.
+    let jobs = slint::Timer::default();
+    let a = app.clone();
+    jobs.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(60),
+        move || {
+            if let Ok(mut app) = a.try_borrow_mut() {
+                app.poll_font();
+            }
+        },
+    );
     if let Some(index) = args.workspace {
         switch_workspace(&app, &ui, index);
+    }
+    for action in &args.actions {
+        match action.strip_prefix("font:") {
+            Some(rest) => app.borrow_mut().font_action(rest),
+            None => handle_action(&app, &ui, action),
+        }
     }
     if let Some(path) = args.screenshot.clone() {
         let w = ui.as_weak();

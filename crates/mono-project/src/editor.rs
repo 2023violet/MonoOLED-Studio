@@ -64,6 +64,7 @@ pub struct EditorSession {
     undo: Vec<Command>,
     redo: Vec<Command>,
     coalesce_open: bool,
+    max_history: usize,
 }
 
 fn key_error(message: impl Into<String>) -> CoreError {
@@ -102,7 +103,22 @@ impl EditorSession {
             undo: Vec::new(),
             redo: Vec::new(),
             coalesce_open: false,
+            max_history: MAX_HISTORY,
         })
+    }
+
+    /// Preference `performance.undo_history`; trims existing history to fit.
+    pub fn set_max_undo(&mut self, limit: usize) {
+        self.max_history = limit.max(1);
+        if self.undo.len() > self.max_history {
+            let excess = self.undo.len() - self.max_history;
+            self.undo.drain(..excess);
+        }
+    }
+
+    /// Drop cached decodes (Preferences → clear asset cache).
+    pub fn clear_resource_cache(&mut self) {
+        self.resources = DiskResources::new();
     }
 
     pub fn scene(&self) -> &Map<String, Value> {
@@ -151,8 +167,8 @@ impl EditorSession {
 
     fn push_undo(&mut self, command: Command) {
         self.undo.push(command);
-        if self.undo.len() > MAX_HISTORY {
-            let excess = self.undo.len() - MAX_HISTORY;
+        if self.undo.len() > self.max_history {
+            let excess = self.undo.len() - self.max_history;
             self.undo.drain(..excess);
         }
     }

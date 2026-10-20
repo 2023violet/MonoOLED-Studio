@@ -1,0 +1,152 @@
+// Font Lab workspace: glyph list | glyph canvas (shared PixelCanvas) | generator form
+// (V1 `font_lab_qt.FontLabEditor`).
+import { ScrollView, LineEdit, SpinBox, ComboBox, ListView } from "std-widgets.slint";
+import { Theme, Metrics } from "theme.slint";
+import { I18n, Button, ButtonRole, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, ListRow } from "widgets.slint";
+import { PixelModel, PixelCanvas, ToolRail } from "pixel.slint";
+
+export struct GlyphItem { text: string, code: string }
+
+export global FontModel {
+    in property <bool> has-pack;
+    in property <string> pack-title;
+    in property <[GlyphItem]> glyphs;
+    in property <int> current: -1;
+    in property <string> characters;
+    in property <string> font-path;
+    in property <int> font-size: 7;
+    in property <int> cell-w: 5;
+    in property <int> cell-h: 8;
+    in property <int> baseline: 6;
+    in property <int> advance: 6;
+    in property <int> threshold: 128;
+    in property <int> alignment: 1;
+    in property <int> antialias: 0;
+    in property <bool> busy;
+    in property <string> status;
+    in property <string> error;
+    in property <[string]> packs;
+    callback glyph-chosen(int);
+    callback edit(string /* field */, string /* value */);
+    callback font-action(string);
+}
+
+component FormRow inherits HorizontalLayout {
+    in property <string> label;
+    spacing: 6px;
+    Label { text: root.label; width: 96px; }
+    @children
+}
+
+export component FontLabView inherits HorizontalLayout {
+    spacing: 8px;
+    Panel {
+        width: 200px;
+        VerticalLayout {
+            padding: 10px;
+            spacing: 8px;
+            SectionTitle { text: I18n.tr(I18n.lang, "font.characters"); }
+            if FontModel.glyphs.length == 0: Caption { text: FontModel.has-pack ? I18n.tr(I18n.lang, "font.selection.none") : I18n.tr(I18n.lang, "font.empty"); }
+            ListView {
+                vertical-stretch: 1;
+                for glyph[index] in FontModel.glyphs: ListRow {
+                    text: glyph.text;
+                    detail: glyph.code;
+                    selected: index == FontModel.current;
+                    clicked => { FontModel.glyph-chosen(index); }
+                }
+            }
+            if FontModel.packs.length > 0: SectionTitle { text: I18n.tr(I18n.lang, "font.select_title"); }
+            for pack in FontModel.packs: ListRow {
+                text: pack;
+                clicked => { FontModel.font-action("open:" + pack); }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                Button { text: I18n.tr(I18n.lang, "font.new_title"); horizontal-stretch: 1; enabled: !FontModel.busy; clicked => { FontModel.font-action("new"); } }
+                Button { text: I18n.tr(I18n.lang, "font.open_title"); horizontal-stretch: 1; enabled: !FontModel.busy; clicked => { FontModel.font-action("open"); } }
+            }
+        }
+    }
+    if FontModel.has-pack: ToolRail { }
+    Panel {
+        horizontal-stretch: 1;
+        VerticalLayout {
+            padding: 10px;
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 10px;
+                SectionTitle { text: FontModel.has-pack ? FontModel.pack-title : I18n.tr(I18n.lang, "font.title"); vertical-alignment: center; }
+                if FontModel.has-pack: StatusPill { text: FontModel.cell-w + " × " + FontModel.cell-h; }
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: I18n.tr(I18n.lang, "font.save_glyph"); role: ButtonRole.primary; enabled: FontModel.has-pack && !FontModel.busy; clicked => { FontModel.font-action("save"); } }
+            }
+            if FontModel.has-pack: PixelCanvas { vertical-stretch: 1; }
+            if !FontModel.has-pack: Rectangle {
+                vertical-stretch: 1;
+                Caption { text: I18n.tr(I18n.lang, "font.empty"); horizontal-alignment: center; }
+            }
+            Caption { text: PixelModel.cursor-text; wrap: no-wrap; }
+        }
+    }
+    Panel {
+        width: 340px;
+        ScrollView {
+            VerticalLayout {
+                padding: 10px;
+                spacing: 8px;
+                alignment: start;
+                SectionTitle { text: I18n.tr(I18n.lang, "font.generate"); }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.characters");
+                    LineEdit { text: FontModel.characters; enabled: !FontModel.busy; edited(t) => { FontModel.edit("characters", t); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.source");
+                    LineEdit { text: FontModel.font-path; placeholder-text: I18n.tr(I18n.lang, "font.source_builtin"); enabled: !FontModel.busy; accepted(t) => { FontModel.edit("font_path", t); } }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 6px;
+                    if FontModel.font-path != "": Button { text: I18n.tr(I18n.lang, "dialog.cancel"); role: ButtonRole.ghost; enabled: !FontModel.busy; clicked => { FontModel.edit("font_path", ""); } }
+                    Button { text: I18n.tr(I18n.lang, "font.browse"); enabled: !FontModel.busy; clicked => { FontModel.font-action("browse"); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.size");
+                    SpinBox { value: FontModel.font-size; minimum: 4; maximum: 96; enabled: FontModel.font-path != "" && !FontModel.busy; edited(v) => { FontModel.edit("font_size", v); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.cell_width");
+                    SpinBox { value: FontModel.cell-w; minimum: 1; maximum: 128; enabled: !FontModel.busy; edited(v) => { FontModel.edit("cell_w", v); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.cell_height");
+                    SpinBox { value: FontModel.cell-h; minimum: 1; maximum: 128; enabled: !FontModel.busy; edited(v) => { FontModel.edit("cell_h", v); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.baseline");
+                    SpinBox { value: FontModel.baseline; minimum: 0; maximum: max(0, FontModel.cell-h - 1); enabled: !FontModel.busy; edited(v) => { FontModel.edit("baseline", v); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.advance");
+                    SpinBox { value: FontModel.advance; minimum: 1; maximum: 128; enabled: !FontModel.busy; edited(v) => { FontModel.edit("advance", v); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.threshold");
+                    SpinBox { value: FontModel.threshold; minimum: 0; maximum: 255; enabled: FontModel.font-path != "" && !FontModel.busy; edited(v) => { FontModel.edit("threshold", v); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.alignment");
+                    ComboBox { model: [I18n.tr(I18n.lang, "font.alignment.font_set"), I18n.tr(I18n.lang, "font.alignment.glyph_width")]; current-index: FontModel.alignment; enabled: !FontModel.busy; selected => { FontModel.edit("alignment", self.current-index); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.antialias");
+                    ComboBox { model: ["1×", "2×"]; current-index: FontModel.antialias; enabled: !FontModel.busy; selected => { FontModel.edit("antialias", self.current-index + 1); } }
+                }
+                Button { text: I18n.tr(I18n.lang, "font.generate"); role: ButtonRole.primary; enabled: FontModel.has-pack && !FontModel.busy; clicked => { FontModel.font-action("generate"); } }
+                Caption { text: FontModel.status; }
+                if FontModel.error != "": Text { text: FontModel.error; color: Theme.status-error; font-size: Metrics.font-small; wrap: word-wrap; }
+            }
+        }
+    }
+}

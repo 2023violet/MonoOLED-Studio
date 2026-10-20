@@ -3,7 +3,7 @@
 import { ScrollView, LineEdit, SpinBox, ComboBox, CheckBox, ListView } from "std-widgets.slint";
 import { Theme, Metrics } from "theme.slint";
 import { Icon } from "icons.slint";
-import { I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, Scrim, Dialog } from "widgets.slint";
+import { Shell, I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, Scrim, Dialog } from "widgets.slint";
 
 export global PixelModel {
     in property <image> canvas;
@@ -129,7 +129,7 @@ component ToolButton inherits Rectangle {
     touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-component ToolRail inherits Panel {
+export component ToolRail inherits Panel {
     width: Metrics.control-height + 22px;
     VerticalLayout {
         padding: 8px;
@@ -163,9 +163,8 @@ export component PixelCanvas inherits Rectangle {
     keys := FocusScope {
         key-pressed(event) => {
             if (event.text == " ") { root.space-down = PixelModel.space-pan; return accept; }
+            // Undo/redo and tool keys are configurable shortcuts handled by the window.
             if (event.modifiers.control) {
-                if (event.text == "z" || event.text == "Z") { PixelModel.action("undo"); return accept; }
-                if (event.text == "y" || event.text == "Y") { PixelModel.action("redo"); return accept; }
                 if (event.text == "c" || event.text == "C") { PixelModel.action("copy"); return accept; }
                 if (event.text == "x" || event.text == "X") { PixelModel.action("cut"); return accept; }
                 if (event.text == "v" || event.text == "V") { PixelModel.action("paste"); return accept; }
@@ -178,9 +177,6 @@ export component PixelCanvas inherits Rectangle {
             if (event.text == Key.Return) { PixelModel.key("enter"); return accept; }
             if (event.text == Key.Delete || event.text == Key.Backspace) { PixelModel.key("delete"); return accept; }
             if (event.text == Key.Escape) { PixelModel.key("escape"); return accept; }
-            if (event.text == "b" || event.text == "B") { PixelModel.tool = 0; PixelModel.tool-chosen(0); return accept; }
-            if (event.text == "m" || event.text == "M") { PixelModel.tool = 5; PixelModel.tool-chosen(5); return accept; }
-            if (event.text == "f" || event.text == "F") { PixelModel.tool = 4; PixelModel.tool-chosen(4); return accept; }
             return reject;
         }
         key-released(event) => {
@@ -696,7 +692,7 @@ export component PixelView inherits VerticalLayout {
                 }
             }
         }
-        PixelInspector { width: 360px; }
+        if !Shell.canvas-only: PixelInspector { width: 360px; }
     }
-    OutputPanel { vertical-stretch: OutputModel.output-visible ? 1 : 0; height: OutputModel.output-visible ? 220px : 52px; }
+    if !Shell.canvas-only: OutputPanel { vertical-stretch: OutputModel.output-visible ? 1 : 0; height: OutputModel.output-visible ? 220px : 52px; }
 }

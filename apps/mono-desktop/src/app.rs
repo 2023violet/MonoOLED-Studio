@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 use slint::{Global, ModelRc, SharedString, VecModel};
 
 use crate::canvas::image_from_pixels;
+use crate::fontlab::FontLab;
 use crate::i18n::{tr, trf};
 use crate::pixel::PixelStudio;
 use crate::pixel_ui::ImportState;
@@ -37,6 +38,7 @@ pub enum Prompt {
     NewScreen,
     DuplicateScreen,
     CSymbol(PathBuf),
+    NewFontPack,
     GlyphCharacters,
     ProfileId,
     ProfileName(String),
@@ -69,6 +71,7 @@ pub struct App {
     pub pixel: PixelStudio,
     pub import: Option<ImportState>,
     pub bench: Workbench,
+    pub font: Option<FontLab>,
 }
 
 pub(crate) fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
@@ -106,6 +109,7 @@ impl App {
             pixel: PixelStudio::blank(),
             import: None,
             bench: Workbench::default(),
+            font: None,
         }
     }
 
@@ -240,9 +244,39 @@ impl App {
                 }
             }
         }
-        let (mut assets, mut packs) = (Vec::new(), Vec::new());
-        for dir in dirs.iter().chain(["fonts".to_string()].iter()) {
-            walk(&root.join(dir), &root, &mut assets, &mut packs);
+        let (mut assets, mut ignored) = (Vec::new(), Vec::new());
+        for dir in &dirs {
+            walk(&root.join(dir), &root, &mut assets, &mut ignored);
+        }
+        // V1 `_resource_scan_fonts`: `.oled/fonts`, `fonts` and the packs scene
+        // elements reference, each searched recursively inside the project.
+        let mut candidates = vec![root.join(".oled").join("fonts"), root.join("fonts")];
+        if let Some(elements) = self
+            .session
+            .as_ref()
+            .and_then(|s| s.scene().get("elements").and_then(Value::as_array).cloned())
+        {
+            for element in elements {
+                if let Some(rel) = element.get("font_pack").and_then(Value::as_str) {
+                    let path = root.join(rel);
+                    candidates.push(if path.is_dir() {
+                        path
+                    } else {
+                        path.parent().map(Path::to_path_buf).unwrap_or(path)
+                    });
+                }
+            }
+        }
+        let mut packs = Vec::new();
+        for candidate in candidates {
+            if !candidate.starts_with(&root) || !candidate.is_dir() {
+                continue;
+            }
+            if candidate.join("fontpack.json").is_file() {
+                packs.push(posix(candidate.strip_prefix(&root).unwrap_or(&candidate)));
+            } else {
+                walk(&candidate, &root, &mut ignored, &mut packs);
+            }
         }
         packs.sort();
         packs.dedup();
@@ -278,10 +312,11 @@ impl App {
             })
             .unwrap_or_default();
         app.set_project_name(ss(name));
-        if self.workspace == 1 {
-            app.set_dirty(self.pixel.doc.dirty);
-            app.set_can_undo(self.pixel.doc.can_undo());
-            app.set_can_redo(self.pixel.doc.can_redo());
+        if self.workspace == 1 || self.workspace == 2 {
+            let studio = self.studio();
+            app.set_dirty(studio.doc.dirty);
+            app.set_can_undo(studio.doc.can_undo());
+            app.set_can_redo(studio.doc.can_redo());
         } else {
             app.set_dirty(self.session.as_ref().is_some_and(|s| s.dirty));
             app.set_can_undo(self.session.as_ref().is_some_and(EditorSession::can_undo));
