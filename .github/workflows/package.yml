@@ -87,13 +87,16 @@ jobs:
       # library and the CJK font.
       - name: Install test and smoke (Linux deb, clean container)
         if: runner.os == 'Linux'
+        timeout-minutes: 15
         run: |
           mkdir -p smoke
           docker run --rm -v "$PWD:/src" -w /src -e VERSION="$VERSION" ubuntu:24.04 bash -euxc '
             export DEBIAN_FRONTEND=noninteractive
             apt-get update
             apt-get install -y ./dist-rust/*.deb
-            apt-get install -y --no-install-recommends xvfb xauth
+            # Test harness only (not a package dependency); with Recommends,
+            # because Xvfb cannot start without xkb-data / x11-xkb-utils.
+            apt-get install -y xvfb xauth
             dpkg -s monooled-studio | grep -E "^(Status|Version)"
             monooled-studio --version | grep -F "monooled-studio $VERSION"
             monooled-cli version | grep -F "$VERSION"
@@ -101,8 +104,8 @@ jobs:
             monooled-cli validate --project /tmp/project/project.oled.json
             monooled-cli export --project /tmp/project/project.oled.json --output /tmp/export
             test -s /tmp/export/ui_contract.json
-            export XDG_CONFIG_HOME=/tmp/prefs SLINT_BACKEND=winit-software
-            xvfb-run -a -s "-screen 0 1600x1000x24" monooled-studio /tmp/project --screen main --screenshot /src/smoke/designer-Linux.png
+            export XDG_CONFIG_HOME=/tmp/prefs SLINT_BACKEND=winit-software MONO_TRACE_STARTUP=1
+            timeout 300 xvfb-run -a -e /dev/stderr -s "-screen 0 1600x1000x24" monooled-studio /tmp/project --screen main --screenshot /src/smoke/designer-Linux.png
           '
 
       - name: Installed CLI smoke (validate + export)
