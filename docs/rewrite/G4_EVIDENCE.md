@@ -4,7 +4,7 @@
 - 范围：`apps/mono-desktop`（Slint 1.18.1）、`crates/mono-automation`、`apps/mono-cli`（`bench`、`bridge`），以及 `mono-project`/`mono-font` 为此新增的模块
 - 提交：`ca6feac`（G4a）、`edd1ddb`（G4c/G4d）、`76521a2`（G4b）、`337dbf1`（G4e）、`52858c3`（性能工具与导出并发写入）、`f46985c`（测试修正）；本文件随后续提交入库
 - 测量环境：Windows 10 19045，本机显示器，release 构建（另注明者除外）
-- Gate 状态：**代理自检完成；用户尚未审阅。** 按 spec §3，每个 G4 子 Gate 由用户确认，代理不得自行确认。
+- Gate 状态：**代理自检完成；用户已于 2026-10-20 审阅（见 §8），四项性能预算按 ❌ 记录接受。** 按 spec §3，每个 G4 子 Gate 由用户确认，代理不得自行确认。
 
 ## 1. 子 Gate 内容与验收对照
 
@@ -113,8 +113,12 @@
 | 10 | minor | 冷启动应写"未达标"；UI 阻塞一行未说明范围 | §4 已改 |
 | 11 | minor | 自动保存恢复提示只在启动时出现 | 每次打开项目、场景或切换页面后都检查（与 V1 相同） |
 
-返工后验证（MEASURED）：`cargo test --workspace` 全部通过（mono-desktop 32、mono-automation 9 + 回放 + 2 个回归）；`cargo clippy -D warnings`、`cargo fmt --check`、`cargo deny check` 通过。返工尚未经第二轮代理审查。
+返工后验证（MEASURED）：`cargo test --workspace` 全部通过（mono-desktop 32、mono-automation 9 + 回放 + 2 个回归）；`cargo clippy -D warnings`、`cargo fmt --check`、`cargo deny check` 通过。第二轮代理审查及其返工见 `G5_EVIDENCE.md` §5。
 
 ## 8. 用户确认
 
-（待用户审阅。）
+2026-10-20，用户在会话中答复（原文）：
+
+> "Keep the four budgets as recorded FAILs and treat the G4/G5 evidence as reviewed. Then plan G6, but ask me before each tag, release or V1 deletion."
+
+据此：G4 证据视为已审阅；四项未达标的性能预算（Pixel 笔画 p95、完整证据包导出、冷启动、UI 线程单次阻塞）维持记录为 ❌，不放宽数值、不改变定义，也不在 G6 前继续优化。G6 的每个 tag、发布与删除 V1 的操作仍需用户逐次确认。

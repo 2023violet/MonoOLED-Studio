@@ -4,7 +4,7 @@
 - 版本：`2.0.0-rc.1`
 - 提交：`63a788a`（打包与工作流）、`a23d3fe`（最小窗口布局、Linux 中文字体）、`7f410af`（去掉布局绑定循环）；V1 基线工具 `618a556`；第二轮审查返工 `965fffb`、`33201c9`、`e1e8a6d`
 - CI：`e1e8a6d` 上 workflow `Package (Rust V2)` run `39543459575`、`Rust`、`CI`（V1）全部通过（MEASURED）。返工前的首轮记录为 `7f410af` 上的 run `39533899180`
-- Gate 状态：**代理自检完成；用户尚未审阅。** 按 spec §3，G5 由用户确认；本记录不发布任何 Release，产物只存在于 CI 运行的 artifacts 中。
+- Gate 状态：**代理自检完成；用户已于 2026-10-20 审阅（见 §6）。** 按 spec §3，G5 由用户确认；本记录不发布任何 Release，产物只存在于 CI 运行的 artifacts 中。
 
 ## 1. 产物
 
@@ -85,4 +85,10 @@
 
 ## 6. 用户确认
 
-（待用户审阅。G6 的 push、打 tag、发布与删除 V1 都需要用户逐次明确确认。）
+2026-10-20，用户在会话中答复（原文）：
+
+> "Keep the four budgets as recorded FAILs and treat the G4/G5 evidence as reviewed. Then plan G6, but ask me before each tag, release or V1 deletion."
+
+据此：G4 证据视为已审阅；四项未达标的性能预算（Pixel 笔画 p95、完整证据包导出、冷启动、UI 线程单次阻塞）维持记录为 ❌，不放宽数值、不改变定义，也不在 G6 前继续优化。G6 的每个 tag、发布与删除 V1 的操作仍需用户逐次确认。
+
+第二轮审查的返工（`965fffb` 起）没有再经过第三轮代理审查。
