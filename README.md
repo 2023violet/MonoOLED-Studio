@@ -16,8 +16,8 @@
 | 平台 | 安装包 | 安装方式 |
 | --- | --- | --- |
 | Windows x64 | `MonoOLED-Studio-<版本>-windows-x64.zip` | 解压后双击 `monooled-studio.exe`。不需要安装 VC++ 运行库。 |
-| macOS（Apple Silicon） | `MonoOLED-Studio-<版本>-macos-arm64.dmg` | 把应用拖进"应用程序"。应用没有开发者签名，首次打开会被拦截，需要在"系统设置 → 隐私与安全性"里点"仍要打开"。 |
-| Linux amd64 | `monooled-studio_<版本>_amd64.deb` | `sudo apt install ./monooled-studio_*.deb`。需要 Ubuntu 24.04、Debian 13 或更新的发行版，会自动安装中文字体。 |
+| macOS（Apple Silicon / Intel） | `MonoOLED-Studio-<版本>-macos-arm64.dmg` / `-macos-x64.dmg` | 把应用拖进"应用程序"。应用没有开发者签名，首次打开会被拦截，需要在"系统设置 → 隐私与安全性"里点"仍要打开"。 |
+| Linux amd64 / arm64 | `monooled-studio_<版本>_amd64.deb` / `_arm64.deb` | `sudo apt install ./monooled-studio_*.deb`。需要 Ubuntu 24.04、Debian 13 或更新的发行版，会自动安装中文字体。 |
 
 校验下载文件：
 

@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 2.0.1 - 2026-10-21
 
 ### Packages
 
 - Intel macOS (`macos-x64.dmg`) and Linux arm64 (`arm64.deb`) packages. CI now builds, tests and install-tests five platforms: Windows x64, macOS arm64 and x64, and Linux amd64 and arm64.
+- The application is unchanged from 2.0.0; its compatibility notes and known limitations still apply.
 
 ## 2.0.0 - 2026-10-20
 
