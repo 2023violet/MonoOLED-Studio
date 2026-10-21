@@ -6,7 +6,7 @@
 
 - Project: MonoOLED Studio
 - Product version: 2.0.0 (Rust; Python 1.x source at the v1-final tag)
-- Current phase: Rust Rewrite complete — v2.0.0 released 2026-10-21 (G6 B1–B4 executed on explicit user confirmation)
+- Current phase: Rust Rewrite G6 complete — v2.0.0 released 2026-10-21 (G6 B1–B4 executed on explicit user confirmation)
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
