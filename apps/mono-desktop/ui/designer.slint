@@ -85,6 +85,8 @@ component NumberField inherits HorizontalLayout {
     spacing: 6px;
     Label { text: root.label; width: 18px; }
     SpinBox {
+        min-width: 80px;
+        horizontal-stretch: 1;
         enabled: root.enabled;
         value: root.value;
         minimum: -4096;
@@ -150,8 +152,8 @@ component Navigator inherits Panel {
             spacing: 6px;
             HorizontalLayout {
                 spacing: 6px;
-                Button { text: I18n.tr(I18n.lang, "action.new_screen"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("new-screen", ""); } }
-                Button { text: I18n.tr(I18n.lang, "action.duplicate"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("duplicate-screen", ""); } }
+                Button { shrink: true; text: I18n.tr(I18n.lang, "action.new_screen"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("new-screen", ""); } }
+                Button { shrink: true; text: I18n.tr(I18n.lang, "action.duplicate"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("duplicate-screen", ""); } }
             }
             Button { text: I18n.tr(I18n.lang, "action.delete"); role: ButtonRole.danger; clicked => { DesignerModel.navigator-action("delete-screen", ""); } }
         }
@@ -318,14 +320,22 @@ component CanvasPanel inherits Panel {
     VerticalLayout {
         padding: 12px;
         spacing: 8px;
-        SectionTitle { text: I18n.tr(I18n.lang, "panel.canvas"); }
-        Caption { text: DesignerModel.canvas-subtitle; }
         HorizontalLayout {
             spacing: 10px;
-            StatusPill { text: DesignerModel.framebuffer-summary; tone: PillTone.neutral; }
-            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+                SectionTitle { text: I18n.tr(I18n.lang, "panel.canvas"); }
+                Caption { text: DesignerModel.canvas-subtitle; wrap: no-wrap; overflow: elide; }
+            }
+            StatusPill { text: DesignerModel.framebuffer-summary; tone: PillTone.neutral; vertical-stretch: 0; }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: end;
             Label { text: I18n.tr(I18n.lang, "pixel.zoom"); }
             ComboBox {
+                width: 110px;
                 model: ["Auto", "1×", "2×", "4×", "6×", "8×", "12×", "16×"];
                 current-index <=> DesignerModel.zoom-index;
                 selected(v) => { DesignerModel.zoom-chosen(self.current-index); }
@@ -393,8 +403,8 @@ component Inspector inherits Panel {
                         }
                         HorizontalLayout {
                             spacing: 6px;
-                            Button { text: I18n.tr(I18n.lang, "action.assign_bitmap"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("assign-bitmap"); } }
-                            Button { text: I18n.tr(I18n.lang, "action.bitmap_text"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("bitmap-text"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "action.assign_bitmap"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("assign-bitmap"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "action.bitmap_text"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("bitmap-text"); } }
                         }
                     }
                     Divider { }
@@ -501,13 +511,14 @@ component Drawer inherits Panel {
 }
 
 export component DesignerView inherits VerticalLayout {
+    property <float> side-scale: clamp((self.width - 1100px) / 340px, 0, 1);
     spacing: 8px;
     HorizontalLayout {
         spacing: 8px;
         vertical-stretch: 3;
-        if !Shell.canvas-only && !Shell.hide-navigator: Navigator { width: 280px; }
+        if !Shell.canvas-only && !Shell.hide-navigator: Navigator { width: 220px + 60px * root.side-scale; }
         CanvasPanel { horizontal-stretch: 1; }
-        if !Shell.canvas-only && !Shell.hide-inspector: Inspector { width: 360px; }
+        if !Shell.canvas-only && !Shell.hide-inspector: Inspector { width: 310px + 50px * root.side-scale; }
     }
     if !Shell.canvas-only && !Shell.hide-drawer: Drawer { vertical-stretch: 0; height: 210px; }
 }

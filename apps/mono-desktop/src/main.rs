@@ -64,6 +64,8 @@ struct Args {
     theme: Option<String>,
     lang: Option<String>,
     select: Option<String>,
+    /// `--window-size WxH`: logical window size (layout checks at the minimum size).
+    window_size: Option<(f32, f32)>,
     /// `--screen <id>`: open this project screen after loading.
     screen: Option<String>,
     /// `--bench <out.json>`: measure the spec §5 interactive budgets and exit.
@@ -81,6 +83,7 @@ fn parse_args() -> Args {
         theme: None,
         lang: None,
         select: None,
+        window_size: None,
         screen: None,
         bench: None,
         actions: Vec::new(),
@@ -96,6 +99,12 @@ fn parse_args() -> Args {
             "--lang" => args.lang = value,
             "--select" => args.select = value,
             "--screen" => args.screen = value,
+            "--window-size" => {
+                args.window_size = value.and_then(|v| {
+                    let (w, h) = v.split_once('x')?;
+                    Some((w.parse().ok()?, h.parse().ok()?))
+                });
+            }
             "--action" => args.actions.extend(value),
             "--bench" => args.bench = value.map(PathBuf::from),
             path if !path.starts_with("--") => {
@@ -784,6 +793,9 @@ fn main() {
             Some(rest) => app.borrow_mut().font_action(rest),
             None => handle_action(&app, &ui, action),
         }
+    }
+    if let Some((w, h)) = args.window_size {
+        ui.window().set_size(slint::LogicalSize::new(w, h));
     }
     if let Some(out) = args.bench.clone() {
         bench::run(&ui, &app, out, process_start);

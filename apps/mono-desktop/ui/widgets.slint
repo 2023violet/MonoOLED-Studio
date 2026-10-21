@@ -121,11 +121,16 @@ export component TabStrip inherits HorizontalLayout {
     alignment: start;
     for item[index] in root.items: Rectangle {
         height: Metrics.control-height;
-        min-width: tab-text.preferred-width + 20px;
+        // Prefer the full label; narrow panels elide instead of overflowing.
+        min-width: min(tab-text.preferred-width + 20px, 44px);
+        preferred-width: tab-text.preferred-width + 20px;
         border-radius: Metrics.radius-control;
         background: index == root.current ? Theme.surface-selected : tab-touch.has-hover ? Theme.surface-hover : transparent;
         tab-text := Text {
             text: item;
+            overflow: elide;
+            x: 10px;
+            width: parent.width - 20px;
             font-size: Metrics.font-body;
             color: index == root.current ? Theme.accent-hover : Theme.text-secondary;
             horizontal-alignment: center;

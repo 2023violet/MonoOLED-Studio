@@ -89,9 +89,10 @@ component CommandBar inherits Rectangle {
         VerticalLayout {
             alignment: center;
             spacing: 2px;
-            min-width: 260px;
-            Text { text: AppModel.project-name == "" ? I18n.tr(I18n.lang, "app.title") : AppModel.project-name + (AppModel.dirty ? " •" : ""); font-size: 15px; font-weight: 700; color: Theme.text-primary; }
-            Caption { text: I18n.tr(I18n.lang, "app.subtitle"); wrap: no-wrap; }
+            min-width: 90px;
+            horizontal-stretch: 1;
+            Text { text: AppModel.project-name == "" ? I18n.tr(I18n.lang, "app.title") : AppModel.project-name + (AppModel.dirty ? " •" : ""); font-size: 15px; font-weight: 700; color: Theme.text-primary; overflow: elide; }
+            Caption { text: I18n.tr(I18n.lang, "app.subtitle"); wrap: no-wrap; overflow: elide; }
         }
         Rectangle { horizontal-stretch: 1; }
         Segmented {

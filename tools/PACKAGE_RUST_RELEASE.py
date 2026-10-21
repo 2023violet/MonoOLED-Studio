@@ -154,7 +154,9 @@ def package_linux(target: Path, out: Path, ver: str) -> Path:
         f'Package: monooled-studio\nVersion: {deb_version}\nArchitecture: {deb_arch}\n'
         'Maintainer: MonoOLED Studio maintainers <noreply@users.noreply.github.com>\n'
         f'Installed-Size: {size_kb}\n'
-        'Depends: libc6, libfontconfig1, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libxcursor1, libxrandr2, libxi6, libgl1, libegl1, libwayland-client0\n'
+        'Depends: libc6, libfontconfig1, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libxcursor1, libxrandr2, libxi6, libgl1, libegl1, libwayland-client0, '
+        # The UI is Chinese-first; minimal Linux installs have no CJK font.
+        'fonts-noto-cjk | fonts-wqy-microhei | fonts-wqy-zenhei\n'
         'Section: graphics\nPriority: optional\n'
         'Description: Monochrome OLED design and firmware export workbench\n'
         ' Scene Designer, Pixel Studio, Font Lab and the output workbench for 1-bit OLED UIs.\n',
