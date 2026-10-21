@@ -36,6 +36,7 @@ COMMANDS:
     handoff          build the deterministic Code AI handoff ZIP
     asset-audit      scan project asset health
     c-header         export the current framebuffer as a C header
+    bench            measure the spec §5 core budgets (encode+format, 50-screen export)
     bridge           serve the Automation API 1.3.0 on 127.0.0.1 (JSON-RPC, one line per call)
     version          print the version
 
@@ -376,6 +377,105 @@ fn cmd_c_header(args: &Args) -> CoreResult<u8> {
     Ok(0)
 }
 
+fn percentile(samples: &mut [f64], p: f64) -> f64 {
+    samples.sort_by(f64::total_cmp);
+    let rank = ((samples.len() as f64 - 1.0) * p).round() as usize;
+    samples.get(rank).copied().unwrap_or(0.0)
+}
+
+/// Spec §5 core budgets: 256x128 encode + format (<= 2 ms) and exporting the
+/// current frame of 50 screens (<= 500 ms). Prints one JSON object.
+fn cmd_bench(args: &Args) -> CoreResult<u8> {
+    use mono_core::bitmap::MonoBitmap;
+    use mono_core::encoding::encode_bitmap;
+    use mono_core::formatter::{DEFAULT_PREVIEW_LIMIT, OutputItem, format_output};
+    use std::time::Instant;
+
+    let profile = mono_core::profiles::builtin_profile("ssd1306_vlsb_c")
+        .ok_or_else(|| CoreError::invalid("missing builtin profile"))?;
+    let rows: Vec<Vec<u8>> = (0..128)
+        .map(|y| {
+            (0..256)
+                .map(|x| u8::from((x * 7 + y * 3) % 5 == 0))
+                .collect()
+        })
+        .collect();
+    let bitmap = MonoBitmap::from_rows(rows)?;
+    let mut encode_ms = Vec::new();
+    for _ in 0..200 {
+        let started = Instant::now();
+        let encoded = encode_bitmap(&bitmap, &profile.encoding);
+        let item = OutputItem::bitmap("bench", encoded);
+        let formatted = format_output(&[item], &profile.text, "bench", DEFAULT_PREVIEW_LIMIT)?;
+        std::hint::black_box(formatted);
+        encode_ms.push(started.elapsed().as_secs_f64() * 1000.0);
+    }
+
+    let (_, scene) = load(args)?;
+    let screens = usize::try_from(args.int("screens", 50)?).unwrap_or(50);
+    let work = std::env::temp_dir().join(format!("mono-bench-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&work);
+    let state = init_state(&scene.data);
+
+    // (a) Firmware data: render + encode + format + one atomic file per screen.
+    let mut resources = DiskResources::frozen();
+    let started = Instant::now();
+    for index in 0..screens {
+        let result = render_scene(&scene.data, &scene.root, &state, &mut resources)?;
+        let item = OutputItem::bitmap(
+            format!("screen_{index:02}"),
+            encode_bitmap(&result.framebuffer.to_bitmap(), &profile.encoding),
+        );
+        let formatted = format_output(&[item], &profile.text, "screen", DEFAULT_PREVIEW_LIMIT)?;
+        atomic_write(
+            &work.join("firmware").join(format!("screen_{index:02}.h")),
+            formatted.text.as_bytes(),
+        )?;
+    }
+    let firmware_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+    // (b) Full evidence package per screen (golden BIN, reference PNG, contract,
+    // manifest, spec, validation report): six durable atomic files each.
+    let started = Instant::now();
+    let mut frames = 0;
+    for index in 0..screens {
+        let summary = export_scene(
+            &scene.data,
+            &scene.root,
+            &work.join("evidence").join(format!("screen_{index:02}")),
+            &[("current".to_string(), state.clone())],
+            &mut |_, _, _| true,
+        )?;
+        frames += summary.frame_count;
+    }
+    let evidence_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+    // Disk baseline: one durable atomic write (temp + fsync + rename).
+    let started = Instant::now();
+    for index in 0..20 {
+        atomic_write(&work.join("fsync").join(format!("f{index}")), &[0u8; 600])?;
+    }
+    let fsync_ms = started.elapsed().as_secs_f64() * 1000.0 / 20.0;
+    let _ = std::fs::remove_dir_all(&work);
+
+    let p95 = percentile(&mut encode_ms, 0.95);
+    let report = json!({
+        "encode_format_256x128_p95_ms": p95,
+        "encode_format_budget_ms": 2.0,
+        "screens": screens,
+        "firmware_export_total_ms": firmware_ms,
+        "evidence_export_total_ms": evidence_ms,
+        "evidence_frames": frames,
+        "export_budget_ms": 500.0,
+        "durable_write_ms": fsync_ms,
+        "encode_pass": p95 <= 2.0,
+        "firmware_export_pass": firmware_ms <= 500.0,
+        "evidence_export_pass": evidence_ms <= 500.0,
+    });
+    println!("{report}");
+    Ok(0)
+}
+
 /// V1 `agent_bridge.main`: print the endpoint (host, port, token) as one JSON
 /// line, then serve requests until the process is stopped.
 fn cmd_bridge(args: &Args) -> CoreResult<u8> {
@@ -425,6 +525,7 @@ fn run(raw: &[String]) -> CoreResult<u8> {
         "asset-audit" => cmd_asset_audit(&args),
         "c-header" => cmd_c_header(&args),
         "bridge" => cmd_bridge(&args),
+        "bench" => cmd_bench(&args),
         other => Err(CoreError::invalid(format!(
             "unknown command: {other}\n\n{USAGE}"
         ))),

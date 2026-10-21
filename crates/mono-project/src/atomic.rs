@@ -50,6 +50,40 @@ pub fn atomic_write(target: &Path, data: &[u8]) -> CoreResult<()> {
     result.map_err(|e| io_error(target, &e))
 }
 
+/// `atomic_write` for a batch of independent files. Each file keeps the full
+/// temp + fsync + rename contract; files are written concurrently so the
+/// per-file fsync latencies overlap. Returns the first error (by input order).
+pub fn atomic_write_many(writes: &[(PathBuf, Vec<u8>)]) -> CoreResult<()> {
+    if writes.len() <= 1 {
+        return writes
+            .iter()
+            .try_for_each(|(path, data)| atomic_write(path, data));
+    }
+    let workers = writes.len().min(8);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut results: Vec<Option<CoreResult<()>>> = (0..writes.len()).map(|_| None).collect();
+    let slots = std::sync::Mutex::new(&mut results);
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                loop {
+                    let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some((path, data)) = writes.get(index) else {
+                        break;
+                    };
+                    let result = atomic_write(path, data);
+                    if let Ok(mut slots) = slots.lock() {
+                        slots[index] = Some(result);
+                    }
+                }
+            });
+        }
+    });
+    results
+        .into_iter()
+        .try_for_each(|r| r.unwrap_or_else(|| Err(CoreError::invalid("write worker did not run"))))
+}
+
 /// `json.dumps(value, ensure_ascii=False, indent=2)` byte-compatible output.
 pub fn python_json(value: &Value) -> CoreResult<String> {
     let mut out = Vec::new();

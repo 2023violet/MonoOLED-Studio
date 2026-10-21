@@ -3,6 +3,7 @@
 
 mod agent;
 mod app;
+mod bench;
 mod canvas;
 mod extras;
 mod fontlab;
@@ -62,6 +63,8 @@ struct Args {
     theme: Option<String>,
     lang: Option<String>,
     select: Option<String>,
+    /// `--bench <out.json>`: measure the spec §5 interactive budgets and exit.
+    bench: Option<PathBuf>,
     /// Actions run after startup, in order (`--action preferences`); used for
     /// scripted screenshots and smoke checks.
     actions: Vec<String>,
@@ -75,6 +78,7 @@ fn parse_args() -> Args {
         theme: None,
         lang: None,
         select: None,
+        bench: None,
         actions: Vec::new(),
     };
     let raw: Vec<String> = std::env::args().skip(1).collect();
@@ -88,6 +92,7 @@ fn parse_args() -> Args {
             "--lang" => args.lang = value,
             "--select" => args.select = value,
             "--action" => args.actions.extend(value),
+            "--bench" => args.bench = value.map(PathBuf::from),
             path if !path.starts_with("--") => {
                 args.project = Some(PathBuf::from(path));
                 i += 1;
@@ -662,6 +667,7 @@ fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
 }
 
 fn main() {
+    let process_start = std::time::Instant::now();
     let args = parse_args();
     // V1 `appearance.ui_scale`: Slint reads its scale factor when the window is created.
     if std::env::var_os("SLINT_SCALE_FACTOR").is_none() {
@@ -671,6 +677,16 @@ fn main() {
         }
     }
     select_backend();
+    let trace = std::env::var_os("MONO_TRACE_STARTUP").is_some();
+    let mark = |label: &str| {
+        if trace {
+            eprintln!(
+                "startup {label}: {:.1} ms",
+                process_start.elapsed().as_secs_f64() * 1000.0
+            );
+        }
+    };
+    mark("main");
     let ui = match MainWindow::new() {
         Ok(ui) => ui,
         Err(error) => {
@@ -682,6 +698,7 @@ fn main() {
     if let Some(lang) = &args.lang {
         prefs.set("language", serde_json::json!(lang));
     }
+    mark("window created");
     let app = Rc::new(RefCell::new(App::new(ui.as_weak(), prefs)));
     apply_appearance(&ui, &app.borrow(), args.theme.as_deref());
     wire(&ui, &app);
@@ -746,7 +763,7 @@ fn main() {
             }
         },
     );
-    if args.screenshot.is_none() {
+    if args.screenshot.is_none() && args.bench.is_none() {
         app.borrow_mut().prompt_recovery();
     }
     if let Some(index) = args.workspace {
@@ -757,6 +774,9 @@ fn main() {
             Some(rest) => app.borrow_mut().font_action(rest),
             None => handle_action(&app, &ui, action),
         }
+    }
+    if let Some(out) = args.bench.clone() {
+        bench::run(&ui, &app, out, process_start);
     }
     if let Some(path) = args.screenshot.clone() {
         let w = ui.as_weak();
@@ -780,6 +800,7 @@ fn main() {
             let _ = slint::quit_event_loop();
         });
     }
+    mark("project loaded, entering event loop");
     if let Err(error) = ui.run() {
         eprintln!("MonoOLED Studio stopped: {error}");
     }

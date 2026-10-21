@@ -13,7 +13,7 @@ use mono_core::state::{IntegerPolicy, State, build_state_matrix, case_name, init
 use mono_core::{CoreError, CoreResult};
 use serde_json::{Map, Value, json};
 
-use crate::atomic::{atomic_write, python_json};
+use crate::atomic::{atomic_write, atomic_write_many, python_json};
 use crate::image_io::{decode_image, encode_bitmap_png, encode_rgba_png};
 use crate::project::{py_resolve, resolve_under_root};
 use crate::resources::{DiskResources, hex_digest, read_file};
@@ -879,11 +879,14 @@ fn sorted_value(value: &Value) -> Value {
     }
 }
 
-fn write_sorted_json(path: &Path, value: &Value) -> CoreResult<()> {
+fn sorted_json_bytes(value: &Value) -> CoreResult<Vec<u8>> {
     let mut text = python_json(&sorted_value(value))?;
     text.push('\n');
-    atomic_write(path, text.as_bytes())
+    Ok(text.into_bytes())
 }
+
+/// Frames are written in concurrent batches of this many files.
+const WRITE_BATCH: usize = 64;
 
 fn element_contract(item: &Value, root: &Path) -> Value {
     let mut out = Map::new();
@@ -1224,6 +1227,8 @@ pub fn export_scene(
     let mut used: BTreeSet<PathBuf> = BTreeSet::new();
     let mut sorted: Vec<&(String, State)> = states.iter().collect();
     sorted.sort_by(|a, b| a.0.chars().cmp(b.0.chars()));
+    // Every file is an independent atomic write; batching only overlaps fsyncs.
+    let mut pending: Vec<(PathBuf, Vec<u8>)> = Vec::new();
     for (render_index, (name, state)) in sorted.iter().enumerate() {
         let result = render_scene(scene, root, state, &mut resources)?;
         let raw = result.framebuffer.to_vlsb()?;
@@ -1233,16 +1238,20 @@ pub fn export_scene(
                 format!("{name}: framebuffer length {} != {expected}", raw.len()),
             ));
         }
-        atomic_write(&golden_dir.join(format!("{name}.bin")), &raw)?;
+        pending.push((golden_dir.join(format!("{name}.bin")), raw.clone()));
         let rows: Vec<Vec<u8>> = result.framebuffer.rows().map(<[u8]>::to_vec).collect();
-        atomic_write(
-            &reference_dir.join(format!("{name}.png")),
-            &frame_png(
+        pending.push((
+            reference_dir.join(format!("{name}.png")),
+            frame_png(
                 &rows,
                 result.framebuffer.width(),
                 result.framebuffer.height(),
             )?,
-        )?;
+        ));
+        if pending.len() >= WRITE_BATCH {
+            atomic_write_many(&pending)?;
+            pending.clear();
+        }
         let digest = hex_digest(&raw);
         hashes.insert(name.clone(), digest.clone());
         used.extend(result.used_files.iter().map(|p| py_resolve(p)));
@@ -1283,25 +1292,29 @@ pub fn export_scene(
         "scene": scene_input,
         "frames": Value::Object(frames.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
     });
-    write_sorted_json(&output_dir.join("ui_contract.json"), &contract)?;
+    pending.push((
+        output_dir.join("ui_contract.json"),
+        sorted_json_bytes(&contract)?,
+    ));
     let mut used_sorted: Vec<PathBuf> = used.into_iter().collect();
     used_sorted.sort_by_key(|p| relative(p, root));
     let mut assets = Vec::new();
     for path in &used_sorted {
         assets.push(asset_entry(path, root, &mut resources)?);
     }
-    write_sorted_json(
-        &output_dir.join("asset_manifest.json"),
-        &json!({"schema_version": 1, "assets": assets}),
-    )?;
-    atomic_write(
-        &output_dir.join("UI_SPEC.md"),
-        markdown_spec(scene, &frames).as_bytes(),
-    )?;
-    atomic_write(
-        &output_dir.join("validation_report.md"),
-        validation_markdown(&all).as_bytes(),
-    )?;
+    pending.push((
+        output_dir.join("asset_manifest.json"),
+        sorted_json_bytes(&json!({"schema_version": 1, "assets": assets}))?,
+    ));
+    pending.push((
+        output_dir.join("UI_SPEC.md"),
+        markdown_spec(scene, &frames).into_bytes(),
+    ));
+    pending.push((
+        output_dir.join("validation_report.md"),
+        validation_markdown(&all).into_bytes(),
+    ));
+    atomic_write_many(&pending)?;
     let names: BTreeSet<String> = states.iter().map(|(n, _)| n.clone()).collect();
     prune(
         &golden_dir,
