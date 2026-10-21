@@ -63,6 +63,8 @@ struct Args {
     theme: Option<String>,
     lang: Option<String>,
     select: Option<String>,
+    /// `--screen <id>`: open this project screen after loading.
+    screen: Option<String>,
     /// `--bench <out.json>`: measure the spec §5 interactive budgets and exit.
     bench: Option<PathBuf>,
     /// Actions run after startup, in order (`--action preferences`); used for
@@ -78,6 +80,7 @@ fn parse_args() -> Args {
         theme: None,
         lang: None,
         select: None,
+        screen: None,
         bench: None,
         actions: Vec::new(),
     };
@@ -91,6 +94,7 @@ fn parse_args() -> Args {
             "--theme" => args.theme = value,
             "--lang" => args.lang = value,
             "--select" => args.select = value,
+            "--screen" => args.screen = value,
             "--action" => args.actions.extend(value),
             "--bench" => args.bench = value.map(PathBuf::from),
             path if !path.starts_with("--") => {
@@ -724,6 +728,11 @@ fn main() {
                 a.open_project(&path)
             };
             if let Err(e) = result {
+                a.error(&e);
+            }
+        }
+        if let Some(screen) = &args.screen {
+            if let Err(e) = a.open_screen(screen) {
                 a.error(&e);
             }
         }

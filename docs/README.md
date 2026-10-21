@@ -16,3 +16,4 @@ Current documentation for MonoOLED Studio:
 - `rewrite/G0_EVIDENCE.md` — G0 evidence: golden corpus statistics, deviations, verification.
 - `rewrite/G2_EVIDENCE.md` — G2 UI framework spike: Slint vs Tauri measurements and the Slint decision.
 - `rewrite/G1_EVIDENCE.md` — G1 evidence: Rust core parity results, deviations, agent review and rework.
+- `rewrite/G4_EVIDENCE.md` — G4 evidence: desktop app sub-gates, Automation API replay, performance budgets, deviations.
