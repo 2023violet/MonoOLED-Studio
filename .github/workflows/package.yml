@@ -38,7 +38,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # x64 and arm64 for macOS and Linux; Windows x64.
+        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned toolchain
@@ -142,7 +143,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: monooled-studio-${{ runner.os }}
+          name: monooled-studio-${{ matrix.os }}
           path: |
             dist-rust/*
             smoke/*.png
