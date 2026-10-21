@@ -13,6 +13,10 @@ export global Shell {
     in-out property <bool> hide-navigator;
     in-out property <bool> hide-inspector;
     in-out property <bool> hide-drawer;
+    // Window width, mirrored by MainWindow: views size their side panels from
+    // it (reading their own width would create a layout binding loop).
+    in-out property <length> window-width: 1440px;
+    out property <float> side-scale: clamp((window-width - 1100px) / 340px, 0, 1);
 }
 
 export enum ButtonRole { primary, secondary, ghost, danger }

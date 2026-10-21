@@ -660,7 +660,6 @@ export component PixelDialogs inherits Rectangle {
 }
 
 export component PixelView inherits VerticalLayout {
-    property <float> side-scale: clamp((self.width - 1100px) / 340px, 0, 1);
     spacing: 8px;
     HorizontalLayout {
         spacing: 8px;
@@ -693,7 +692,7 @@ export component PixelView inherits VerticalLayout {
                 }
             }
         }
-        if !Shell.canvas-only: PixelInspector { width: 300px + 60px * root.side-scale; }
+        if !Shell.canvas-only: PixelInspector { width: 300px + 60px * Shell.side-scale; }
     }
     if !Shell.canvas-only: OutputPanel { vertical-stretch: OutputModel.output-visible ? 1 : 0; height: OutputModel.output-visible ? 220px : 52px; }
 }

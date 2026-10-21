@@ -208,7 +208,9 @@ export component MainWindow inherits Window {
     // std-widgets follow the app theme, not the OS colour scheme.
     property <bool> dark-theme: Theme.dark;
     changed dark-theme => { Palette.color-scheme = self.dark-theme ? ColorScheme.dark : ColorScheme.light; }
+    changed width => { Shell.window-width = self.width; }
     init => {
+        Shell.window-width = self.width;
         Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
         shortcuts.focus();
     }

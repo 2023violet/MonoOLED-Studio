@@ -511,14 +511,13 @@ component Drawer inherits Panel {
 }
 
 export component DesignerView inherits VerticalLayout {
-    property <float> side-scale: clamp((self.width - 1100px) / 340px, 0, 1);
     spacing: 8px;
     HorizontalLayout {
         spacing: 8px;
         vertical-stretch: 3;
-        if !Shell.canvas-only && !Shell.hide-navigator: Navigator { width: 220px + 60px * root.side-scale; }
+        if !Shell.canvas-only && !Shell.hide-navigator: Navigator { width: 220px + 60px * Shell.side-scale; }
         CanvasPanel { horizontal-stretch: 1; }
-        if !Shell.canvas-only && !Shell.hide-inspector: Inspector { width: 310px + 50px * root.side-scale; }
+        if !Shell.canvas-only && !Shell.hide-inspector: Inspector { width: 310px + 50px * Shell.side-scale; }
     }
     if !Shell.canvas-only && !Shell.hide-drawer: Drawer { vertical-stretch: 0; height: 210px; }
 }
