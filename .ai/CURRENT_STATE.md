@@ -6,10 +6,10 @@
 
 - Project: MonoOLED Studio
 - Product version: 1.2.3
-- Current phase: Rust Rewrite G4 (desktop app and Automation API; agent self-check done, awaiting user review)
+- Current phase: Rust Rewrite G5 (release candidates 2.0.0-rc.1; agent self-check done, awaiting user review of G4 and G5)
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
-- Current gate evidence: docs/rewrite/G4_EVIDENCE.md
+- Current gate evidence: docs/rewrite/G4_EVIDENCE.md, docs/rewrite/G5_EVIDENCE.md
 - Decision: ADR-005 (Rust full rewrite, main-only)
 
 ## Workflow
@@ -20,7 +20,7 @@
 - TASK-003 status: DONE
 - Independent Review: PASS (TASK-003, agent review)
 - Active task: NONE (Rust Rewrite G4 evidence recorded)
-- Next workflow action: User review of docs/rewrite/G4_EVIDENCE.md (open performance items), then G5 packaging
+- Next workflow action: User review of G4/G5 evidence (open performance items); G6 cutover needs explicit user confirmation for tag, push, release and V1 removal
 
 ## Current workstream
 

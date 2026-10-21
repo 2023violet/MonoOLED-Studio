@@ -17,3 +17,4 @@ Current documentation for MonoOLED Studio:
 - `rewrite/G2_EVIDENCE.md` — G2 UI framework spike: Slint vs Tauri measurements and the Slint decision.
 - `rewrite/G1_EVIDENCE.md` — G1 evidence: Rust core parity results, deviations, agent review and rework.
 - `rewrite/G4_EVIDENCE.md` — G4 evidence: desktop app sub-gates, Automation API replay, performance budgets, deviations.
+- `rewrite/G5_EVIDENCE.md` — G5 evidence: three-platform release candidates, install tests, V1 performance comparison.
