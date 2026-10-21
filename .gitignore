@@ -48,3 +48,4 @@ src/reports/
 /spike/*/target/
 /spike/*/Cargo.lock
 /spike/tauri/gen/
+dist-rust/

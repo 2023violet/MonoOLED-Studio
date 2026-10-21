@@ -1,0 +1,127 @@
+name: Package (Rust V2)
+
+# G5 release candidates: build, package, install-test and smoke-test on all three
+# platforms. Artifacts are uploaded to the workflow run only; nothing is
+# published as a GitHub Release here.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
+      - 'tools/PACKAGE_RUST_RELEASE.py'
+      - '.github/workflows/package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Desktop system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libegl1-mesa-dev xvfb
+      - name: Build release binaries
+        run: cargo build --release --locked -p mono-desktop -p mono-cli
+      - name: Package
+        shell: bash
+        run: python tools/PACKAGE_RUST_RELEASE.py --out dist-rust
+
+      - name: Install test (Windows zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist-rust/*.zip | Select-Object -First 1
+          Expand-Archive $zip.FullName -DestinationPath "$env:RUNNER_TEMP/install" -Force
+          $dir = Get-ChildItem "$env:RUNNER_TEMP/install" -Directory | Select-Object -First 1
+          & "$($dir.FullName)/mono.exe" version
+          $gui = & "$($dir.FullName)/monooled-studio.exe" --version | Out-String
+          Write-Output $gui
+          if ($gui -notmatch 'monooled-studio') { throw 'desktop --version failed' }
+          "APP_DIR=$($dir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "GUI=$($dir.FullName)/monooled-studio.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CLI=$($dir.FullName)/mono.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Install test (Linux deb)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y ./dist-rust/*.deb
+          dpkg -s monooled-studio | grep -E '^(Status|Version)'
+          monooled-studio --version
+          monooled-cli version
+          echo "GUI=/usr/bin/monooled-studio" >> "$GITHUB_ENV"
+          echo "CLI=/usr/bin/monooled-cli" >> "$GITHUB_ENV"
+      - name: Install test (macOS dmg)
+        if: runner.os == 'macOS'
+        run: |
+          hdiutil attach dist-rust/*.dmg -mountpoint /Volumes/MonoOLED -nobrowse
+          cp -R "/Volumes/MonoOLED/MonoOLED Studio.app" "$RUNNER_TEMP/"
+          hdiutil detach /Volumes/MonoOLED
+          APP="$RUNNER_TEMP/MonoOLED Studio.app/Contents/MacOS"
+          "$APP/monooled-studio" --version
+          "$APP/mono" version
+          echo "GUI=$APP/monooled-studio" >> "$GITHUB_ENV"
+          echo "CLI=$APP/mono" >> "$GITHUB_ENV"
+
+      - name: Installed CLI smoke (export + Automation bridge descriptor)
+        shell: bash
+        run: |
+          "$CLI" validate --project test_assets/projects/curing_lite/project.oled.json
+          "$CLI" export --project test_assets/projects/curing_lite/project.oled.json --output "$RUNNER_TEMP/export"
+          test -s "$RUNNER_TEMP/export/ui_contract.json"
+      - name: Installed desktop smoke (software renderer screenshot)
+        shell: bash
+        env:
+          SLINT_BACKEND: winit-software
+        run: |
+          mkdir -p "$RUNNER_TEMP/prefs" smoke
+          # Work on a copy: opening a screen updates the project manifest.
+          cp -R test_assets/projects/curing_lite "$RUNNER_TEMP/project"
+          export APPDATA="$RUNNER_TEMP/prefs" LOCALAPPDATA="$RUNNER_TEMP/prefs" XDG_CONFIG_HOME="$RUNNER_TEMP/prefs"
+          shot="$PWD/smoke/designer-${{ runner.os }}.png"
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a -s "-screen 0 1600x1000x24" "$GUI" "$RUNNER_TEMP/project" --screen main --screenshot "$shot"
+          else
+            "$GUI" "$RUNNER_TEMP/project" --screen main --screenshot "$shot"
+          fi
+          test -s "$shot"
+          python - "$shot" <<'EOF'
+          import struct, sys
+          data = open(sys.argv[1], 'rb').read()
+          assert data[:8] == b'\x89PNG\r\n\x1a\n', 'not a PNG'
+          width, height = struct.unpack('>II', data[16:24])
+          print('screenshot', width, 'x', height)
+          assert width >= 1000 and height >= 600, 'window too small'
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monooled-studio-${{ runner.os }}
+          path: |
+            dist-rust/*
+            smoke/*.png
+          if-no-files-found: error

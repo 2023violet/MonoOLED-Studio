@@ -27,6 +27,8 @@ arboard = { version = "3", default-features = false, features = ["wayland-data-c
 
 [build-dependencies]
 slint-build = "=1.18.1"
+# Windows .exe icon and version resource (MIT); only invoked for Windows targets.
+winresource = "0.1"
 
 [lints]
 workspace = true
