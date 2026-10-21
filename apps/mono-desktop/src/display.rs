@@ -3,14 +3,14 @@
 //! output text font. Display only — none of it changes exported bytes.
 
 use serde_json::json;
-use slint::{Global, Rgba8Pixel};
+use slint::{Global, Model, Rgba8Pixel};
 
 use crate::app::{App, model, ss};
 use crate::canvas::{
-    DEFAULT_BACKGROUND, DEFAULT_BORDER, DEFAULT_FILL, DEFAULT_GRID, Viewport, border_overlay,
-    parse_color, slint_color,
+    CellWindow, DEFAULT_BACKGROUND, DEFAULT_BORDER, DEFAULT_FILL, DEFAULT_GRID, border_runs,
+    clip_runs, parse_color, slint_color,
 };
-use crate::{OutputModel, PixelModel};
+use crate::{BorderLine, OutputModel, PixelModel};
 
 /// Preference keys in display order, with V1's labels for the invalid-colour message.
 pub const COLOR_KEYS: [(&str, &str, &str); 4] = [
@@ -57,37 +57,53 @@ impl App {
         }
     }
 
-    /// The canvas reports which cells are visible and its zoom.
-    pub fn pixel_viewport(&mut self, x0: i32, y0: i32, cols: i32, rows: i32, zoom: i32) {
-        let clamp = |v: i32| usize::try_from(v).unwrap_or(0);
-        let view = Viewport {
-            x0: clamp(x0),
-            y0: clamp(y0),
-            cols: clamp(cols),
-            rows: clamp(rows),
-            zoom: clamp(zoom),
+    /// The canvas reports which cells are visible (scroll, zoom, resize).
+    pub fn pixel_cell_window(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        let cell = |v: i32| usize::try_from(v).unwrap_or(0);
+        let window = CellWindow {
+            x0: cell(x0),
+            y0: cell(y0),
+            x1: cell(x1),
+            y1: cell(y1),
         };
-        if view != self.viewport {
-            self.viewport = view;
+        if window != self.cell_window {
+            self.cell_window = window;
             let pixels = self.studio().display_pixels();
             self.refresh_overlay(&pixels);
         }
     }
 
-    /// V1 pixel border: outline every lit pixel of the visible window.
+    /// V1 pixel border: outline every lit pixel of the visible window, as
+    /// merged edge runs (see `canvas.rs`). The model is updated row by row; a
+    /// stroke changes a few runs, and a new model would rebuild every item.
     pub fn refresh_overlay(&self, pixels: &[u8]) {
         let Some(ui) = self.ui.upgrade() else { return };
-        let pm = PixelModel::get(&ui);
         let p = self.studio();
-        let colors = self.display_colors();
-        match border_overlay(p.width(), p.height(), pixels, self.viewport, colors.border) {
-            Some(image) => {
-                pm.set_border_overlay(image);
-                pm.set_overlay_x(self.viewport.x0 as i32);
-                pm.set_overlay_y(self.viewport.y0 as i32);
-                pm.set_has_overlay(true);
+        let runs = clip_runs(
+            &border_runs(p.width(), p.height(), pixels),
+            self.cell_window,
+        );
+        let lines = &self.border_lines;
+        if lines.row_count() == 0 {
+            PixelModel::get(&ui).set_border_lines(slint::ModelRc::from(lines.clone()));
+        }
+        for (i, r) in runs.iter().enumerate() {
+            let line = BorderLine {
+                x: r.x as i32,
+                y: r.y as i32,
+                len: r.len as i32,
+                vertical: r.vertical,
+            };
+            if i < lines.row_count() {
+                if lines.row_data(i).as_ref() != Some(&line) {
+                    lines.set_row_data(i, line);
+                }
+            } else {
+                lines.push(line);
             }
-            None => pm.set_has_overlay(false),
+        }
+        while lines.row_count() > runs.len() {
+            lines.remove(lines.row_count() - 1);
         }
     }
 
@@ -98,6 +114,7 @@ impl App {
         let pm = PixelModel::get(&ui);
         pm.set_canvas_background(slint_color(colors.background));
         pm.set_grid_color(slint_color(colors.grid));
+        pm.set_border_color(slint_color(colors.border));
         let om = OutputModel::get(&ui);
         om.set_display_hex(model(self.display_draft.iter().map(ss).collect()));
         om.set_display_colors(model(

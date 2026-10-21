@@ -2,7 +2,7 @@
 //! with `image-rendering: pixelated`, so zoom never re-renders pixels).
 //!
 //! Pixel Studio display colours (V1 output workbench "显示" group) and the
-//! per-pixel outline overlay also live here.
+//! per-pixel border outline also live here.
 
 use slint::{Image, Rgba8Pixel, SharedPixelBuffer};
 
@@ -83,60 +83,92 @@ pub fn slint_color(pixel: Rgba8Pixel) -> slint::Color {
     slint::Color::from_argb_u8(pixel.a, pixel.r, pixel.g, pixel.b)
 }
 
-/// The visible cell window of the Pixel canvas and its zoom (logical px per cell).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Viewport {
-    pub x0: usize,
-    pub y0: usize,
-    pub cols: usize,
-    pub rows: usize,
-    pub zoom: usize,
+/// One straight piece of the pixel-border outline, in cells: from `(x, y)`
+/// along x (`vertical == false`) or y for `len` cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BorderRun {
+    pub x: usize,
+    pub y: usize,
+    pub len: usize,
+    pub vertical: bool,
 }
 
-/// Largest overlay the UI asks for (a 4K viewport at 1x); larger requests are clamped.
-const MAX_OVERLAY_PIXELS: usize = 3840 * 2160;
-
-/// V1 `paintEvent` pixel border: a 1 px outline around every lit pixel of the
-/// visible window, as an image `(cols * zoom + 1) x (rows * zoom + 1)` placed at
-/// cell `(x0, y0)`. None when nothing is visible.
-pub fn border_overlay(
-    width: usize,
-    height: usize,
-    pixels: &[u8],
-    view: Viewport,
-    color: Rgba8Pixel,
-) -> Option<Image> {
-    let z = view.zoom;
-    let x1 = (view.x0 + view.cols).min(width);
-    let y1 = (view.y0 + view.rows).min(height);
-    if z == 0 || view.x0 >= x1 || view.y0 >= y1 {
-        return None;
-    }
-    let (cols, rows) = (x1 - view.x0, y1 - view.y0);
-    let (w, h) = (cols * z + 1, rows * z + 1);
-    if w * h > MAX_OVERLAY_PIXELS {
-        return None;
-    }
-    let mut buffer = SharedPixelBuffer::<Rgba8Pixel>::new(w as u32, h as u32);
-    let out = buffer.make_mut_slice();
-    for cy in 0..rows {
-        let row = &pixels[(view.y0 + cy) * width..];
-        for cx in 0..cols {
-            if row[view.x0 + cx] == 0 {
-                continue;
-            }
-            let (left, top) = (cx * z, cy * z);
-            for x in left..=left + z {
-                out[top * w + x] = color;
-                out[(top + z) * w + x] = color;
-            }
-            for y in top..=top + z {
-                out[y * w + left] = color;
-                out[y * w + left + z] = color;
+/// V1 `paintEvent` pixel border (every lit pixel stroked as a 1 px rect) as
+/// merged edge runs: a grid edge is drawn when a lit pixel lies on either side.
+pub fn border_runs(width: usize, height: usize, pixels: &[u8]) -> Vec<BorderRun> {
+    let lit = |x: usize, y: usize| x < width && y < height && pixels[y * width + x] != 0;
+    let mut runs = Vec::new();
+    let mut scan = |count: usize, along: usize, vertical: bool, edge: &dyn Fn(usize) -> bool| {
+        let mut start = None;
+        for i in 0..=count {
+            match (start, i < count && edge(i)) {
+                (None, true) => start = Some(i),
+                (Some(s), false) => {
+                    let (x, y) = if vertical { (along, s) } else { (s, along) };
+                    runs.push(BorderRun {
+                        x,
+                        y,
+                        len: i - s,
+                        vertical,
+                    });
+                    start = None;
+                }
+                _ => {}
             }
         }
+    };
+    for y in 0..=height {
+        scan(width, y, false, &|x| lit(x, y) || (y > 0 && lit(x, y - 1)));
     }
-    Some(Image::from_rgba8(buffer))
+    for x in 0..=width {
+        scan(height, x, true, &|y| lit(x, y) || (x > 0 && lit(x - 1, y)));
+    }
+    runs
+}
+
+/// Visible cell window of the Pixel canvas (UI-reported; the outline is only
+/// built for it, like V1 painting only the exposed region).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CellWindow {
+    pub x0: usize,
+    pub y0: usize,
+    pub x1: usize,
+    pub y1: usize,
+}
+
+/// `runs` clipped to `window` (cells `x0..x1`, `y0..y1`; edges on `x1`/`y1` kept).
+pub fn clip_runs(runs: &[BorderRun], window: CellWindow) -> Vec<BorderRun> {
+    runs.iter()
+        .filter_map(|r| {
+            let (fixed, lo, hi, start, end) = if r.vertical {
+                (r.x, window.y0, window.y1, r.y, r.y + r.len)
+            } else {
+                (r.y, window.x0, window.x1, r.x, r.x + r.len)
+            };
+            let (fixed_lo, fixed_hi) = if r.vertical {
+                (window.x0, window.x1)
+            } else {
+                (window.y0, window.y1)
+            };
+            if fixed < fixed_lo || fixed > fixed_hi {
+                return None;
+            }
+            let (start, end) = (start.max(lo), end.min(hi));
+            (start < end).then(|| {
+                let (x, y) = if r.vertical {
+                    (r.x, start)
+                } else {
+                    (start, r.y)
+                };
+                BorderRun {
+                    x,
+                    y,
+                    len: end - start,
+                    vertical: r.vertical,
+                }
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -179,38 +211,45 @@ mod tests {
     }
 
     #[test]
-    fn overlay_outlines_each_lit_pixel_in_the_window() {
-        // 3x2 document, lit pixels at (1,0) and (2,1); window = whole document at zoom 4.
+    fn border_runs_merge_edges_next_to_lit_pixels() {
+        // 3x2 document, lit pixels at (1,0) and (2,1).
         let pixels = [0, 1, 0, 0, 0, 1];
-        let view = Viewport {
-            x0: 0,
-            y0: 0,
-            cols: 3,
-            rows: 2,
-            zoom: 4,
+        let runs = border_runs(3, 2, &pixels);
+        let h = |x, y, len| BorderRun {
+            x,
+            y,
+            len,
+            vertical: false,
         };
-        let image = border_overlay(3, 2, &pixels, view, LIT).unwrap();
-        let buffer = image.to_rgba8().unwrap();
-        assert_eq!((buffer.width(), buffer.height()), (13, 9));
-        let at = |x: usize, y: usize| buffer.as_slice()[y * 13 + x].a;
-        assert_eq!(at(4, 0), 255); // top-left corner of (1,0)
-        assert_eq!(at(8, 4), 255); // shared corner with (2,1)
-        assert_eq!(at(6, 2), 0); // inside a lit pixel: not filled
-        assert_eq!(at(1, 1), 0); // off pixel
-        assert_eq!(at(12, 8), 255); // bottom-right of (2,1)
-        // A window that starts at (2,1) only sees that pixel.
-        let view = Viewport {
+        let v = |x, y, len| BorderRun {
+            x,
+            y,
+            len,
+            vertical: true,
+        };
+        assert_eq!(
+            runs,
+            vec![
+                h(1, 0, 1), // top of (1,0)
+                h(1, 1, 2), // bottom of (1,0) + top of (2,1), merged
+                h(2, 2, 1), // bottom of (2,1)
+                v(1, 0, 1),
+                v(2, 0, 2), // right of (1,0) + left of (2,1), merged
+                v(3, 1, 1),
+            ]
+        );
+        // A fully lit canvas is one run per grid line; a dark one has none.
+        assert_eq!(border_runs(4, 3, &[1; 12]).len(), 4 + 5);
+        assert!(border_runs(4, 3, &[0; 12]).is_empty());
+        let window = CellWindow {
             x0: 2,
             y0: 1,
-            cols: 5,
-            rows: 5,
-            zoom: 2,
+            x1: 3,
+            y1: 2,
         };
-        let buffer = border_overlay(3, 2, &pixels, view, LIT)
-            .unwrap()
-            .to_rgba8()
-            .unwrap();
-        assert_eq!((buffer.width(), buffer.height()), (3, 3));
-        assert!(border_overlay(3, 2, &pixels, Viewport { zoom: 0, ..view }, LIT).is_none());
+        assert_eq!(
+            clip_runs(&runs, window),
+            vec![h(2, 1, 1), h(2, 2, 1), v(2, 1, 1), v(3, 1, 1)]
+        );
     }
 }

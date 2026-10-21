@@ -636,12 +636,11 @@ fn wire_prefs(ui: &MainWindow, app: &Rc<RefCell<App>>) {
 
 fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     let pm = PixelModel::get(ui);
-    let a_viewport = app.clone();
-    // Layout-driven: may fire while the app is already borrowed (skip, the
-    // next refresh redraws the overlay).
-    pm.on_viewport(move |x0, y0, cols, rows, zoom| {
-        if let Ok(mut app) = a_viewport.try_borrow_mut() {
-            app.pixel_viewport(x0, y0, cols, rows, zoom);
+    let a = app.clone();
+    // Layout-driven: may fire while the app is borrowed (the next refresh redraws).
+    pm.on_cell_window(move |x0, y0, x1, y1| {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.pixel_cell_window(x0, y0, x1, y1);
         }
     });
     let a = app.clone();

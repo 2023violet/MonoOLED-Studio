@@ -5,6 +5,8 @@ import { Theme, Metrics } from "theme.slint";
 import { Icon } from "icons.slint";
 import { Shell, I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, Scrim, Dialog } from "widgets.slint";
 
+export struct BorderLine { x: int, y: int, len: int, vertical: bool }
+
 export global PixelModel {
     in property <image> canvas;
     in property <int> doc-w: 16;
@@ -55,15 +57,15 @@ export global PixelModel {
     in-out property <int> text-tracking;
     in property <string> dialog-error;
     // Display settings (V1 output workbench "显示"): colours and the
-    // per-pixel border overlay for the visible cells.
+    // per-pixel border outline as merged edge runs (in cells) for the
+    // visible cell window the canvas reports.
     in property <color> canvas-background: #000000;
     in property <color> grid-color: #495028;
-    in property <image> border-overlay;
-    in property <bool> has-overlay;
-    in property <int> overlay-x;
-    in property <int> overlay-y;
+    in property <color> border-color: #FFFF00;
+    in property <[BorderLine]> border-lines;
 
-    callback viewport(int /* x0 */, int /* y0 */, int /* cols */, int /* rows */, int /* zoom */);
+    callback cell-window(int /* x0 */, int /* y0 */, int /* x1 */, int /* y1 */);
+
     callback pointer(string /* down|move|up|hover|leave */, int, int, int /* 0 left 1 right */);
     callback key(string);
     callback action(string);
@@ -173,21 +175,17 @@ export component PixelCanvas inherits Rectangle {
     property <length> pan-view-y;
     property <int> last-x: -1;
     property <int> last-y: -1;
-    // Visible cells, reported so the pixel-border overlay covers only them.
-    property <int> vp-x0: max(0, floor((-flick.content-x - host.x) / root.px));
-    property <int> vp-y0: max(0, floor((-flick.content-y - host.y) / root.px));
-    property <int> vp-cols: ceil(flick.width / root.px) + 1;
-    property <int> vp-rows: ceil(flick.height / root.px) + 1;
-    property <int> vp-zoom: root.px / 1px;
-    function report-viewport() {
-        PixelModel.viewport(root.vp-x0, root.vp-y0, root.vp-cols, root.vp-rows, root.vp-zoom);
-    }
-    changed vp-x0 => { root.report-viewport(); }
-    changed vp-y0 => { root.report-viewport(); }
-    changed vp-cols => { root.report-viewport(); }
-    changed vp-rows => { root.report-viewport(); }
-    changed vp-zoom => { root.report-viewport(); }
-    init => { root.report-viewport(); }
+    // Visible cells (+1 margin), reported so the outline is only built for them.
+    property <int> win-x0: max(0, floor((-flick.content-x - host.x) / root.px) - 1);
+    property <int> win-y0: max(0, floor((-flick.content-y - host.y) / root.px) - 1);
+    property <int> win-x1: min(PixelModel.doc-w, ceil((-flick.content-x - host.x + flick.width) / root.px) + 1);
+    property <int> win-y1: min(PixelModel.doc-h, ceil((-flick.content-y - host.y + flick.height) / root.px) + 1);
+    function report-window() { PixelModel.cell-window(root.win-x0, root.win-y0, root.win-x1, root.win-y1); }
+    changed win-x0 => { root.report-window(); }
+    changed win-y0 => { root.report-window(); }
+    changed win-x1 => { root.report-window(); }
+    changed win-y1 => { root.report-window(); }
+    init => { root.report-window(); }
     background: Theme.surface-canvas;
     clip: true;
     forward-focus: keys;
@@ -224,8 +222,10 @@ export component PixelCanvas inherits Rectangle {
         content-width: max(self.width, PixelModel.doc-w * root.px + 32px);
         content-height: max(self.height, PixelModel.doc-h * root.px + 32px);
         host := Rectangle {
-            x: max(16px, (flick.width - PixelModel.doc-w * root.px) / 2);
-            y: max(16px, (flick.height - PixelModel.doc-h * root.px) / 2);
+            // Whole pixels: at a half-pixel origin the GL renderer snaps
+            // rectangles (grid) and images (pixels, outline) differently.
+            x: max(16px, round((flick.width - PixelModel.doc-w * root.px) / 2 / 1px) * 1px);
+            y: max(16px, round((flick.height - PixelModel.doc-h * root.px) / 2 / 1px) * 1px);
             width: PixelModel.doc-w * root.px;
             height: PixelModel.doc-h * root.px;
             background: PixelModel.canvas-background;
@@ -251,13 +251,12 @@ export component PixelCanvas inherits Rectangle {
                     opacity: row / 8 * 8 == row ? 0.9 : 0.45;
                 }
             }
-            if PixelModel.has-overlay: Image {
-                x: PixelModel.overlay-x * root.px;
-                y: PixelModel.overlay-y * root.px;
-                width: PixelModel.border-overlay.width * 1px;
-                height: PixelModel.border-overlay.height * 1px;
-                source: PixelModel.border-overlay;
-                image-rendering: pixelated;
+            for line in PixelModel.border-lines: Rectangle {
+                x: line.x * root.px;
+                y: line.y * root.px;
+                width: line.vertical ? 1px : line.len * root.px + 1px;
+                height: line.vertical ? line.len * root.px + 1px : 1px;
+                background: PixelModel.border-color;
             }
             if PixelModel.has-selection: Rectangle {
                 x: PixelModel.sel-x * root.px;
