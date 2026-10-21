@@ -54,7 +54,16 @@ export global PixelModel {
     in-out property <int> text-y;
     in-out property <int> text-tracking;
     in property <string> dialog-error;
+    // Display settings (V1 output workbench "显示"): colours and the
+    // per-pixel border overlay for the visible cells.
+    in property <color> canvas-background: #000000;
+    in property <color> grid-color: #495028;
+    in property <image> border-overlay;
+    in property <bool> has-overlay;
+    in property <int> overlay-x;
+    in property <int> overlay-y;
 
+    callback viewport(int /* x0 */, int /* y0 */, int /* cols */, int /* rows */, int /* zoom */);
     callback pointer(string /* down|move|up|hover|leave */, int, int, int /* 0 left 1 right */);
     callback key(string);
     callback action(string);
@@ -103,6 +112,13 @@ export global OutputModel {
     in property <string> message;
     in property <[string]> lines;
     in-out property <bool> output-visible: true;
+    in property <[string]> display-hex: ["#000000", "#495028", "#FFFFFF", "#FFFF00"];
+    in property <[color]> display-colors: [#000000, #495028, #FFFFFF, #FFFF00];
+    in property <[bool]> display-invalid: [false, false, false, false];
+    in property <string> display-error;
+    in property <string> output-font;
+    in property <int> output-font-size: 14;
+    callback display(string /* key */, string /* value */);
     callback field(string /* key */, string /* value */);
     callback source-chosen(int);
     callback profile-chosen(int);
@@ -157,6 +173,21 @@ export component PixelCanvas inherits Rectangle {
     property <length> pan-view-y;
     property <int> last-x: -1;
     property <int> last-y: -1;
+    // Visible cells, reported so the pixel-border overlay covers only them.
+    property <int> vp-x0: max(0, floor((-flick.content-x - host.x) / root.px));
+    property <int> vp-y0: max(0, floor((-flick.content-y - host.y) / root.px));
+    property <int> vp-cols: ceil(flick.width / root.px) + 1;
+    property <int> vp-rows: ceil(flick.height / root.px) + 1;
+    property <int> vp-zoom: root.px / 1px;
+    function report-viewport() {
+        PixelModel.viewport(root.vp-x0, root.vp-y0, root.vp-cols, root.vp-rows, root.vp-zoom);
+    }
+    changed vp-x0 => { root.report-viewport(); }
+    changed vp-y0 => { root.report-viewport(); }
+    changed vp-cols => { root.report-viewport(); }
+    changed vp-rows => { root.report-viewport(); }
+    changed vp-zoom => { root.report-viewport(); }
+    init => { root.report-viewport(); }
     background: Theme.surface-canvas;
     clip: true;
     forward-focus: keys;
@@ -197,7 +228,7 @@ export component PixelCanvas inherits Rectangle {
             y: max(16px, (flick.height - PixelModel.doc-h * root.px) / 2);
             width: PixelModel.doc-w * root.px;
             height: PixelModel.doc-h * root.px;
-            background: Theme.canvas-off;
+            background: PixelModel.canvas-background;
             Image {
                 width: parent.width;
                 height: parent.height;
@@ -209,16 +240,24 @@ export component PixelCanvas inherits Rectangle {
                     x: column * root.px;
                     width: 1px;
                     height: parent.height;
-                    background: Theme.canvas-grid;
+                    background: PixelModel.grid-color;
                     opacity: column / 8 * 8 == column ? 0.9 : 0.45;
                 }
                 for row in PixelModel.doc-h + 1: Rectangle {
                     y: row * root.px;
                     height: 1px;
                     width: parent.width;
-                    background: Theme.canvas-grid;
+                    background: PixelModel.grid-color;
                     opacity: row / 8 * 8 == row ? 0.9 : 0.45;
                 }
+            }
+            if PixelModel.has-overlay: Image {
+                x: PixelModel.overlay-x * root.px;
+                y: PixelModel.overlay-y * root.px;
+                width: PixelModel.border-overlay.width * 1px;
+                height: PixelModel.border-overlay.height * 1px;
+                source: PixelModel.border-overlay;
+                image-rendering: pixelated;
             }
             if PixelModel.has-selection: Rectangle {
                 x: PixelModel.sel-x * root.px;
@@ -342,6 +381,63 @@ component Field inherits HorizontalLayout {
     spacing: 6px;
     Label { text: root.label; width: root.label-width; }
     @children
+}
+
+// V1 `ColorSwatchEdit`: hex text plus a swatch that opens a palette.
+component ColorField inherits HorizontalLayout {
+    in property <string> label;
+    in property <int> index;
+    in property <string> key;
+    property <string> model-text: OutputModel.display-hex[root.index];
+    property <[string]> presets: ["#000000", "#FFFFFF", "#FFFF00", "#495028", "#1E1E1E", "#3C3C3C", "#808080", "#C0C0C0",
+        "#00FF00", "#00FFFF", "#0080FF", "#0000FF", "#FF0000", "#FF8000", "#FF00FF", "#8040FF"];
+    property <[color]> preset-colors: [#000000, #FFFFFF, #FFFF00, #495028, #1E1E1E, #3C3C3C, #808080, #C0C0C0,
+        #00FF00, #00FFFF, #0080FF, #0000FF, #FF0000, #FF8000, #FF00FF, #8040FF];
+    changed model-text => { edit.text = root.model-text; }
+    init => { edit.text = root.model-text; }
+    spacing: 6px;
+    Label { text: root.label; width: 96px; }
+    swatch := Rectangle {
+        width: Metrics.control-height;
+        height: Metrics.control-height;
+        border-radius: Metrics.radius-control;
+        border-width: OutputModel.display-invalid[root.index] ? 2px : 1px;
+        border-color: OutputModel.display-invalid[root.index] ? Theme.status-error : Theme.border-normal;
+        background: OutputModel.display-colors[root.index];
+        accessible-role: button;
+        accessible-label: I18n.tr(I18n.lang, "bench.display.pick");
+        TouchArea { mouse-cursor: pointer; clicked => { palette.show(); } }
+    }
+    edit := LineEdit {
+        edited(t) => { OutputModel.display(root.key, t); }
+    }
+    palette := PopupWindow {
+        x: swatch.x;
+        y: swatch.y + swatch.height + 4px;
+        width: 8 * 26px + 12px;
+        height: 2 * 26px + 12px;
+        Rectangle {
+            background: Theme.surface-panel;
+            border-width: 1px;
+            border-color: Theme.border-normal;
+            border-radius: Metrics.radius-control;
+            drop-shadow-blur: 12px;
+            drop-shadow-color: Theme.popover-shadow;
+            for hex[i] in root.presets: Rectangle {
+                x: 6px + Math.mod(i, 8) * 26px;
+                y: 6px + floor(i / 8) * 26px;
+                width: 22px;
+                height: 22px;
+                border-radius: 3px;
+                border-width: 1px;
+                border-color: Theme.border-normal;
+                background: root.preset-colors[i];
+                accessible-role: button;
+                accessible-label: hex;
+                TouchArea { mouse-cursor: pointer; clicked => { OutputModel.display(root.key, hex); } }
+            }
+        }
+    }
 }
 
 component ActionGrid inherits GridLayout {
@@ -524,6 +620,31 @@ component PixelInspector inherits Panel {
                     }
                     Caption { text: I18n.tr(I18n.lang, "bench.template_hint"); }
                     Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "bench.group.display"); }
+                    ColorField { label: I18n.tr(I18n.lang, "bench.display.background"); index: 0; key: "canvas_background"; }
+                    ColorField { label: I18n.tr(I18n.lang, "bench.display.grid"); index: 1; key: "grid_color"; }
+                    ColorField { label: I18n.tr(I18n.lang, "bench.display.fill"); index: 2; key: "pixel_fill"; }
+                    ColorField { label: I18n.tr(I18n.lang, "bench.display.border"); index: 3; key: "pixel_border"; }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.display.pixel_size");
+                        SpinBox { value: PixelModel.zoom > 0 ? round(PixelModel.zoom) : 10; minimum: 1; maximum: 40; edited(v) => { OutputModel.display("pixel_size", v); } }
+                    }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.display.font");
+                        LineEdit { text: OutputModel.output-font; placeholder-text: "Consolas"; accepted(t) => { OutputModel.display("output_font", t); } }
+                    }
+                    Field {
+                        label: I18n.tr(I18n.lang, "bench.display.font_size");
+                        SpinBox { value: OutputModel.output-font-size; minimum: 8; maximum: 32; edited(v) => { OutputModel.display("output_font_size", v); } }
+                    }
+                    Button { text: I18n.tr(I18n.lang, "bench.display.reset"); clicked => { OutputModel.display("reset", ""); } }
+                    if OutputModel.display-error != "": Text {
+                        text: OutputModel.display-error;
+                        color: Theme.status-error;
+                        font-size: Metrics.font-small;
+                        wrap: word-wrap;
+                    }
+                    Divider { }
                     Caption { text: OutputModel.message; }
                 }
             }
@@ -552,10 +673,10 @@ component OutputPanel inherits Panel {
             ListView {
                 for line in OutputModel.lines: Text {
                     text: line;
-                    font-family: "Consolas";
-                    font-size: 12px;
+                    font-family: OutputModel.output-font != "" ? OutputModel.output-font : "Consolas";
+                    font-size: OutputModel.output-font-size * 1px;
                     color: Theme.text-primary;
-                    height: 16px;
+                    height: OutputModel.output-font-size * 1px * 1.4;
                 }
             }
         }

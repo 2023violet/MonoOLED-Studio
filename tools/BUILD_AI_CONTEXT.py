@@ -141,10 +141,17 @@ def _format_paths(paths: list[str]) -> str:
     return ", ".join(paths) if paths else "NONE"
 
 
+def _workspace_version(repo_root: Path) -> str:
+    """`[workspace.package] version` from Cargo.toml (the V2 version source)."""
+    text = _read_required(repo_root, "Cargo.toml")
+    match = re.search(r'^\[workspace\.package\][^\[]*?^version\s*=\s*"([^"]+)"', text, re.MULTILINE | re.DOTALL)
+    if not match:
+        raise ContextBuildError("Cargo.toml has no [workspace.package] version")
+    return match.group(1)
+
+
 def _build_context(repo_root: Path, recent: int) -> str:
-    version = _read_required(repo_root, "src/VERSION").strip()
-    if not version:
-        raise ContextBuildError("Required file is empty: src/VERSION")
+    version = _workspace_version(repo_root)
     state = _read_required(repo_root, ".ai/CURRENT_STATE.md")
     decisions = _read_required(repo_root, ".ai/DECISIONS.md")
 

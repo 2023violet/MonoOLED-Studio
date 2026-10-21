@@ -87,6 +87,10 @@ pub struct App {
     pub interactive: bool,
     /// Answer used for unsaved-changes questions when not interactive.
     pub scripted_choice: Option<crate::guard::Unsaved>,
+    /// Visible cells of the Pixel canvas (for the pixel-border overlay).
+    pub viewport: crate::canvas::Viewport,
+    /// Display colour editor texts (saved only when all four are valid).
+    pub display_draft: [String; 4],
 }
 
 pub(crate) fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
@@ -132,6 +136,8 @@ impl App {
             agent: None,
             interactive: false,
             scripted_choice: None,
+            viewport: crate::canvas::Viewport::default(),
+            display_draft: Default::default(),
         }
     }
 

@@ -542,7 +542,22 @@
     "bench.new": "New canvas",
     "pixel.unsaved": "Unsaved Pixel Studio changes will be discarded",
     "font.alignment.font_set": "Relative to font set",
-    "font.alignment.glyph_width": "Relative to glyph width"
+    "font.alignment.glyph_width": "Relative to glyph width",
+    "bench.group.display": "Display",
+    "bench.display.background": "Canvas background",
+    "bench.display.grid": "Grid lines",
+    "bench.display.fill": "Pixel fill",
+    "bench.display.border": "Pixel border",
+    "bench.display.pixel_size": "Pixel size",
+    "bench.display.font": "Output font",
+    "bench.display.font_size": "Font size",
+    "bench.display.reset": "Reset display",
+    "bench.display.pick": "Choose colour",
+    "bench.display.invalid": "Invalid colour: ",
+    "bench.display.bg_short": "background",
+    "bench.display.grid_short": "lines",
+    "bench.display.fill_short": "fill",
+    "bench.display.border_short": "border"
   },
   "zh_CN": {
     "action.about": "关于 MonoOLED Studio",
@@ -1087,6 +1102,21 @@
     "bench.new": "新建画布",
     "pixel.unsaved": "未保存的 Pixel Studio 改动将被丢弃",
     "font.alignment.font_set": "相对于整体",
-    "font.alignment.glyph_width": "相对于字宽"
+    "font.alignment.glyph_width": "相对于字宽",
+    "bench.group.display": "显示",
+    "bench.display.background": "画布背景",
+    "bench.display.grid": "网格线",
+    "bench.display.fill": "像素填充",
+    "bench.display.border": "像素边框",
+    "bench.display.pixel_size": "像素大小",
+    "bench.display.font": "输出字体",
+    "bench.display.font_size": "字体大小",
+    "bench.display.reset": "重置显示",
+    "bench.display.pick": "选择颜色",
+    "bench.display.invalid": "颜色格式无效：",
+    "bench.display.bg_short": "背景",
+    "bench.display.grid_short": "线条",
+    "bench.display.fill_short": "填充",
+    "bench.display.border_short": "边框"
   }
 }

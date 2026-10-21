@@ -10,7 +10,7 @@ import sys
 import pytest
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 BUILDER = ROOT / "tools" / "BUILD_AI_CONTEXT.py"
 
 
@@ -30,9 +30,10 @@ def _git(cwd: Path, *args: str) -> str:
 def _repo(tmp_path: Path, *, active_task: str = "TASK-003") -> Path:
     repo = tmp_path / "fixture"
     (repo / ".ai" / "tasks").mkdir(parents=True)
-    (repo / "src").mkdir()
     (repo / "docs").mkdir()
-    (repo / "src" / "VERSION").write_text("1.2.3\n", encoding="utf-8")
+    (repo / "Cargo.toml").write_text(
+        '[workspace]\nmembers = []\n\n[workspace.package]\nversion = "1.2.3"\n', encoding="utf-8"
+    )
     (repo / "AGENTS.md").write_text("# Agents\n", encoding="utf-8")
     (repo / "docs" / "AI_HANDOFF.md").write_text("# Handoff\n", encoding="utf-8")
     (repo / ".ai" / "CURRENT_STATE.md").write_text(
@@ -263,10 +264,10 @@ def test_custom_output_rejects_git_short_name(tmp_path: Path) -> None:
 
 def test_required_source_and_detached_head_fail_without_traceback(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
-    (repo / "src" / "VERSION").unlink()
+    (repo / "Cargo.toml").unlink()
     missing = _run(repo, "--stdout")
     assert missing.returncode != 0
-    assert "Required file is missing: src/VERSION" in missing.stderr
+    assert "Required file is missing: Cargo.toml" in missing.stderr
     assert "Traceback" not in missing.stderr
 
     repo = _repo(tmp_path / "detached")
@@ -279,7 +280,7 @@ def test_required_source_and_detached_head_fail_without_traceback(tmp_path: Path
 
 def test_sources_are_preserved_and_generated_warning_is_explicit(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
-    sources = ("AGENTS.md", ".ai/CURRENT_STATE.md", ".ai/DECISIONS.md", "src/VERSION")
+    sources = ("AGENTS.md", ".ai/CURRENT_STATE.md", ".ai/DECISIONS.md", "Cargo.toml")
     before = {relative: _sha256(repo / relative) for relative in sources}
     stdout = _run(repo, "--stdout")
     assert stdout.returncode == 0, stdout.stderr

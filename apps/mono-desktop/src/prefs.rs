@@ -14,7 +14,10 @@ pub fn defaults() -> Value {
         "appearance": {"theme_mode": "light", "color_theme": "monooled-light", "density": "comfortable", "ui_scale": "100%", "reduced_motion": false},
         "input": {"wheel_action": "zoom", "middle_drag": "pan", "space_drag": "pan"},
         "canvas": {"grid": true, "bounds": true, "rulers": true, "zones": false, "snap": 0},
-        "pixel_studio": {"left_button": "draw", "right_button": "erase", "brush_size": 1, "stroke_interpolation": true, "pixel_grid": true, "actual_preview": true, "rulers": true},
+        "pixel_studio": {"left_button": "draw", "right_button": "erase", "brush_size": 1, "stroke_interpolation": true, "pixel_grid": true, "actual_preview": true, "rulers": true,
+            // V1 output workbench "显示" group.
+            "canvas_background": "#000000", "grid_color": "#495028", "pixel_fill": "#FFFFFF", "pixel_border": "#FFFF00",
+            "output_font": "", "output_font_size": 14},
         "autosave": {"enabled": true, "interval_minutes": 3, "snapshots": 10, "prompt_recovery": true},
         "performance": {"drag_preview": "fast", "validation_mode": "edit_complete", "undo_history": 200, "asset_cache_mb": 512, "overlay": false},
         "shortcuts": {
@@ -78,6 +81,13 @@ fn valid(key: &str, value: &Value) -> bool {
         }),
         "canvas.snap" => value.as_i64().is_some_and(|v| [0, 1, 2, 4, 8].contains(&v)),
         "pixel_studio.brush_size" => int_range(1, 8),
+        "pixel_studio.output_font_size" => int_range(8, 32),
+        "pixel_studio.canvas_background"
+        | "pixel_studio.grid_color"
+        | "pixel_studio.pixel_fill"
+        | "pixel_studio.pixel_border" => value
+            .as_str()
+            .is_some_and(|v| crate::canvas::parse_color(v).is_some()),
         "autosave.interval_minutes" => int_range(1, 60),
         "autosave.snapshots" => int_range(1, 100),
         "performance.undo_history" => int_range(10, 2000),

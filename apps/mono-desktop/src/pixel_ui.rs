@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 use slint::Global;
 
 use crate::app::{App, Prompt, model, ss};
-use crate::canvas::image_from_pixels;
+use crate::canvas::{image_from_pixels, image_with_colors};
 use crate::i18n::trf;
 use crate::pixel::{PixelStudio, ZOOMS, default_symbol, load_import_source};
 use crate::workbench::{MODES, SOURCES, bitmap_item, font_items, merged_profiles};
@@ -204,6 +204,8 @@ impl App {
         pm.set_middle_pan(self.prefs.str("input.middle_drag") == "pan");
         pm.set_space_pan(self.prefs.str("input.space_drag") == "pan");
         pm.set_brush_size(self.pixel.brush as i32);
+        self.load_display_draft();
+        self.refresh_display_model();
     }
 
     // ------------------------------------------------------------- refresh
@@ -213,7 +215,17 @@ impl App {
         let pm = PixelModel::get(&ui);
         let p = self.studio();
         let (w, h) = (p.width(), p.height());
-        pm.set_canvas(image_from_pixels(w, h, &p.display_pixels()));
+        let colors = self.display_colors();
+        let pixels = p.display_pixels();
+        pm.set_canvas(image_with_colors(
+            w,
+            h,
+            &pixels,
+            colors.fill,
+            colors.background,
+        ));
+        self.refresh_overlay(&pixels);
+        let p = self.studio();
         pm.set_doc_w(w as i32);
         pm.set_doc_h(h as i32);
         let title = match (&self.font, self.workspace) {

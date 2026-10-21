@@ -5,6 +5,7 @@ mod agent;
 mod app;
 mod bench;
 mod canvas;
+mod display;
 mod extras;
 mod fontlab;
 mod fontlab_ui;
@@ -18,7 +19,7 @@ mod watchdog;
 mod workbench;
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use mono_core::render::posix;
@@ -336,6 +337,19 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             let shell = Shell::get(ui);
             shell.set_canvas_only(!shell.get_canvas_only());
         }
+        // Scripted runs (screenshots): import an image into Pixel Studio.
+        other if other.starts_with("pixel-open:") => {
+            let mut a = app.borrow_mut();
+            match a.pixel_begin_import(Path::new(&other["pixel-open:".len()..])) {
+                Ok(()) => a.pixel_dialog_accepted(),
+                Err(e) => a.error(&e),
+            }
+            a.refresh_pixel();
+        }
+        other if other.starts_with("pixel-inspector:") => {
+            let tab = other["pixel-inspector:".len()..].parse().unwrap_or(0);
+            PixelModel::get(ui).set_inspector_tab(tab);
+        }
         other if other.starts_with("workspace:") => {
             let index: i32 = other[10..].parse().unwrap_or(0);
             switch_workspace(app, ui, index);
@@ -622,6 +636,14 @@ fn wire_prefs(ui: &MainWindow, app: &Rc<RefCell<App>>) {
 
 fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     let pm = PixelModel::get(ui);
+    let a_viewport = app.clone();
+    // Layout-driven: may fire while the app is already borrowed (skip, the
+    // next refresh redraws the overlay).
+    pm.on_viewport(move |x0, y0, cols, rows, zoom| {
+        if let Ok(mut app) = a_viewport.try_borrow_mut() {
+            app.pixel_viewport(x0, y0, cols, rows, zoom);
+        }
+    });
     let a = app.clone();
     pm.on_pointer(move |phase, x, y, button| {
         if let Ok(mut app) = a.try_borrow_mut() {
@@ -668,6 +690,8 @@ fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     let om = OutputModel::get(ui);
     let a = app.clone();
     om.on_field(move |key, value| a.borrow_mut().bench_field(&key, &value));
+    let a = app.clone();
+    om.on_display(move |key, value| a.borrow_mut().bench_display(&key, &value));
     let a = app.clone();
     om.on_source_chosen(move |index| a.borrow_mut().bench_source(index));
     let a = app.clone();

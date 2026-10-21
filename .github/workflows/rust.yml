@@ -49,6 +49,24 @@ jobs:
           cargo run --locked -p mono-cli -- validate --project test_assets/projects/curing_lite/project.oled.json
           cargo run --locked -p mono-cli -- export --project test_assets/projects/curing_lite/project.oled.json --output target/ci-export
 
+  tooling:
+    name: Tooling and governance (Python)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install pytest
+        run: python -m pip install pytest==9.1.1
+      - name: Tooling tests
+        run: python -m pytest tools/tests -q -p no:cacheprovider
+
   deny:
     name: Dependency policy
     runs-on: ubuntu-latest

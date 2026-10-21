@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_adr_005_records_rewrite_decision():
