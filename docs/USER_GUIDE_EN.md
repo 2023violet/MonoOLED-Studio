@@ -74,6 +74,8 @@ mono handoff --project project.oled.json
 
 The desktop app, the CLI and the Automation API share one renderer and one set of validation rules.
 
+In the desktop app, export, the Code AI handoff, batch validation and the thumbnail wall run in the background. Progress shows in the status bar and you can keep editing. One background job runs at a time; to cancel it, use `Ctrl+K` → "Cancel background job". The app will not close or open another project until the job finishes.
+
 ## Preferences and data locations
 
 - Preferences (`Ctrl+,`) cover language, appearance, UI scale, input, autosave, performance and shortcuts.

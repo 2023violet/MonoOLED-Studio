@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- Export, Code AI handoff, batch validation and the thumbnail wall now run in the background. The window stays responsive, progress shows in the status bar, and Ctrl+K → "Cancel background job" stops a running job. Starting a job takes about 5 ms on the UI thread; before, these operations blocked it for hundreds of milliseconds.
+- Still blocking: Automation API clients that call long methods such as `export.all` synchronously. They can use `job.start` instead.
+
 ## 2.0.1 - 2026-10-21
 
 ### Packages

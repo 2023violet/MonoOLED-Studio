@@ -69,6 +69,8 @@ mono handoff --project project.oled.json
 
 桌面程序、命令行和 Automation API 使用同一个渲染器和同一套校验逻辑。
 
+在桌面程序中，导出、Code AI 交接包、批量验证和缩略图墙都在后台执行，进度显示在状态栏，执行期间可以继续编辑。同一时间只运行一个后台任务；要取消，用 `Ctrl+K` → "取消后台任务"。任务完成前，程序不会关闭，也不会打开其他项目。
+
 ## 偏好设置与数据位置
 
 - 偏好设置（`Ctrl+,`）包括语言、外观、界面缩放、输入方式、自动保存、性能和快捷键。偏好文件与 1.2.3 相同：Windows 在 `%LOCALAPPDATA%\MonoOLEDStudio\preferences.json`，macOS 和 Linux 在 `~/.config/monooled-studio/preferences.json`（遵循 `XDG_CONFIG_HOME`）。
