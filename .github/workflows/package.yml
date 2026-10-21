@@ -23,7 +23,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: package-${{ github.ref }}
+  # Per event: a release run (workflow_call) must not cancel the push run.
+  group: package-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:

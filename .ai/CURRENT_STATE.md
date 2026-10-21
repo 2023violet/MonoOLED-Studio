@@ -9,7 +9,7 @@
 - Current phase: Rust Rewrite G6 preparation (G4/G5 reviewed by the user 2026-10-20; four performance budgets accepted as recorded FAILs)
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
-- Current gate evidence: docs/rewrite/G4_EVIDENCE.md, docs/rewrite/G5_EVIDENCE.md; plan: docs/rewrite/G6_CUTOVER_PLAN.md
+- Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
 - Decision: ADR-005 (Rust full rewrite, main-only)
 
 ## Workflow
@@ -20,7 +20,7 @@
 - TASK-003 status: DONE
 - Independent Review: PASS (TASK-003, agent review)
 - Active task: NONE (Rust Rewrite G4 evidence recorded)
-- Next workflow action: G6 part A (local preparation); every tag, V1 deletion and release in part B needs explicit user confirmation
+- Next workflow action: G6 part B; B1 (v1-final tag) first, each B step on explicit user confirmation
 
 ## Current workstream
 

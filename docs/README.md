@@ -19,3 +19,4 @@ Current documentation for MonoOLED Studio:
 - `rewrite/G4_EVIDENCE.md` — G4 evidence: desktop app sub-gates, Automation API replay, performance budgets, deviations.
 - `rewrite/G5_EVIDENCE.md` — G5 evidence: three-platform release candidates, install tests, V1 performance comparison.
 - `rewrite/G6_CUTOVER_PLAN.md` — G6 plan: v1-final tag, V1 removal, v2.0.0 release; each irreversible step needs user confirmation.
+- `rewrite/G6_EVIDENCE.md` — G6 evidence: deletion dry runs, parity gap found before removal, release workflow dry run.
