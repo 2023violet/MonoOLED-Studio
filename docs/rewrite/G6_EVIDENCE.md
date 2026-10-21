@@ -2,7 +2,7 @@
 
 - 日期：2026-10-20 至 2026-10-21
 - 计划：`G6_CUTOVER_PLAN.md`
-- 状态：**A 段完成，代理自检完成；用户尚未审阅。B 段（打 tag、删除 V1、发布）一步也没有执行，每一步都需要用户单独确认。**
+- 状态：**A 段完成，代理自检完成。B1 已在用户确认后执行（见 §7）；B2–B4 每一步都需要用户单独确认。**
 
 ## 1. 删除演练（A1）
 
@@ -35,7 +35,7 @@
 
 ## 4. 文档（A3）
 
-V2 文档描述的是删除 V1 之后的仓库，因此和删除放在同一个本地提交里：分支 `g6/cutover` 上的 `6b43543`。这个分支没有推送。
+V2 文档描述的是删除 V1 之后的仓库，因此和删除放在同一个本地提交里：分支 `g6/cutover`（最初为 `6b43543`，变基到 main 后为 `168d4f4`）。这个分支没有推送。
 
 - 共 361 个文件，+531 / −41737 行。
 - 改写的文档：README、CONTRIBUTING、SECURITY、AGENTS、`docs/AI_HANDOFF.md`、中英文用户手册、新的 `docs/BUILD.md`（取代 `WINDOWS_BUILD.md`）、`tools/README.md`、Issue 与 PR 模板、`docs/ENGINEERING_HISTORY.md` 的结尾段落，以及 `.ai/CURRENT_STATE.md`。
@@ -75,7 +75,7 @@ V2 文档描述的是删除 V1 之后的仓库，因此和删除放在同一个�
 
 | 步骤 | 内容 | 状态 |
 |---|---|---|
-| B1 | 在 main 当前 V1 状态打 annotated tag `v1-final` 并推送 | 待确认 |
+| B1 | 在 main 当前 V1 状态打 annotated tag `v1-final` 并推送 | **已完成**（2026-10-21，用户确认后执行）：tag 对象 `f4a3ec4`，指向 `65c92de`，只推送了这一个 tag。推送触发了 V1 的只读 `CI` 工作流，没有触发任何发布工作流，也没有创建 Release |
 | B2 | 把 `g6/cutover` 快进合入 main 并推送（删除 V1，换成 V2 文档） | 待确认 |
 | B3 | 打 annotated tag `v2.0.0` 并推送，自动生成草稿 Release | 待确认 |
 | B4 | 用户检查草稿后发布 | 待确认 |
