@@ -107,6 +107,23 @@ impl EditorSession {
         })
     }
 
+    /// V1 `reset_scene`: rebind this session to another scene. History,
+    /// resources, runtime state and the disk fingerprint belong to the scene,
+    /// so they are reset at the boundary (the undo limit is kept).
+    pub fn reset_scene(&mut self, doc: SceneDoc) -> CoreResult<()> {
+        let state = SceneRuntime::new(&doc.data, None)?.state;
+        self.disk_fingerprint = std::fs::read(&doc.path).ok().map(|b| hex_digest(&b));
+        self.doc = doc;
+        self.state = state;
+        self.elapsed = 0;
+        self.resources = DiskResources::new();
+        self.dirty = false;
+        self.undo.clear();
+        self.redo.clear();
+        self.coalesce_open = false;
+        Ok(())
+    }
+
     /// Preference `performance.undo_history`; trims existing history to fit.
     pub fn set_max_undo(&mut self, limit: usize) {
         self.max_history = limit.max(1);

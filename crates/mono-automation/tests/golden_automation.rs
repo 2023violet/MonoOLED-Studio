@@ -258,7 +258,7 @@ fn crlf_digest(path: &Path) -> String {
     hex_digest(&out)
 }
 
-fn compare_files(root: &Path, expected: &Map<String, Value>) -> Vec<String> {
+fn compare_files(root: &Path, expected: &Map<String, Value>, steps: &[Value]) -> Vec<String> {
     let actual = tracked_files(root);
     let mut problems = Vec::new();
     let expected_keys: Vec<&String> = expected.keys().collect();
@@ -281,13 +281,9 @@ fn compare_files(root: &Path, expected: &Map<String, Value>) -> Vec<String> {
             continue;
         };
         let path = root.join(rel);
-        if rel.ends_with(".png") {
-            if decode_image(&std::fs::read(&path).unwrap()).is_err() {
-                problems.push(format!("{rel}: not a decodable PNG"));
-            }
-        } else if rel.ends_with(".zip") {
-            if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) == 0 {
-                problems.push(format!("{rel}: empty ZIP"));
+        if rel.ends_with(".png") || rel.ends_with(".zip") {
+            if let Some(problem) = content_check(root, rel, steps) {
+                problems.push(format!("{rel}: {problem}"));
             }
         } else if Some(actual_sha.as_str()) != sha.as_str()
             && Some(crlf_digest(&path).as_str()) != sha.as_str()
@@ -296,6 +292,146 @@ fn compare_files(root: &Path, expected: &Map<String, Value>) -> Vec<String> {
         }
     }
     problems
+}
+
+/// 1-bit rows of a PNG (lit = red channel >= 128, like the renderer's frames).
+fn png_rows(bytes: &[u8]) -> (usize, usize, Vec<Vec<u8>>) {
+    let image = decode_image(bytes).unwrap();
+    let rows = image
+        .rgba
+        .chunks(image.width * 4)
+        .map(|row| row.chunks(4).map(|p| u8::from(p[0] >= 128)).collect())
+        .collect();
+    (image.width, image.height, rows)
+}
+
+fn vlsb(rows: &[Vec<u8>], width: usize) -> Vec<u8> {
+    let mut out = vec![0u8; width * rows.len().div_ceil(8)];
+    for (y, row) in rows.iter().enumerate() {
+        for (x, v) in row.iter().enumerate() {
+            if *v != 0 {
+                out[(y / 8) * width + x] |= 1 << (y % 8);
+            }
+        }
+    }
+    out
+}
+
+fn json_rows(value: &Value) -> Vec<Vec<u8>> {
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            r.as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap() as u8)
+                .collect()
+        })
+        .collect()
+}
+
+fn zip_members(path: &Path) -> BTreeMap<String, Vec<u8>> {
+    use std::io::Read;
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(path).unwrap()).unwrap();
+    let mut out = BTreeMap::new();
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).unwrap();
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        out.insert(file.name().unwrap().to_string(), data);
+    }
+    out
+}
+
+fn find_step<'a>(steps: &'a [Value], method: &str) -> Vec<&'a Value> {
+    steps
+        .iter()
+        .filter(|s| s["request"]["method"] == method)
+        .collect()
+}
+
+/// Encoder-independent content rule for every PNG/ZIP the corpus tracks.
+/// Unknown files fail, so nothing passes on "decodable" alone.
+fn content_check(root: &Path, rel: &str, steps: &[Value]) -> Option<String> {
+    let path = root.join(rel);
+    let bytes = std::fs::read(&path).unwrap();
+    // Reference frames: pixels must equal the sibling golden BIN (exact vs V1).
+    if let Some((dir, name)) = rel.rsplit_once("/reference/") {
+        let bin = root
+            .join(dir)
+            .join("golden")
+            .join(name.replace(".png", ".bin"));
+        let Ok(golden) = std::fs::read(&bin) else {
+            return Some("missing sibling golden BIN".into());
+        };
+        let (w, _, rows) = png_rows(&bytes);
+        return (vlsb(&rows, w) != golden).then(|| "pixels differ from golden BIN".into());
+    }
+    match rel {
+        "exports/preview.png" => {
+            let v1 = find_step(steps, "render.png")[0]["response"]["result"]["png_base64"]
+                .as_str()
+                .unwrap();
+            (png_pixels(v1) != decode_png_pixels(&bytes))
+                .then(|| "pixels differ from V1 render.png".into())
+        }
+        "exports/annotated.png" => {
+            let (w, h, _) = png_rows(&bytes);
+            ((w, h) != (128 * 3, 32 * 3))
+                .then(|| format!("size {w}x{h}, expected 384x96 (scale 3)"))
+        }
+        "assets/golden/blank.png" | "assets/golden/imported.png" => {
+            let (w, h, rows) = png_rows(&bytes);
+            ((w, h) != (8, 4) || rows.iter().flatten().any(|v| *v == 0))
+                .then(|| "expected an 8x4 fully lit bitmap".into())
+        }
+        "exports/golden_font.zip" => {
+            for (name, data) in zip_members(&path) {
+                let disk = std::fs::read(root.join("fonts/golden").join(&name)).ok();
+                if disk.as_deref() != Some(data.as_slice()) {
+                    return Some(format!("member {name} differs from fonts/golden"));
+                }
+            }
+            None
+        }
+        "exports/handoff.zip" => {
+            let members = zip_members(&path);
+            let mut golden = 0;
+            for (name, data) in &members {
+                if let Some(frame) = name.strip_prefix("golden/") {
+                    golden += 1;
+                    let exported = std::fs::read(root.join("exports/all/golden").join(frame)).ok();
+                    if exported.as_deref() != Some(data.as_slice()) {
+                        return Some(format!("member {name} differs from export.all golden"));
+                    }
+                }
+            }
+            (golden != 168).then(|| format!("{golden} golden frames, expected 168"))
+        }
+        _ if rel.starts_with("fonts/golden/glyphs/U+") => {
+            let code = u32::from_str_radix(&rel[rel.len() - 8..rel.len() - 4], 16).unwrap();
+            let ch = char::from_u32(code).unwrap();
+            let (_, _, rows) = png_rows(&bytes);
+            let expected = match ch {
+                'A' => json_rows(
+                    &find_step(steps, "font.get_glyph")[0]["response"]["result"]["pixels"],
+                ),
+                'Z' => json_rows(
+                    &find_step(steps, "font.update_glyph")[0]["request"]["params"]["pixels"],
+                ),
+                other => mono_core::font::builtin_glyph_rows(other, (5, 8), Some(6)).unwrap(),
+            };
+            (rows != expected).then(|| format!("glyph {ch:?} pixels differ"))
+        }
+        _ => Some("no content rule for this encoder output".into()),
+    }
+}
+
+fn decode_png_pixels(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
+    let image = decode_image(bytes).unwrap();
+    (image.width, image.height, image.rgba)
 }
 
 fn wait_for_jobs(service: &Service) {
@@ -352,7 +488,11 @@ fn v1_automation_sessions_replay_identically() {
             }
             steps_checked += 1;
         }
-        for problem in compare_files(&root, case["expected"]["files_sha256"].as_object().unwrap()) {
+        for problem in compare_files(
+            &root,
+            case["expected"]["files_sha256"].as_object().unwrap(),
+            case["expected"]["steps"].as_array().unwrap(),
+        ) {
             failures.push(format!("{id} files: {problem}"));
         }
         let _ = std::fs::remove_dir_all(&root);

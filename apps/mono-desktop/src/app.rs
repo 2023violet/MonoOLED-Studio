@@ -83,6 +83,10 @@ pub struct App {
     pub profiler: Profiler,
     pub last_autosave: std::time::Instant,
     pub agent: Option<Agent>,
+    /// False for screenshots, benches and tests: never block on a dialog.
+    pub interactive: bool,
+    /// Answer used for unsaved-changes questions when not interactive.
+    pub scripted_choice: Option<crate::guard::Unsaved>,
 }
 
 pub(crate) fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
@@ -126,6 +130,8 @@ impl App {
             profiler: Profiler::default(),
             last_autosave: std::time::Instant::now(),
             agent: None,
+            interactive: false,
+            scripted_choice: None,
         }
     }
 
@@ -208,17 +214,32 @@ impl App {
         Ok(())
     }
 
+    /// V1 `_project_screen_changed`: ask about unsaved edits, then switch.
     pub fn open_screen(&mut self, screen_id: &str) -> Result<(), CoreError> {
-        if self.session.as_ref().is_some_and(|s| s.dirty) {
-            self.save()?;
-        }
-        let Some(project) = self.project.as_mut() else {
+        if !self.confirm_scene_transition() {
+            self.refresh_navigator();
             return Ok(());
-        };
-        project.set_active_screen(screen_id)?;
-        project.save()?;
-        let scene = load_project_scene(project, Some(screen_id))?;
-        self.bind_scene(scene)
+        }
+        self.switch_screen(screen_id)
+    }
+
+    /// Re-derive the pixel-diff baseline after the session was rebound in place
+    /// (Agent `project.open_screen` and friends).
+    pub fn rebaseline(&mut self) {
+        if let Some(session) = self.session.as_mut() {
+            self.baseline_pixels = session
+                .render()
+                .map(|r| r.framebuffer.pixels().to_vec())
+                .unwrap_or_default();
+            self.baseline_elements = session
+                .scene()
+                .get("elements")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+        }
+        self.selection.clear();
+        self.drag = None;
     }
 
     pub fn scan_project_files(&mut self) {

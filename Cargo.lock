@@ -2680,18 +2680,20 @@ dependencies = [
 
 [[package]]
 name = "mono-automation"
-version = "2.0.0-alpha.1"
+version = "2.0.0-rc.1"
 dependencies = [
+ "getrandom 0.3.4",
  "mono-core",
  "mono-font",
  "mono-project",
  "serde_json",
  "sha2",
+ "zip",
 ]
 
 [[package]]
 name = "mono-cli"
-version = "2.0.0-alpha.1"
+version = "2.0.0-rc.1"
 dependencies = [
  "mono-automation",
  "mono-core",
@@ -2701,7 +2703,7 @@ dependencies = [
 
 [[package]]
 name = "mono-core"
-version = "2.0.0-alpha.1"
+version = "2.0.0-rc.1"
 dependencies = [
  "indexmap",
  "serde",
@@ -2711,7 +2713,7 @@ dependencies = [
 
 [[package]]
 name = "mono-desktop"
-version = "2.0.0-alpha.1"
+version = "2.0.0-rc.1"
 dependencies = [
  "arboard",
  "mono-automation",
@@ -2722,11 +2724,12 @@ dependencies = [
  "serde_json",
  "slint",
  "slint-build",
+ "winresource",
 ]
 
 [[package]]
 name = "mono-font"
-version = "2.0.0-alpha.1"
+version = "2.0.0-rc.1"
 dependencies = [
  "ab_glyph",
  "mono-core",
@@ -2735,7 +2738,7 @@ dependencies = [
 
 [[package]]
 name = "mono-project"
-version = "2.0.0-alpha.1"
+version = "2.0.0-rc.1"
 dependencies = [
  "mono-core",
  "mono-font",
@@ -5652,6 +5655,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winresource"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2bc6d36480b829272a5bdabf08e6dca8004761c1da7e35efef800540c66221b"
+dependencies = [
+ "toml",
+ "version_check",
 ]
 
 [[package]]

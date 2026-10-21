@@ -6,11 +6,9 @@
 //! `Bridge::drain`, exactly like V1's queued bridge: a caller may time out only
 //! while its request is still queued, never after the edit started.
 
-use std::collections::hash_map::RandomState;
-use std::hash::{BuildHasher, Hasher};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
@@ -33,10 +31,13 @@ pub fn dispatch_json_rpc(service: &mut Service, request: &Value) -> Value {
             .get("method")
             .map(py_str)
             .ok_or_else(|| RpcError::key("method"))?;
+        // V1 `dict(request.get('params') or {})`: every falsy value means no params.
         let mut params: Map<String, Value> = match request.get("params") {
-            None | Some(Value::Null) => Map::new(),
             Some(Value::Object(map)) => map.clone(),
-            Some(_) => return Err(RpcError::invalid("params must be an object")),
+            Some(value) if mono_core::pyvalue::py_truthy(value) => {
+                return Err(RpcError::invalid("params must be an object"));
+            }
+            _ => Map::new(),
         };
         let expected = params.remove("_expected_revision");
         let tx = params
@@ -71,21 +72,14 @@ pub fn dispatch_json_rpc(service: &mut Service, request: &Value) -> Value {
     }
 }
 
-/// 24 random bytes as URL-safe base64 (V1 `secrets.token_urlsafe(24)`).
-/// `RandomState` keys are seeded from the OS random source on every platform.
+/// 24 random bytes from the OS CSPRNG as URL-safe base64 (V1
+/// `secrets.token_urlsafe(24)`).
 pub fn session_token() -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut bytes = Vec::with_capacity(24);
-    for i in 0u64..3 {
-        let mut hasher = RandomState::new().build_hasher();
-        hasher.write_u64(i);
-        hasher.write_u128(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos(),
-        );
-        bytes.extend_from_slice(&hasher.finish().to_le_bytes());
+    let mut bytes = [0u8; 24];
+    if getrandom::fill(&mut bytes).is_err() {
+        // No OS randomness: refuse to hand out a guessable token.
+        return String::new();
     }
     bytes
         .chunks(3)
@@ -177,26 +171,64 @@ pub struct Bridge {
     thread: Option<JoinHandle<()>>,
 }
 
+/// Longest accepted request line; longer lines close the connection.
+pub const MAX_LINE: usize = 16 * 1024 * 1024;
+/// Concurrent client connections; more are refused.
+pub const MAX_CONNECTIONS: usize = 32;
+/// Idle connections are closed after this long without a request.
+pub const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+fn reply(writer: &mut TcpStream, response: &Value) -> bool {
+    let mut text = serde_json::to_string(response).unwrap_or_default();
+    text.push('\n');
+    writer
+        .write_all(text.as_bytes())
+        .and_then(|()| writer.flush())
+        .is_ok()
+}
+
 fn serve_connection(stream: TcpStream, token: &str, queue: &Sender<Arc<Call>>, stop: &AtomicBool) {
+    let _ = stream.set_read_timeout(Some(IDLE_TIMEOUT));
     let Ok(reader) = stream.try_clone() else {
         return;
     };
     let mut writer = stream;
-    for line in BufReader::new(reader).lines() {
+    let mut reader = BufReader::new(reader);
+    loop {
         if stop.load(Ordering::SeqCst) {
             break;
         }
-        let Ok(line) = line else { break };
-        if line.trim().is_empty() {
+        // Bounded read: a peer cannot make us buffer an unbounded line.
+        let mut line = Vec::new();
+        match (&mut reader)
+            .take(MAX_LINE as u64 + 1)
+            .read_until(b'\n', &mut line)
+        {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        if line.len() > MAX_LINE && !line.ends_with(b"\n") {
+            let _ = reply(
+                &mut writer,
+                &json!({"jsonrpc": "2.0", "id": null, "error": {"code": "INVALID_JSON", "message": format!("request line exceeds {MAX_LINE} bytes")}}),
+            );
+            break;
+        }
+        let text = String::from_utf8_lossy(&line);
+        if text.trim().is_empty() {
             continue;
         }
-        let response = match serde_json::from_str::<Value>(&line) {
+        let response = match serde_json::from_str::<Value>(&text) {
             Err(error) => {
                 json!({"jsonrpc": "2.0", "id": null, "error": {"code": "INVALID_JSON", "message": error.to_string()}})
             }
+            // V1 `req.pop('token')` fails for non-objects inside the INVALID_JSON branch.
+            Ok(request) if !request.is_object() => {
+                json!({"jsonrpc": "2.0", "id": null, "error": {"code": "INVALID_JSON", "message": "request must be a JSON object"}})
+            }
             Ok(mut request) => {
                 let supplied = request.as_object_mut().and_then(|m| m.remove("token"));
-                if supplied.as_ref().and_then(Value::as_str) != Some(token) {
+                if token.is_empty() || supplied.as_ref().and_then(Value::as_str) != Some(token) {
                     json!({"jsonrpc": "2.0", "id": request.get("id").cloned().unwrap_or(Value::Null), "error": {"code": "UNAUTHORIZED", "message": "invalid session token"}})
                 } else {
                     let call = Arc::new(Call {
@@ -211,15 +243,18 @@ fn serve_connection(stream: TcpStream, token: &str, queue: &Sender<Arc<Call>>, s
                 }
             }
         };
-        let mut text = serde_json::to_string(&response).unwrap_or_default();
-        text.push('\n');
-        if writer
-            .write_all(text.as_bytes())
-            .and_then(|()| writer.flush())
-            .is_err()
-        {
+        if !reply(&mut writer, &response) {
             break;
         }
+    }
+}
+
+/// Decrements the live-connection count when a client thread ends.
+struct ConnectionSlot(Arc<AtomicUsize>);
+
+impl Drop for ConnectionSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -233,13 +268,23 @@ impl Bridge {
         let (sender, queue) = channel();
         let stop = Arc::new(AtomicBool::new(false));
         let (thread_token, thread_stop) = (token.clone(), Arc::clone(&stop));
+        let live = Arc::new(AtomicUsize::new(0));
         let thread = std::thread::Builder::new()
             .name("MonoOLED-AgentBridge".into())
             .spawn(move || {
                 while !thread_stop.load(Ordering::SeqCst) {
                     match listener.accept() {
-                        Ok((stream, _)) => {
+                        Ok((mut stream, _)) => {
                             let _ = stream.set_nonblocking(false);
+                            if live.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+                                live.fetch_sub(1, Ordering::SeqCst);
+                                let _ = reply(
+                                    &mut stream,
+                                    &json!({"jsonrpc": "2.0", "id": null, "error": {"code": "BUSY", "message": "too many agent connections"}}),
+                                );
+                                continue;
+                            }
+                            let slot = ConnectionSlot(Arc::clone(&live));
                             let (t, s, st) = (
                                 thread_token.clone(),
                                 sender.clone(),
@@ -247,7 +292,10 @@ impl Bridge {
                             );
                             let _ = std::thread::Builder::new()
                                 .name("MonoOLED-AgentClient".into())
-                                .spawn(move || serve_connection(stream, &t, &s, &st));
+                                .spawn(move || {
+                                    let _slot = slot;
+                                    serve_connection(stream, &t, &s, &st);
+                                });
                         }
                         Err(_) => std::thread::sleep(Duration::from_millis(25)),
                     }
@@ -355,8 +403,56 @@ mod tests {
     }
 
     #[test]
+    fn envelope_matches_v1_for_non_objects_and_falsy_params() {
+        let mut bridge = Bridge::start(0).unwrap();
+        let mut svc = service();
+        let ok = json!({"jsonrpc": "2.0", "id": 4, "method": "project.get", "params": [], "token": bridge.token});
+        let responses = roundtrip(
+            &bridge,
+            &mut svc,
+            &format!(
+                "[]
+5
+{ok}
+"
+            ),
+        );
+        assert_eq!(responses[0]["error"]["code"], "INVALID_JSON");
+        assert_eq!(responses[1]["error"]["code"], "INVALID_JSON");
+        assert_eq!(responses[2]["result"]["ok"], true);
+        bridge.stop();
+    }
+
+    #[test]
+    fn oversized_lines_and_extra_connections_are_refused() {
+        let mut bridge = Bridge::start(0).unwrap();
+        let mut svc = service();
+        let huge = "x".repeat(MAX_LINE + 10);
+        let responses = roundtrip(&bridge, &mut svc, &huge);
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0]["error"]["code"], "INVALID_JSON");
+        let held: Vec<TcpStream> = (0..MAX_CONNECTIONS)
+            .map(|_| TcpStream::connect(("127.0.0.1", bridge.port)).unwrap())
+            .collect();
+        std::thread::sleep(Duration::from_millis(200));
+        let mut extra = TcpStream::connect(("127.0.0.1", bridge.port)).unwrap();
+        extra
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(&mut extra).read_line(&mut line).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&line).unwrap()["error"]["code"],
+            "BUSY"
+        );
+        drop(held);
+        bridge.stop();
+    }
+
+    #[test]
     fn session_tokens_are_url_safe_and_distinct() {
         let (a, b) = (session_token(), session_token());
+        assert!(!a.is_empty());
         assert_eq!(a.len(), 32);
         assert_ne!(a, b);
         assert!(

@@ -14,7 +14,7 @@
 | G4b | Designer：选择/多选/拖动/对齐/分布/吸附/状态/时间线（G3 已有）；本阶段补齐模板、资源导入/转换/健康检查、位图文字、缩略图墙、自动保存与恢复、命令面板、面板开关、交互性能报告、V1 固定快捷键 | 同上 | 截图 ✅；测试 ✅；性能见 §4 |
 | G4c | Font Lab：字形列表、共享像素画布编辑、切换时自动保存、生成/更新字形（后台线程 + 进度）、尺寸变更确认、TTF 自动排版、新建/打开字库 | 同上 | 截图 ✅；测试 ✅ |
 | G4d | 偏好设置窗口（V1 七个分区、搜索、即时生效、保存状态）；可配置快捷键（冲突检测，窗口级分发）；浅色/深色/高对比；中文/英文 | 同上 | 截图 ✅；测试 ✅；主题切换性能 ✅ |
-| G4e | Automation API 1.3.0：服务、5 个域分发器、事务、事件流、作业、localhost JSON-RPC（会话令牌、UI 线程排队执行）；`mono bridge`；桌面 Tools → Agent Bridge 共享 Designer 会话 | 回放 V1 录制的请求/响应，结果一致 | ✅ 18 个会话、152 步全部一致（MEASURED，见 §2） |
+| G4e | Automation API 1.3.0：服务、5 个域分发器、事务、事件流、作业、localhost JSON-RPC（会话令牌、UI 线程排队执行）；`mono bridge`；桌面 Tools → Agent Bridge 共享 Designer 会话 | 回放 V1 录制的请求/响应，结果一致 | ✅ 18 个会话、152 步的响应一致；PNG/ZIP 编码器输出按内容比较（规则见 §2，MEASURED） |
 
 截图（MEASURED，`--screenshot` 模式在真实窗口内截取）：`g4/designer_zh.png`、`g4/designer_dark.png`、`g4/designer_en.png`、`g4/pixel_studio.png`、`g4/font_lab.png`、`g4/preferences.png`、`g4/command_palette_en.png`。
 
@@ -25,10 +25,16 @@
 - 命令：`cargo test -p mono-automation --release --test golden_automation`，退出码 0。
 - 回放 `fixtures/golden/automation.json` 全部 18 个用例：16 个会话共 150 步 + 2 个原始请求，测试断言实际检查数为 152。
 - 比较方式：响应按语料规则归一化（项目根 → `${PROJECT_ROOT}`、`elapsed_ms`）后**整体相等**；会话结束后的文件集合与语料 `files_sha256` 的键集合相等。
-- 编码器相关字段按语料自身的说明（"PNG/ZIP file digests depend on the encoder; Rust compares them by content where applicable"）处理，属于 G1 偏差 4 的延伸：
-  - `render.png` 的 `png_base64` 解码后逐像素比较；
-  - `asset.*` 的 `sha256`/`bytes`、`render.preview_file`/`render.annotated_preview`/`export.font_pack`/`export.code_ai_handoff` 的 `sha256` 不比较字节，改为检查文件存在、PNG 可解码、ZIP 非空；
+- 编码器相关字段按语料自身的说明（"PNG/ZIP file digests depend on the encoder; Rust compares them by content where applicable"）处理，属于 G1 偏差 4 的延伸。响应中的 `asset.*` 的 `sha256`/`bytes` 以及若干 `*_file`/ZIP 的 `sha256` 不比较字节；对应的**文件内容**按以下规则逐一比较，语料中出现、但没有规则的 PNG/ZIP 会让测试失败（审查返工后，MEASURED）：
+  - `render.png`：`png_base64` 解码后与 V1 逐像素比较；`exports/preview.png` 与 V1 `render.png` 逐像素比较；
+  - 导出目录中的每个 `reference/*.png`（共 169 个）：解码后的 VLSB 必须等于同名 `golden/*.bin`，后者与 V1 逐字节一致；
+  - `exports/handoff.zip`：解压后 168 个 `golden/*.bin` 必须与 `export.all` 的同名文件逐字节一致；
+  - `exports/golden_font.zip`：每个成员与 `fonts/golden/` 下的文件逐字节一致；
+  - 字形 PNG：'A' 与 V1 `font.get_glyph` 响应的像素一致，'Z' 与 `font.update_glyph` 请求的像素一致，其余与内置 5×7 字形（G1 已证明与 V1 逐字节一致）一致；
+  - `assets/golden/*.png`：8×4、全部点亮（与请求一致）；
+  - `exports/annotated.png`：只比较尺寸（384×96），标注文字字体不同（偏差 3）；
   - 其余字段（VLSB 哈希、JSON 清单、错误码与消息、版本号、事件流）逐字节一致。
+- ZIP 内的非 PNG 成员（契约 JSON、说明文件）没有 V1 逐成员摘要可比，只与本次导出的同名文件比较一致性，标 `DOCUMENTED`。
 - 文本文件的 CRLF：V1 用 `write_text` 写的 Markdown 在 Windows 上为 CRLF（G1 偏差 2/12），测试接受 LF 内容按 CRLF 计算后的哈希。
 - 另有 `bridge` 真实套接字测试（令牌校验、UI 线程排队执行、非法 JSON）和桌面端 Agent 测试（经 TCP 修改 Designer 实时会话，形成一步可撤销操作）；以及 `mono bridge` 与 Python 客户端的端到端冒烟（权限拒绝、令牌错误）。
 
@@ -51,14 +57,16 @@
 | Pixel 笔画输入 → 画面 p95（256×128，8 倍） | ≤ 8 ms | 21.7 / 20.9 / 20.4 ms | ❌ |
 | 　其中应用处理 + 渲染工作 | — | 处理 ≤ 1.0 ms；渲染 p95 4.3–4.7 ms | （≤ 8 ms） |
 | 主题切换 p95 | ≤ 50 ms | 19.9 / 19.4 / 17.3 ms（渲染 p95 5.5 ms） | ✅ |
-| 冷启动（进程启动 → 首帧渲染完成） | ≤ 1 s | 985 / 893 / 872 ms；此前其他运行中出现过 1037–1297 ms | ⚠️ 临界，部分运行超标 |
+| 冷启动（进程启动 → 首帧渲染完成） | ≤ 1 s | 985 / 893 / 872 ms；其他运行中出现过 1037–1297 ms | ❌ 未达标（多次运行中有超标） |
 | 空闲私有内存 | ≤ 80 MB | 67.8 / 68.6 / 68.9 MB | ✅ |
-| UI 线程单次阻塞（最长同步处理） | ≤ 16 ms | 1.0 ms | ✅ |
+| UI 线程单次阻塞（最长同步处理） | ≤ 16 ms | 1.0 ms（仅覆盖基准中的笔画与主题切换处理函数） | ✅（范围有限） |
 
 未达标项的分析（MEASURED 数据 + 推断，推断部分标 HYPOTHESIS）：
 
 1. **笔画延迟**：在帧中拆分后，应用自身工作约 5–6 ms（处理 ≤ 1 ms + 渲染 p95 ≤ 4.7 ms），其余 8–15 ms 是从输入到合成器调度下一帧的等待。隐藏检查器与输出面板、关闭网格/标尺/预览均不改变结果，说明不是界面复杂度。等待来自 Windows DWM/vsync 节拍（HYPOTHESIS：AfterRendering 位于交换缓冲之后，包含 vblank 等待）。G2 spike 的 7.4 ms 是在同一机器上测得的，原因尚未查明（可能与当时的合成器状态有关，HYPOTHESIS）。不关闭垂直同步无法压到 8 ms 以下；关闭会引入画面撕裂。**此项需要用户决定**：维持定义（目前不通过），或在不放宽数值的前提下明确预算指的是"应用处理 + 渲染工作"。代理不自行改变定义。
 2. **完整证据包导出**：每个文件都按 V1 同样的可靠性契约写入（临时文件 + fsync + 重命名）。本机单次持久化写入约 5–7 ms，6 个文件 × 50 屏 = 300 次 fsync。已改为每批文件并发写入（从 2124 ms 降到约 1270 ms），但本机磁盘基本串行化 fsync。绕过 fsync 违反 AGENTS.md 的可靠性契约，不采用。spec 未说明"导出"指哪种，因此两种读法都列出，由用户在 Gate 中确认。
+- UI 线程阻塞一项只测了笔画和主题切换。导出全部、交接包、批量验证、缩略图墙和 Agent 批处理都在 UI 线程上同步执行（与 V1 相同），会阻塞数百毫秒，**不满足 ≤ 16 ms**，也未纳入测量。改为后台执行属于后续工作。
+
 3. **冷启动**：事件循环在约 90–180 ms 进入；OpenGL 上下文与驱动初始化到首次 `RenderingSetup` 约 520–600 ms；首帧渲染约 400 ms（着色器编译、字形）。去掉指定中文字体对此无明显影响。可选方案（需要用户取舍）：首帧使用软件渲染器、延迟 GL 初始化等。
 
 ## 5. 记录在案的偏差
@@ -69,7 +77,9 @@
 4. **偏好设置"重置工作区布局"**：Slint 面板没有可保存的几何布局，此按钮只恢复被隐藏的面板。**界面缩放（ui_scale）**在下次启动生效（Slint 在创建窗口时读取缩放系数）；V1 即时生效。
 5. **桌面 Agent Bridge 每 60 ms 处理一次请求队列**（V1 为 10 ms 定时器）；超时语义相同（只在请求仍排队时返回 TIMEOUT）。
 6. **会话令牌**由操作系统随机源播种的 `RandomState` 生成 24 字节（V1 为 `secrets.token_urlsafe(24)`）；仅用于本机回环接口。
-7. **矩阵级操作的资源缓存**：在一次渲染/校验/导出全部状态的过程中，每个资源文件只读取解码一次（批内视为不变）；交互式渲染仍按内容哈希校验每次读取，与 V1 一致。
+7. **后台作业的失败类型**：V1 记录 Python 异常类名（如 `ExportBlockedError`）；Rust 只区分 `KeyError` 与 `ValueError`。取消语义与 V1 相同：只有因取消而停止才记为 `cancelled`，取消后又因其他原因失败则记为 `failed`。
+8. **桥接连接限制**（Rust 新增的防护，V1 没有）：单行请求上限 16 MiB（超出即返回 `INVALID_JSON` 并关闭连接）、最多 32 个并发连接（超出返回 `BUSY`）、空闲 300 秒断开。
+9. **矩阵级操作的资源缓存**：在一次渲染/校验/导出全部状态的过程中，每个资源文件只读取解码一次（批内视为不变）；交互式渲染仍按内容哈希校验每次读取，与 V1 一致。
 
 ## 6. 跳过项与已知限制
 
@@ -80,7 +90,23 @@
 
 ## 7. 独立代理审查
 
-（审查完成后补记。）
+### 第一轮（代理审查，静态 + 探针，2026-10-20）：`REWORK REQUIRED`
+
+| # | 级别 | 发现 | 处理 |
+|---|---|---|---|
+| 1 | blocker | 关闭窗口、退出、打开项目/场景、新建项目时不询问未保存修改（Designer、Pixel Studio、Font Lab） | 新增 `guard.rs`：统一的保存/放弃/取消询问；窗口关闭（`on_close_requested`）、退出、打开、新建都先询问；4 个测试 |
+| 2 | blocker | 切换页面时静默保存；删除页面先改项目再丢弃错误，绑定到已删除的文件 | 切换页面改为询问（V1 `_project_screen_changed`）；删除页面先询问、再修改项目、再绑定下一页，错误不再丢弃；测试覆盖 |
+| 3 | blocker | Automation 切换页面后保留上一页的撤销历史与磁盘指纹（撤销会把旧页元素插入新页，保存失败） | 新增 `EditorSession::reset_scene`（V1 同名方法），`open_project_screen` 使用；桌面端 Agent 切换后重建差异基线；回归测试 `session_reset.rs` |
+| 4 | major | 事务回滚不重置运行时状态（回滚 `state.set_schema` 后无法渲染） | 回滚时 `reset_scene`（与 V1 相同）；回归测试 |
+| 5 | major | 回放测试对 PNG/ZIP 只检查"可解码/非空" | 改为 §2 中的逐项内容规则，未知文件判失败 |
+| 6 | major | 本机任意进程可在验证令牌前耗尽内存或线程 | 单行上限、并发连接上限、空闲超时；测试覆盖（偏差 8） |
+| 7 | minor | 非对象 JSON 返回 UNAUTHORIZED；假值 `params` 被拒绝 | 与 V1 对齐：`INVALID_JSON`；假值视为 `{}`；测试覆盖 |
+| 8 | minor | 作业失败类型被合并；取消后的其他失败记为 cancelled | 取消判定已修正；类型合并记为偏差 7 |
+| 9 | minor | 会话令牌不是 CSPRNG | 改用操作系统 CSPRNG（`getrandom`，已在依赖树中） |
+| 10 | minor | 冷启动应写"未达标"；UI 阻塞一行未说明范围 | §4 已改 |
+| 11 | minor | 自动保存恢复提示只在启动时出现 | 每次打开项目、场景或切换页面后都检查（与 V1 相同） |
+
+返工后验证（MEASURED）：`cargo test --workspace` 全部通过（mono-desktop 32、mono-automation 9 + 回放 + 2 个回归）；`cargo clippy -D warnings`、`cargo fmt --check`、`cargo deny check` 通过。返工尚未经第二轮代理审查。
 
 ## 8. 用户确认
 

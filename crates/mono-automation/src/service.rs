@@ -335,7 +335,11 @@ impl Service {
             .tx
             .remove(id)
             .ok_or_else(|| RpcError::Transaction(id.into()))?;
-        self.session.doc.data = tx.scene;
+        // V1 rollback rebinds the editor (`reset_scene`): runtime state and
+        // history must match the restored scene, not the rolled-back one.
+        let mut doc = self.session.doc.clone();
+        doc.data = tx.scene;
+        self.session.reset_scene(doc)?;
         self.selection.replace(&tx.selection, tx.primary.as_deref());
         self.notify("transaction.rolled_back", json!({}));
         Ok(self.result(json!({})))
@@ -533,8 +537,8 @@ impl Service {
         add_scene_keys(&mut doc);
         let path = doc.path.clone();
         let root = project.root.clone();
-        self.session.doc = doc;
-        self.session.state = init_state(&self.session.doc.data);
+        // V1 `editor_session.reset_scene`: history and fingerprint belong to the screen.
+        self.session.reset_scene(doc)?;
         self.source_path = Some(path.clone());
         self.project_root = root;
         self.selection.clear();

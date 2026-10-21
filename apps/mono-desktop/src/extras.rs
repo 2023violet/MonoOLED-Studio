@@ -545,7 +545,7 @@ impl App {
 
     /// V1 `_prompt_recovery_if_needed` (after a scene is opened).
     pub fn prompt_recovery(&mut self) {
-        if !self.prefs.bool("autosave.prompt_recovery") {
+        if !self.interactive || !self.prefs.bool("autosave.prompt_recovery") {
             return;
         }
         let Some(candidate) = self.autosave_manager().and_then(|m| m.recovery_candidate()) else {

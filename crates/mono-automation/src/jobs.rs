@@ -12,6 +12,15 @@ use crate::error::{RpcError, RpcResult};
 
 pub const TERMINAL: [&str; 3] = ["completed", "failed", "cancelled"];
 
+/// The runners' cancellation errors (ops: progress returned false; mono-project
+/// export: CANCELLED -> "operation cancelled").
+fn is_cancellation(error: &RpcError) -> bool {
+    matches!(
+        error.message(),
+        "job cancellation requested" | "operation cancelled"
+    )
+}
+
 /// Progress sink handed to a runner: returns false once cancellation was requested.
 pub type ProgressFn<'a> = &'a mut dyn FnMut(&str, usize, usize) -> bool;
 pub type Runner = Box<dyn FnOnce(ProgressFn<'_>) -> RpcResult<Value> + Send>;
@@ -144,7 +153,13 @@ impl JobManager {
                     !progress_cancel.load(Ordering::SeqCst)
                 };
                 let outcome = runner(&mut progress);
-                let cancelled = cancel.load(Ordering::SeqCst);
+                // V1: cancelled when the runner stopped for the cancellation (or
+                // finished after it was requested); any other error is a failure.
+                let cancelled = cancel.load(Ordering::SeqCst)
+                    && match &outcome {
+                        Ok(_) => true,
+                        Err(error) => is_cancellation(error),
+                    };
                 let mut registry = lock(&inner);
                 if let Some(job) = registry.jobs.get_mut(&job_id) {
                     match outcome {

@@ -8,6 +8,7 @@ mod canvas;
 mod extras;
 mod fontlab;
 mod fontlab_ui;
+mod guard;
 mod i18n;
 mod pixel;
 mod pixel_ui;
@@ -165,7 +166,7 @@ fn open_project_dialog(app: &Rc<RefCell<App>>) {
         return;
     };
     let mut a = app.borrow_mut();
-    if let Err(e) = a.open_project(&path) {
+    if let Err(e) = a.open_path_guarded(&path, false) {
         a.error(&e);
     }
 }
@@ -189,12 +190,15 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
                 .pick_file()
             {
                 let mut a = app.borrow_mut();
-                if let Err(e) = a.open_scene_file(&path) {
+                if let Err(e) = a.open_path_guarded(&path, true) {
                     a.error(&e);
                 }
             }
         }
         "new-project" => {
+            if !app.borrow_mut().confirm_transition() {
+                return;
+            }
             if let Some(dir) = rfd::FileDialog::new()
                 .set_title(t("action.new_project"))
                 .pick_folder()
@@ -258,7 +262,9 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
         "preferences" => app.borrow_mut().open_preferences(),
         "about" => AppModel::get(ui).set_about_visible(true),
         "exit" => {
-            let _ = slint::quit_event_loop();
+            if app.borrow_mut().confirm_transition() {
+                let _ = slint::quit_event_loop();
+            }
         }
         "new-screen" => app.borrow_mut().show_prompt(
             Prompt::NewScreen,
@@ -287,33 +293,10 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
         }
         "delete-screen" => {
             let mut a = app.borrow_mut();
-            let active = a
-                .project
-                .as_ref()
-                .map(mono_project::project::ProjectWorkspace::active_screen);
-            if let (Some(active), Some(project)) = (active, a.project.as_mut()) {
-                let others: Vec<String> = project
-                    .screens()
-                    .into_iter()
-                    .map(|s| s.id)
-                    .filter(|id| *id != active)
-                    .collect();
-                let result = match others.first() {
-                    Some(next) => project
-                        .set_active_screen(next)
-                        .and_then(|()| project.remove_screen(&active, true))
-                        .map(|()| next.clone()),
-                    None => Err(mono_core::CoreError::invalid(
-                        "project must keep at least one screen",
-                    )),
-                };
-                match result {
-                    Ok(next) => {
-                        let _ = a.open_screen(&next);
-                    }
-                    Err(e) => a.error(&e),
-                }
+            if let Err(e) = a.delete_active_screen() {
+                a.error(&e);
             }
+            a.refresh_all();
         }
         "assign-bitmap" => {
             let Some(path) = rfd::FileDialog::new()
@@ -382,6 +365,18 @@ fn switch_workspace(app: &Rc<RefCell<App>>, ui: &MainWindow, index: i32) {
 }
 
 fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
+    // V1 `closeEvent`: the window X asks about unsaved work like File → Exit.
+    let a = app.clone();
+    ui.window().on_close_requested(move || {
+        let proceed = a
+            .try_borrow_mut()
+            .map_or(true, |mut app| app.confirm_transition());
+        if proceed {
+            slint::CloseRequestResponse::HideWindow
+        } else {
+            slint::CloseRequestResponse::KeepWindowShown
+        }
+    });
     I18n::get(ui).on_tr(|lang, key| SharedString::from(i18n::tr(&lang, &key)));
 
     let (a, w) = (app.clone(), ui.as_weak());
@@ -672,6 +667,10 @@ fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
 
 fn main() {
     let process_start = std::time::Instant::now();
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("monooled-studio {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let args = parse_args();
     // V1 `appearance.ui_scale`: Slint reads its scale factor when the window is created.
     if std::env::var_os("SLINT_SCALE_FACTOR").is_none() {
@@ -703,7 +702,9 @@ fn main() {
         prefs.set("language", serde_json::json!(lang));
     }
     mark("window created");
+    AppModel::get(&ui).set_version(env!("CARGO_PKG_VERSION").into());
     let app = Rc::new(RefCell::new(App::new(ui.as_weak(), prefs)));
+    app.borrow_mut().interactive = args.screenshot.is_none() && args.bench.is_none();
     apply_appearance(&ui, &app.borrow(), args.theme.as_deref());
     wire(&ui, &app);
     {

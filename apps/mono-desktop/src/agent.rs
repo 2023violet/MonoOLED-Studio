@@ -122,6 +122,7 @@ impl App {
             self.log_event(summary);
         }
         if rebind {
+            self.rebaseline();
             self.scan_project_files();
         }
         self.refresh_all();
