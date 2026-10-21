@@ -97,7 +97,7 @@ jobs:
             # Test harness only (not a package dependency); with Recommends,
             # because Xvfb cannot start without xkb-data / x11-xkb-utils.
             apt-get install -y xvfb xauth
-            dpkg -s monooled-studio | grep -E "^(Status|Version)"
+            dpkg -s monooled-studio | grep -E "^(Status|Version|Depends)"
             monooled-studio --version | grep -F "monooled-studio $VERSION"
             monooled-cli version | grep -F "$VERSION"
             cp -R test_assets/projects/curing_lite /tmp/project
