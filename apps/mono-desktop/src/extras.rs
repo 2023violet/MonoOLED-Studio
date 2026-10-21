@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 use slint::Global;
 
 use crate::app::{App, Prompt, model, ss};
+use crate::bgjob::Outcome;
 use crate::i18n::trf;
 use crate::{AppModel, Shell};
 
@@ -30,7 +31,7 @@ pub enum Picker {
 }
 
 /// V1 command palette entries: (command key, i18n label key, action id).
-pub const PALETTE: [(&str, &str, &str); 15] = [
+pub const PALETTE: [(&str, &str, &str); 16] = [
     ("save", "action.save", "save"),
     ("validate", "action.batch_validate", "batch-validate"),
     ("handoff", "action.handoff", "handoff"),
@@ -50,6 +51,8 @@ pub const PALETTE: [(&str, &str, &str); 15] = [
     ("design_mode", "workspace.design", "workspace:0"),
     ("review_mode", "workspace.review", "workspace:3"),
     ("performance", "performance.title", "performance"),
+    // 2.x: delivery jobs run in the background and can be cancelled.
+    ("cancel_job", "action.cancel_job", "cancel-job"),
 ];
 
 /// Rolling timing samples (V1 `PerformanceProfiler(max_samples=180)`).
@@ -119,6 +122,10 @@ impl App {
             "import-asset" => self.import_asset_dialog(),
             "asset-health" => self.show_asset_health(),
             "thumbnail-wall" => self.thumbnail_wall(),
+            "cancel-job" => {
+                self.cancel_background();
+                Ok(())
+            }
             "bitmap-text" => self.begin_bitmap_text(),
             "autosave" => self.autosave_tick(true).map(|_| ()),
             "restore-autosave" => self.restore_autosave(),
@@ -359,31 +366,36 @@ impl App {
             std::process::id(),
             Instant::now().elapsed().as_nanos()
         ));
-        let result = (|| {
-            export_scene(&scene, &root, &work, &states, &mut |_, _, _| true)?;
-            let reference = work.join("reference");
-            let mut refs: Vec<PathBuf> = states
-                .iter()
-                .map(|(name, _)| reference.join(format!("{name}.png")))
-                .filter(|p| p.is_file())
-                .collect();
-            if refs.is_empty() {
-                if let Ok(entries) = std::fs::read_dir(&reference) {
-                    refs = entries.flatten().map(|e| e.path()).collect();
-                    refs.sort();
+        let lang = self.lang.clone();
+        self.start_background("action.thumbnail_wall", move |progress| {
+            let result = (|| {
+                export_scene(&scene, &root, &work, &states, progress)?;
+                let reference = work.join("reference");
+                let mut refs: Vec<PathBuf> = states
+                    .iter()
+                    .map(|(name, _)| reference.join(format!("{name}.png")))
+                    .filter(|p| p.is_file())
+                    .collect();
+                if refs.is_empty() {
+                    if let Ok(entries) = std::fs::read_dir(&reference) {
+                        refs = entries.flatten().map(|e| e.path()).collect();
+                        refs.sort();
+                    }
                 }
-            }
-            let columns = refs.len().clamp(1, 4);
-            build_thumbnail_wall(&refs, &path, columns, 4)
-        })();
-        let _ = std::fs::remove_dir_all(&work);
-        result?;
-        self.set_status(trf(
-            &self.lang,
-            "status.exported",
-            &[("count", states.len().to_string()), ("path", posix(&path))],
-        ));
-        Ok(())
+                let columns = refs.len().clamp(1, 4);
+                build_thumbnail_wall(&refs, &path, columns, 4)
+            })();
+            let _ = std::fs::remove_dir_all(&work);
+            result?;
+            Ok(Outcome {
+                status: trf(
+                    &lang,
+                    "status.exported",
+                    &[("count", states.len().to_string()), ("path", posix(&path))],
+                ),
+                ..Outcome::default()
+            })
+        })
     }
 
     // ----------------------------------------------------------- bitmap text

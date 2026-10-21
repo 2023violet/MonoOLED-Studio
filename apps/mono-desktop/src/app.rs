@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 use slint::{Global, ModelRc, SharedString, VecModel};
 
 use crate::agent::Agent;
+use crate::bgjob::{BackgroundJob, Outcome, Poll};
 use crate::canvas::image_from_pixels;
 use crate::extras::{Picker, Profiler};
 use crate::fontlab::FontLab;
@@ -78,6 +79,8 @@ pub struct App {
     pub import: Option<ImportState>,
     pub bench: Workbench,
     pub font: Option<FontLab>,
+    /// Export / handoff / batch validation / thumbnail wall running off the UI thread.
+    pub bg_job: Option<BackgroundJob>,
     pub picker: Option<Picker>,
     pub picker_matches: Vec<(String, String)>,
     pub profiler: Profiler,
@@ -130,6 +133,7 @@ impl App {
             import: None,
             bench: Workbench::default(),
             font: None,
+            bg_job: None,
             picker: None,
             picker_matches: Vec::new(),
             profiler: Profiler::default(),
@@ -1114,9 +1118,10 @@ impl App {
             .map(|s| (s.scene().clone(), s.root().to_path_buf()))
     }
 
-    pub fn export_states(&mut self, all: bool, output: &Path) -> Result<String, CoreError> {
+    /// Export the current state or the whole state matrix in the background.
+    pub fn start_export(&mut self, all: bool, output: PathBuf) -> Result<(), CoreError> {
         let Some((scene, root)) = self.scene_parts() else {
-            return Ok(String::new());
+            return Ok(());
         };
         let states = if all {
             build_export_states(&scene, IntegerPolicy::Representative, 5000, false)?
@@ -1128,60 +1133,158 @@ impl App {
                 .unwrap_or_default();
             vec![("current".to_string(), state)]
         };
-        let summary = export_scene(&scene, &root, output, &states, &mut |_, _, _| true)?;
-        Ok(trf(
-            &self.lang,
-            "status.exported",
-            &[
-                ("count", summary.frame_count.to_string()),
-                ("path", posix(output)),
-            ],
-        ))
+        let lang = self.lang.clone();
+        self.start_background("action.export_all", move |progress| {
+            let summary = export_scene(&scene, &root, &output, &states, progress)?;
+            Ok(Outcome {
+                status: trf(
+                    &lang,
+                    "status.exported",
+                    &[
+                        ("count", summary.frame_count.to_string()),
+                        ("path", posix(&output)),
+                    ],
+                ),
+                ..Outcome::default()
+            })
+        })
     }
 
-    pub fn handoff(&mut self, output: &Path) -> Result<String, CoreError> {
+    /// Build the Code AI handoff ZIP in the background.
+    pub fn start_handoff(&mut self, output: PathBuf) -> Result<(), CoreError> {
         let Some((scene, root)) = self.scene_parts() else {
-            return Ok(String::new());
+            return Ok(());
         };
         let states = build_export_states(&scene, IntegerPolicy::Representative, 5000, false)?;
-        let summary = build_handoff_package(
-            &scene,
-            &root,
-            output,
-            &states,
-            IntegerPolicy::Representative,
-            &mut |_, _, _| true,
-        )?;
-        Ok(trf(
-            &self.lang,
-            "status.handoff_done",
-            &[
-                ("count", summary.frame_count.to_string()),
-                ("path", posix(output)),
-            ],
-        ))
+        let lang = self.lang.clone();
+        self.start_background("action.handoff", move |progress| {
+            let summary = build_handoff_package(
+                &scene,
+                &root,
+                &output,
+                &states,
+                IntegerPolicy::Representative,
+                progress,
+            )?;
+            Ok(Outcome {
+                status: trf(
+                    &lang,
+                    "status.handoff_done",
+                    &[
+                        ("count", summary.frame_count.to_string()),
+                        ("path", posix(&output)),
+                    ],
+                ),
+                ..Outcome::default()
+            })
+        })
     }
 
-    pub fn batch_validate(&mut self) -> Result<String, CoreError> {
+    /// Validate the boundary state matrix in the background.
+    pub fn start_batch_validate(&mut self) -> Result<(), CoreError> {
         let Some((scene, root)) = self.scene_parts() else {
-            return Ok(String::new());
+            return Ok(());
         };
         let states = build_export_states(&scene, IntegerPolicy::Boundaries, 5000, false)?;
-        let matrix: Vec<_> = states.into_iter().map(|(_, s)| s).collect();
-        let summary = validate_matrix(&scene, &root, &matrix, &mut |_, _, _| true)?;
-        let report = matrix_report(&summary);
-        for line in report.lines().filter(|l| l.starts_with("- **")) {
-            self.log_event(line.to_string());
+        let lang = self.lang.clone();
+        self.start_background("action.batch_validate", move |progress| {
+            let matrix: Vec<_> = states.into_iter().map(|(_, s)| s).collect();
+            let summary = validate_matrix(&scene, &root, &matrix, progress)?;
+            let report = matrix_report(&summary);
+            Ok(Outcome {
+                status: trf(
+                    &lang,
+                    "status.batch_done",
+                    &[
+                        ("cases", summary.cases.to_string()),
+                        ("findings", summary.findings.to_string()),
+                        ("blockers", summary.blockers.to_string()),
+                    ],
+                ),
+                log: report
+                    .lines()
+                    .filter(|l| l.starts_with("- **"))
+                    .map(str::to_string)
+                    .collect(),
+                refresh: true,
+            })
+        })
+    }
+
+    /// Start `work` on a worker thread; one background job at a time.
+    pub fn start_background<F>(&mut self, label_key: &str, work: F) -> Result<(), CoreError>
+    where
+        F: FnOnce(&mut dyn FnMut(&str, usize, usize) -> bool) -> Result<Outcome, CoreError>
+            + Send
+            + 'static,
+    {
+        if let Some(job) = &self.bg_job {
+            return Err(CoreError::invalid(trf(
+                &self.lang,
+                "job.busy",
+                &[("label", job.label.clone())],
+            )));
         }
-        Ok(trf(
-            &self.lang,
-            "status.batch_done",
-            &[
-                ("cases", summary.cases.to_string()),
-                ("findings", summary.findings.to_string()),
-                ("blockers", summary.blockers.to_string()),
-            ],
-        ))
+        let label = self.t(label_key);
+        self.set_status(trf(&self.lang, "job.started", &[("label", label.clone())]));
+        self.log_event(format!("JOB_START {label_key}"));
+        self.bg_job = Some(BackgroundJob::spawn(label, work));
+        Ok(())
+    }
+
+    /// Job timer: progress in the status bar, then the result.
+    pub fn poll_background(&mut self) {
+        let Some(job) = &self.bg_job else { return };
+        match job.poll() {
+            Poll::Running(p) => {
+                let text = if p.total > 0 {
+                    trf(
+                        &self.lang,
+                        "job.progress",
+                        &[
+                            ("label", job.label.clone()),
+                            ("done", p.done.to_string()),
+                            ("total", p.total.to_string()),
+                        ],
+                    )
+                } else {
+                    trf(&self.lang, "job.started", &[("label", job.label.clone())])
+                };
+                if text != self.status {
+                    self.set_status(text);
+                }
+            }
+            Poll::Finished(result) => {
+                let label = job.label.clone();
+                self.bg_job = None;
+                match result {
+                    Ok(outcome) => {
+                        for line in outcome.log {
+                            self.log_event(line);
+                        }
+                        self.log_event(format!("JOB_DONE {label}"));
+                        self.set_status(outcome.status);
+                        if outcome.refresh {
+                            self.refresh_app();
+                        }
+                    }
+                    Err(e) if e.code == mono_project::export::CANCELLED => {
+                        self.log_event(format!("JOB_CANCELLED {label}"));
+                        self.set_status(trf(&self.lang, "job.cancelled", &[("label", label)]));
+                    }
+                    Err(e) => self.error(&e),
+                }
+            }
+        }
+    }
+
+    /// Ask the running background job to stop at its next progress report.
+    pub fn cancel_background(&mut self) {
+        if let Some(job) = &self.bg_job {
+            job.cancel();
+            let label = job.label.clone();
+            self.set_status(trf(&self.lang, "job.cancelling", &[("label", label)]));
+        }
     }
 
     pub fn current_framebuffer(&mut self) -> Option<mono_core::FrameBuffer> {

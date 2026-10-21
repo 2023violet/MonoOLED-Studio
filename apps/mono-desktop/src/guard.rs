@@ -103,6 +103,16 @@ impl App {
             self.report(&error);
             return false;
         }
+        // An export / handoff job is still writing files from the old scene.
+        if let Some(job) = &self.bg_job {
+            let error = CoreError::invalid(crate::i18n::trf(
+                &self.lang,
+                "job.running_close",
+                &[("label", job.label.clone())],
+            ));
+            self.report(&error);
+            return false;
+        }
         if !self.has_unsaved() {
             return true;
         }
@@ -290,6 +300,30 @@ mod tests {
         app.scripted_choice = Some(Unsaved::Discard);
         assert!(app.confirm_transition());
         assert!(!app.has_unsaved());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn export_runs_in_the_background_and_blocks_closing_until_done() {
+        let (mut app, root) = app("bgjob");
+        let out = root.join("exports").join("bg");
+        app.start_export(true, out.clone()).unwrap();
+        // Returned without doing the work; a second job is refused.
+        assert!(app.bg_job.is_some());
+        assert!(app.start_batch_validate().is_err());
+        assert!(!app.confirm_transition());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while app.bg_job.is_some() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "export did not finish"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            app.poll_background();
+        }
+        assert!(out.join("ui_contract.json").is_file());
+        assert!(app.status.contains("bg"), "{}", app.status);
+        assert!(app.confirm_transition());
         let _ = std::fs::remove_dir_all(&root);
     }
 

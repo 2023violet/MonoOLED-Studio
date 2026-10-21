@@ -4,6 +4,7 @@
 mod agent;
 mod app;
 mod bench;
+mod bgjob;
 mod canvas;
 mod display;
 mod extras;
@@ -232,9 +233,8 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
                 return;
             };
             let mut a = app.borrow_mut();
-            match a.export_states(action == "export-all", &dir) {
-                Ok(message) => a.set_status(message),
-                Err(e) => a.error(&e),
+            if let Err(e) = a.start_export(action == "export-all", dir) {
+                a.error(&e);
             }
         }
         "handoff" => {
@@ -243,9 +243,8 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
                 return;
             };
             let mut a = app.borrow_mut();
-            match a.handoff(&path) {
-                Ok(message) => a.set_status(message),
-                Err(e) => a.error(&e),
+            if let Err(e) = a.start_handoff(path) {
+                a.error(&e);
             }
         }
         "export-c-header" => {
@@ -264,11 +263,9 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
         }
         "batch-validate" => {
             let mut a = app.borrow_mut();
-            match a.batch_validate() {
-                Ok(message) => a.set_status(message),
-                Err(e) => a.error(&e),
+            if let Err(e) = a.start_batch_validate() {
+                a.error(&e);
             }
-            a.refresh_app();
         }
         "preferences" => app.borrow_mut().open_preferences(),
         "about" => AppModel::get(ui).set_about_visible(true),
@@ -792,6 +789,7 @@ fn main() {
             if let Ok(mut app) = a.try_borrow_mut() {
                 app.poll_font();
                 app.poll_agent();
+                app.poll_background();
             }
         },
     );

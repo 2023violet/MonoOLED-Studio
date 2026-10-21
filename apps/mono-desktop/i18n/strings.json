@@ -557,7 +557,14 @@
     "bench.display.bg_short": "background",
     "bench.display.grid_short": "lines",
     "bench.display.fill_short": "fill",
-    "bench.display.border_short": "border"
+    "bench.display.border_short": "border",
+    "job.busy": "{label} is still running. Wait for it to finish or cancel it (Ctrl+K → Cancel background job).",
+    "job.started": "{label}…",
+    "job.progress": "{label}… {done}/{total}",
+    "job.cancelling": "Cancelling {label}…",
+    "job.cancelled": "{label} cancelled",
+    "job.running_close": "{label} is still running. Wait for it to finish or cancel it before closing.",
+    "action.cancel_job": "Cancel background job"
   },
   "zh_CN": {
     "action.about": "关于 MonoOLED Studio",
@@ -1117,6 +1124,13 @@
     "bench.display.bg_short": "背景",
     "bench.display.grid_short": "线条",
     "bench.display.fill_short": "填充",
-    "bench.display.border_short": "边框"
+    "bench.display.border_short": "边框",
+    "job.busy": "“{label}”仍在进行，请等它完成，或取消它（Ctrl+K → 取消后台任务）。",
+    "job.started": "{label}…",
+    "job.progress": "{label}… {done}/{total}",
+    "job.cancelling": "正在取消“{label}”…",
+    "job.cancelled": "已取消“{label}”",
+    "job.running_close": "“{label}”仍在进行，请等它完成或取消后再关闭。",
+    "action.cancel_job": "取消后台任务"
   }
 }
