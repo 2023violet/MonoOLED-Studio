@@ -2,7 +2,7 @@
 
 - 日期：2026-10-20 至 2026-10-21
 - 计划：`G6_CUTOVER_PLAN.md`
-- 状态：**A 段完成，代理自检完成。B1、B2 已在用户确认后执行（见 §7）；B3、B4 每一步都需要用户单独确认。**
+- 状态：**A 段完成，代理自检完成。B1–B3 已在用户确认后执行（见 §7）；B4（发布草稿）需要用户确认。**
 
 ## 1. 删除演练（A1）
 
@@ -77,5 +77,23 @@ V2 文档描述的是删除 V1 之后的仓库，因此和删除放在同一个�
 |---|---|---|
 | B1 | 在 main 当前 V1 状态打 annotated tag `v1-final` 并推送 | **已完成**（2026-10-21，用户确认后执行）：tag 对象 `f4a3ec4`，指向 `65c92de`，只推送了这一个 tag。推送触发了 V1 的只读 `CI` 工作流，没有触发任何发布工作流，也没有创建 Release |
 | B2 | 把 `g6/cutover` 快进合入 main 并推送（删除 V1，换成 V2 文档） | **已完成**（2026-10-21，用户确认后执行）：main 从 `07eef12` 快进到 `8d7a790` 并推送。删除后的树上 `Rust` run `39587839835` 通过；`Package` run `39587869872`（手动触发）在三个平台上打包、安装测试、截图检查全部通过，Linux 干净容器里 `Depends: libc6 (>= 2.39) …` 安装成功。本地分支 `g6/cutover` 已删除 |
-| B3 | 打 annotated tag `v2.0.0` 并推送，自动生成草稿 Release | 待确认 |
+| B3 | 打 annotated tag `v2.0.0` 并推送，自动生成草稿 Release | **已完成**（2026-10-21，用户确认后执行）。详见表后说明 |
 | B4 | 用户检查草稿后发布 | 待确认 |
+
+B3 执行记录（MEASURED）：
+
+- main 推送到 `dbe35e4`。tag 对象 `be28ca2` 指向该提交。
+- `Release (Rust V2)` run `39594257418` 全部通过：
+  - 版本检查；
+  - 三平台打包与安装测试；
+  - 生成草稿。
+- 同一提交上的 `Rust` run `39594236528` 也通过。
+- 草稿 Release `v2.0.0` 状态为 draft，不是 prerelease；"Latest" 仍是 v1.2.3。
+- 草稿的附件：
+  - `MonoOLED-Studio-2.0.0-macos-arm64.dmg`：11.9 MB，`bd672386…`
+  - `MonoOLED-Studio-2.0.0-windows-x64.zip`：11.7 MB，`f89f578f…`
+  - `monooled-studio_2.0.0_amd64.deb`：11.6 MB，`cd80de84…`
+  - `SHA256SUMS`
+- 发布说明取自 CHANGELOG 2.0.0 一节。
+- 本机从草稿下载 zip，`sha256sum -c` 通过；解压后 `monooled-studio --version` 输出 `monooled-studio 2.0.0`，`mono version` 输出 `mono 2.0.0`。
+- CHANGELOG 中 2.0.0 的日期写的是 2026-10-20，tag 打在 2026-10-21。
