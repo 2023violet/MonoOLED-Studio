@@ -16,6 +16,8 @@ on:
       - 'tools/CHECK_SMOKE_SCREENSHOT.py'
       - '.github/workflows/package.yml'
   workflow_dispatch:
+  # release-rust.yml reuses these build and install-test jobs for tagged releases.
+  workflow_call:
 
 permissions:
   contents: read

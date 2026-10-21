@@ -3,7 +3,7 @@
 - 日期：2026-10-20
 - 依据：spec §3 G6 行（"给 V1 打 `v1-final` tag；从 main 删除 Python、PyInstaller 和 Python CI；发布 v2.0.0"，"用户确认；push、tag、发布逐次确认"），以及用户 2026-10-20 的指示："ask me before each tag, release or V1 deletion"。
 - 前置条件：G4、G5 已由用户审阅（见 `G4_EVIDENCE.md` §8、`G5_EVIDENCE.md` §6）。四项性能预算按 ❌ 记录接受，不在 G6 前继续优化。
-- 状态：**计划，尚未执行任何不可逆步骤。**
+- 状态：**A 段执行中，尚未执行任何不可逆步骤。** A 段的执行结果记录在 `G6_EVIDENCE.md`。
 
 ## 1. 分两段执行
 
@@ -15,8 +15,8 @@
 ## 2. A 段：准备（本地、可回退）
 
 - **A1 删除演练**：在临时 git worktree（scratchpad 内，不在仓库目录里）删除 §4 列出的 V1 路径，然后运行 `cargo test --workspace`、`cargo clippy -D warnings`、`cargo deny check` 和打包脚本，证明 V2 不依赖 V1 文件。已知：Rust 代码只读取 `fixtures/golden`（其中有 V1 内置场景的冻结副本）和 `test_assets/`，两者都保留。演练结果写入 `G6_EVIDENCE.md`。
-- **A2 治理测试迁移**：`tests/test_rewrite_governance.py` 会随 `tests/` 一起删除。改为 `tools/CHECK_GOVERNANCE.py`（检查同样的 ADR-005 与 CURRENT_STATE 规则），由 `rust.yml` 运行。
-- **A3 文档改为 V2**：
+- **A2 治理测试迁移**（执行时调整）：没有改写成单独的脚本，而是把 `tests/test_rewrite_governance.py`、`tests/test_ai_context_builder.py` 原样移到 `tools/tests/`（保留全部路径安全测试），并新增 `test_release_tools.py`。这些测试由 `rust.yml` 的 tooling job 在 Windows 和 Linux 上运行。`BUILD_AI_CONTEXT.py` 改为从 `Cargo.toml` 读取版本号。
+- **A3 文档改为 V2**（执行时调整）：这些文档描述的是删除 V1 之后的仓库，因此不提交到 main，而是和 B2 的删除放在同一个本地分支 `g6/cutover` 上，供用户审阅后作为 B2 合入。按 ADR-005，main-only 不开长期分支；这个分支只在本地存在，B2 完成后删除。
   - `README.md`：安装、运行和构建说明。
   - `CONTRIBUTING.md`：cargo 工作流。
   - `SECURITY.md`：Automation 桥。

@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.0.0 - 2026-10-20
+
+MonoOLED Studio 2.0 is a full rewrite in Rust with a Slint user interface. It runs on Windows, macOS and Linux and replaces the Python/Qt 1.x line. The last 1.x source is kept at the `v1-final` tag.
+
+### Platforms and packages
+
+- Windows x64: zip, no installer, no Visual C++ runtime needed.
+- macOS arm64: dmg with an ad-hoc signed, not notarised app. On first launch, allow it in System Settings → Privacy & Security → "Open Anyway".
+- Linux amd64: `.deb` for Ubuntu 24.04 / Debian 13 or newer (`libc6 >= 2.39`). It pulls in a CJK font. The CLI is installed as `monooled-cli`.
+- `SHA256SUMS` is attached to every release.
+
+### Compatibility
+
+- Same project, scene, asset, Font Pack and output-profile files as 1.2.3.
+- Same preferences file and keys.
+- Same Automation API 1.3.0 (JSON-RPC 2.0 over localhost).
+- Firmware arrays, BIN and C headers are byte-identical to 1.2.3 on the frozen golden corpus.
+- PNG and ZIP files have the same content, but their bytes differ because the encoder differs.
+- Documented differences are listed in `docs/rewrite/G1_EVIDENCE.md` and `docs/rewrite/G4_EVIDENCE.md`.
+
+### Performance (measured on the same Windows machine as 1.2.3)
+
+- Encoding and formatting a 256×128 frame: about 1.5 ms (1.2.3: about 34 ms).
+- Firmware export of 50 screens: about 0.3 s (1.2.3: about 0.5 s).
+- Full evidence export of 50 screens: about 1.3 s (1.2.3: about 2.6 s).
+- Cold start: about 0.95 s (1.2.3: about 2.1 s).
+
+### Known limitations
+
+- Four 2.0 performance budgets are recorded as not met. Details are in `docs/rewrite/G4_EVIDENCE.md` §4.
+  - Pixel stroke to screen p95 is 20–22 ms against an 8 ms budget; most of the wait is display vsync.
+  - Full evidence export of 50 screens exceeds its 500 ms budget, because every file is fsync'd.
+  - Cold start sometimes exceeds 1 s.
+  - Export-all, handoff, batch validation and the thumbnail wall still run on the UI thread.
+- Output colour fields accept hex values only. The output font is typed by name.
+- Real-hardware OLED checks, hands-on use on macOS and Linux desktops, and Intel Mac / Linux arm64 builds are not verified.
+
+### Removed
+
+- The Python 1.x application, its PyInstaller build and the Python CI. They are available from the `v1-final` tag.
+
 ## 1.2.3 - 2026-09-11
 
 ### Fixes

@@ -1,0 +1,78 @@
+name: Release (Rust V2)
+
+# A v2.x.y tag builds and install-tests the three platform packages (the same
+# jobs as package.yml) and attaches them to a DRAFT GitHub Release. The draft
+# is not visible to the public; a maintainer reviews and publishes it by hand.
+# A manual run (workflow_dispatch) is a dry run: everything except creating
+# the draft.
+on:
+  push:
+    tags:
+      - 'v2.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-rust-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-version:
+    name: Tag matches workspace version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare tag and Cargo.toml version
+        shell: bash
+        run: |
+          version="$(python tools/PACKAGE_RUST_RELEASE.py --print-version)"
+          echo "ref $GITHUB_REF_NAME ($GITHUB_REF_TYPE), workspace $version"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then test "v$version" = "$GITHUB_REF_NAME"; fi
+          grep -q "^## $version - " CHANGELOG.md || { echo "CHANGELOG.md has no '## $version - <date>' section"; exit 1; }
+
+  package:
+    needs: check-version
+    uses: ./.github/workflows/package.yml
+
+  draft:
+    name: Draft release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect packages and checksums
+        shell: bash
+        run: |
+          mkdir -p release
+          find artifacts -path '*/dist-rust/*' -type f ! -name SHA256SUMS -exec cp {} release/ \;
+          ls -l release
+          test "$(ls release | wc -l)" -eq 3
+          (cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          version="$(python tools/PACKAGE_RUST_RELEASE.py --print-version)"
+          python - "$version" <<'EOF'
+          import re, sys
+          text = open('CHANGELOG.md', encoding='utf-8').read()
+          match = re.search(rf'^## {re.escape(sys.argv[1])} - .*?\n(.*?)(?=^## |\Z)', text, re.MULTILINE | re.DOTALL)
+          open('notes.md', 'w', encoding='utf-8').write(match.group(1).strip() + '\n')
+          EOF
+          cat notes.md
+      - name: Create draft release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --draft --verify-tag \
+            --title "MonoOLED Studio $GITHUB_REF_NAME" \
+            --notes-file notes.md

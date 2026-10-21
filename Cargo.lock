@@ -2680,7 +2680,7 @@ dependencies = [
 
 [[package]]
 name = "mono-automation"
-version = "2.0.0-rc.1"
+version = "2.0.0"
 dependencies = [
  "getrandom 0.3.4",
  "mono-core",
@@ -2693,7 +2693,7 @@ dependencies = [
 
 [[package]]
 name = "mono-cli"
-version = "2.0.0-rc.1"
+version = "2.0.0"
 dependencies = [
  "mono-automation",
  "mono-core",
@@ -2703,7 +2703,7 @@ dependencies = [
 
 [[package]]
 name = "mono-core"
-version = "2.0.0-rc.1"
+version = "2.0.0"
 dependencies = [
  "indexmap",
  "serde",
@@ -2713,7 +2713,7 @@ dependencies = [
 
 [[package]]
 name = "mono-desktop"
-version = "2.0.0-rc.1"
+version = "2.0.0"
 dependencies = [
  "arboard",
  "mono-automation",
@@ -2729,7 +2729,7 @@ dependencies = [
 
 [[package]]
 name = "mono-font"
-version = "2.0.0-rc.1"
+version = "2.0.0"
 dependencies = [
  "ab_glyph",
  "mono-core",
@@ -2738,7 +2738,7 @@ dependencies = [
 
 [[package]]
 name = "mono-project"
-version = "2.0.0-rc.1"
+version = "2.0.0"
 dependencies = [
  "mono-core",
  "mono-font",
