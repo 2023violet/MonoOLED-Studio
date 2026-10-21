@@ -13,6 +13,7 @@ on:
       - 'Cargo.lock'
       - '.cargo/**'
       - 'tools/PACKAGE_RUST_RELEASE.py'
+      - 'tools/CHECK_SMOKE_SCREENSHOT.py'
       - '.github/workflows/package.yml'
   workflow_dispatch:
 
@@ -50,7 +51,9 @@ jobs:
         run: cargo build --release --locked -p mono-desktop -p mono-cli
       - name: Package
         shell: bash
-        run: python tools/PACKAGE_RUST_RELEASE.py --out dist-rust
+        run: |
+          python tools/PACKAGE_RUST_RELEASE.py --out dist-rust
+          echo "VERSION=$(python tools/PACKAGE_RUST_RELEASE.py --print-version)" >> "$GITHUB_ENV"
 
       - name: Install test (Windows zip)
         if: runner.os == 'Windows'
@@ -59,22 +62,13 @@ jobs:
           $zip = Get-ChildItem dist-rust/*.zip | Select-Object -First 1
           Expand-Archive $zip.FullName -DestinationPath "$env:RUNNER_TEMP/install" -Force
           $dir = Get-ChildItem "$env:RUNNER_TEMP/install" -Directory | Select-Object -First 1
-          & "$($dir.FullName)/mono.exe" version
+          $cli = & "$($dir.FullName)/mono.exe" version | Out-String
           $gui = & "$($dir.FullName)/monooled-studio.exe" --version | Out-String
-          Write-Output $gui
-          if ($gui -notmatch 'monooled-studio') { throw 'desktop --version failed' }
-          "APP_DIR=$($dir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Output $cli $gui
+          if ($gui -notmatch "monooled-studio $([regex]::Escape($env:VERSION))") { throw 'desktop --version mismatch' }
+          if ($cli -notmatch [regex]::Escape($env:VERSION)) { throw 'cli version mismatch' }
           "GUI=$($dir.FullName)/monooled-studio.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           "CLI=$($dir.FullName)/mono.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Install test (Linux deb)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get install -y ./dist-rust/*.deb
-          dpkg -s monooled-studio | grep -E '^(Status|Version)'
-          monooled-studio --version
-          monooled-cli version
-          echo "GUI=/usr/bin/monooled-studio" >> "$GITHUB_ENV"
-          echo "CLI=/usr/bin/monooled-cli" >> "$GITHUB_ENV"
       - name: Install test (macOS dmg)
         if: runner.os == 'macOS'
         run: |
@@ -82,18 +76,44 @@ jobs:
           cp -R "/Volumes/MonoOLED/MonoOLED Studio.app" "$RUNNER_TEMP/"
           hdiutil detach /Volumes/MonoOLED
           APP="$RUNNER_TEMP/MonoOLED Studio.app/Contents/MacOS"
-          "$APP/monooled-studio" --version
-          "$APP/mono" version
+          "$APP/monooled-studio" --version | tee /dev/stderr | grep -F "monooled-studio $VERSION"
+          "$APP/mono" version | tee /dev/stderr | grep -F "$VERSION"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/MonoOLED Studio.app"
+          spctl --assess --type execute --verbose=4 "$RUNNER_TEMP/MonoOLED Studio.app" || echo "Gatekeeper rejects the unsigned app (expected; recorded in G5 evidence)"
           echo "GUI=$APP/monooled-studio" >> "$GITHUB_ENV"
           echo "CLI=$APP/mono" >> "$GITHUB_ENV"
+      # Linux: install into a clean Ubuntu container so the package's own
+      # Depends (not the build step's -dev packages) must provide every runtime
+      # library and the CJK font.
+      - name: Install test and smoke (Linux deb, clean container)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p smoke
+          docker run --rm -v "$PWD:/src" -w /src -e VERSION="$VERSION" ubuntu:24.04 bash -euxc '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y ./dist-rust/*.deb
+            apt-get install -y --no-install-recommends xvfb xauth
+            dpkg -s monooled-studio | grep -E "^(Status|Version)"
+            monooled-studio --version | grep -F "monooled-studio $VERSION"
+            monooled-cli version | grep -F "$VERSION"
+            cp -R test_assets/projects/curing_lite /tmp/project
+            monooled-cli validate --project /tmp/project/project.oled.json
+            monooled-cli export --project /tmp/project/project.oled.json --output /tmp/export
+            test -s /tmp/export/ui_contract.json
+            export XDG_CONFIG_HOME=/tmp/prefs SLINT_BACKEND=winit-software
+            xvfb-run -a -s "-screen 0 1600x1000x24" monooled-studio /tmp/project --screen main --screenshot /src/smoke/designer-Linux.png
+          '
 
-      - name: Installed CLI smoke (export + Automation bridge descriptor)
+      - name: Installed CLI smoke (validate + export)
+        if: runner.os != 'Linux'
         shell: bash
         run: |
           "$CLI" validate --project test_assets/projects/curing_lite/project.oled.json
           "$CLI" export --project test_assets/projects/curing_lite/project.oled.json --output "$RUNNER_TEMP/export"
           test -s "$RUNNER_TEMP/export/ui_contract.json"
       - name: Installed desktop smoke (software renderer screenshot)
+        if: runner.os != 'Linux'
         shell: bash
         env:
           SLINT_BACKEND: winit-software
@@ -102,21 +122,17 @@ jobs:
           # Work on a copy: opening a screen updates the project manifest.
           cp -R test_assets/projects/curing_lite "$RUNNER_TEMP/project"
           export APPDATA="$RUNNER_TEMP/prefs" LOCALAPPDATA="$RUNNER_TEMP/prefs" XDG_CONFIG_HOME="$RUNNER_TEMP/prefs"
-          shot="$PWD/smoke/designer-${{ runner.os }}.png"
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            xvfb-run -a -s "-screen 0 1600x1000x24" "$GUI" "$RUNNER_TEMP/project" --screen main --screenshot "$shot"
-          else
-            "$GUI" "$RUNNER_TEMP/project" --screen main --screenshot "$shot"
-          fi
-          test -s "$shot"
-          python - "$shot" <<'EOF'
-          import struct, sys
-          data = open(sys.argv[1], 'rb').read()
-          assert data[:8] == b'\x89PNG\r\n\x1a\n', 'not a PNG'
-          width, height = struct.unpack('>II', data[16:24])
-          print('screenshot', width, 'x', height)
-          assert width >= 1000 and height >= 600, 'window too small'
-          EOF
+          "$GUI" "$RUNNER_TEMP/project" --screen main --screenshot "$PWD/smoke/designer-${{ runner.os }}.png"
+      - name: Installed desktop smoke (default renderer screenshot)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/project-gl" && cp -R test_assets/projects/curing_lite "$RUNNER_TEMP/project-gl"
+          export APPDATA="$RUNNER_TEMP/prefs" LOCALAPPDATA="$RUNNER_TEMP/prefs" XDG_CONFIG_HOME="$RUNNER_TEMP/prefs"
+          "$GUI" "$RUNNER_TEMP/project-gl" --screen main --screenshot "$PWD/smoke/designer-${{ runner.os }}-default.png"
+      - name: Screenshot content check
+        shell: bash
+        run: python tools/CHECK_SMOKE_SCREENSHOT.py smoke/*.png
 
       - uses: actions/upload-artifact@v4
         with:

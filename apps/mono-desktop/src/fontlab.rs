@@ -212,7 +212,8 @@ impl FontLab {
     /// V1 `save`: current glyph (keeping its metrics) plus pack metrics.
     pub fn save(&mut self) -> CoreResult<()> {
         if self.running() {
-            return Ok(());
+            // Never report a save that did not happen.
+            return Err(CoreError::invalid("glyph generation is running"));
         }
         let mut changed = Vec::new();
         if let Some(ch) = self.current {

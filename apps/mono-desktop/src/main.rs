@@ -14,6 +14,7 @@ mod pixel;
 mod pixel_ui;
 mod prefs;
 mod prefs_ui;
+mod watchdog;
 mod workbench;
 
 use std::cell::RefCell;
@@ -379,7 +380,8 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     ui.window().on_close_requested(move || {
         let proceed = a
             .try_borrow_mut()
-            .map_or(true, |mut app| app.confirm_transition());
+            // Busy (nested dialog): keep the window rather than drop work.
+            .is_ok_and(|mut app| app.confirm_transition());
         if proceed {
             slint::CloseRequestResponse::HideWindow
         } else {
@@ -823,6 +825,7 @@ fn main() {
         });
     }
     mark("project loaded, entering event loop");
+    watchdog::start();
     if let Err(error) = ui.run() {
         eprintln!("MonoOLED Studio stopped: {error}");
     }

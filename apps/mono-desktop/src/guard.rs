@@ -92,6 +92,17 @@ impl App {
     /// Before closing the window, exiting or opening another project/scene.
     /// Returns true when the transition may proceed.
     pub fn confirm_transition(&mut self) -> bool {
+        // A running glyph generation writes into the pack: neither Save nor
+        // Discard can be honoured until it finishes.
+        if self
+            .font
+            .as_ref()
+            .is_some_and(crate::fontlab::FontLab::running)
+        {
+            let error = CoreError::invalid(self.t("font.generate.running"));
+            self.report(&error);
+            return false;
+        }
         if !self.has_unsaved() {
             return true;
         }
@@ -99,6 +110,14 @@ impl App {
             Unsaved::Cancel => false,
             Unsaved::Discard => {
                 self.pixel.doc.dirty = false;
+                // Close the pack so a later glyph switch cannot auto-save it.
+                if self
+                    .font
+                    .as_ref()
+                    .is_some_and(crate::fontlab::FontLab::dirty)
+                {
+                    self.font = None;
+                }
                 true
             }
             Unsaved::Save => self.save_everything(),
@@ -271,6 +290,24 @@ mod tests {
         app.scripted_choice = Some(Unsaved::Discard);
         assert!(app.confirm_transition());
         assert!(!app.has_unsaved());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn discarded_font_edits_are_never_written_back() {
+        let (mut app, root) = app("font");
+        let pack = crate::fontlab::create_pack(&root.join(".oled/fonts"), "Guard 5x8").unwrap();
+        app.open_font_pack(&pack).unwrap();
+        let before = std::fs::read(pack.join("fontpack.json")).unwrap();
+        app.font.as_mut().unwrap().studio.doc.pencil(0, 0, true);
+        app.scripted_choice = Some(Unsaved::Discard);
+        assert!(app.confirm_transition());
+        assert!(!app.has_unsaved());
+        assert!(app.font.is_none());
+        // Opening another project starts without the old pack.
+        app.open_project(&root.join("project.oled.json")).unwrap();
+        assert!(app.font.is_none());
+        assert_eq!(std::fs::read(pack.join("fontpack.json")).unwrap(), before);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

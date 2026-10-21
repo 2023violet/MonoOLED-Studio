@@ -3,7 +3,10 @@
 //! frame finished, and latency runs from the input to the end of the frame
 //! that shows it (Slint `RenderingState::AfterRendering`).
 //!
-//! * cold start: process start → first rendered frame (budget 1 s)
+//! * cold start: process spawn → first rendered frame (budget 1 s). The
+//!   launcher passes its wall-clock spawn time in `MONO_T0` (seconds, as V1's
+//!   baseline probe does), so OS process creation and image loading count;
+//!   `cold_start_from_main_ms` is the part after `main()` entry.
 //! * pixel stroke: 256x128 canvas at 8x, pointer move → rendered (p95 ≤ 8 ms)
 //! * theme switch: light ↔ dark → rendered (p95 ≤ 50 ms)
 //! * UI-thread blocking: longest synchronous handler (≤ 16 ms)
@@ -101,6 +104,16 @@ fn finish_phase(bench: &mut Bench, key: &str) {
     bench.step = 0;
 }
 
+/// Milliseconds since the launcher's `MONO_T0` (Unix seconds), if given.
+fn since_spawn_ms() -> Option<f64> {
+    let t0: f64 = std::env::var("MONO_T0").ok()?.parse().ok()?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs_f64();
+    Some((now - t0) * 1000.0)
+}
+
 pub fn run(ui: &MainWindow, app: &Rc<RefCell<App>>, out: PathBuf, process_start: Instant) {
     let bench = Rc::new(RefCell::new(Bench {
         phase: Phase::Start,
@@ -138,8 +151,12 @@ pub fn run(ui: &MainWindow, app: &Rc<RefCell<App>>, out: PathBuf, process_start:
         let now = Instant::now();
         let mut s = b.borrow_mut();
         if s.phase == Phase::Start {
-            let cold = now.duration_since(process_start).as_secs_f64() * 1000.0;
-            s.results.insert("cold_start_ms".into(), json!(cold));
+            let from_main = now.duration_since(process_start).as_secs_f64() * 1000.0;
+            s.results
+                .insert("cold_start_from_main_ms".into(), json!(from_main));
+            if let Some(cold) = since_spawn_ms() {
+                s.results.insert("cold_start_ms".into(), json!(cold));
+            }
             s.phase = Phase::Strokes;
             drop(s);
             // Prepare a 256x128 canvas at 8x, then start the frame-aligned strokes.

@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BUDGETS = {'cold_start_ms': 1000.0, 'stroke_p95_ms': 8.0, 'theme_switch_p95_ms': 50.0,
            'max_handler_ms': 16.0, 'idle_private_mb': 80.0}
 # Reported for transparency; not a spec budget (includes the vsync wait).
-INFO = ('stroke_free_running_p95_ms',)
+INFO = ('stroke_free_running_p95_ms', 'cold_start_from_main_ms')
 
 
 def private_mb(pid: int) -> float | None:
@@ -51,6 +51,8 @@ def run_once(exe: Path, project: Path, scratch: Path, index: int) -> dict:
     out = scratch / f'bench_{index}.json'
     out.unlink(missing_ok=True)
     env = dict(os.environ, APPDATA=str(scratch), LOCALAPPDATA=str(scratch), XDG_CONFIG_HOME=str(scratch))
+    # Cold start counts from here, like tools/MEASURE_V1_BASELINE.py (MONO_T0).
+    env['MONO_T0'] = repr(time.time())
     proc = subprocess.Popen([str(exe), str(project), '--bench', str(out)], env=env)
     memory = None
     deadline = time.monotonic() + 120

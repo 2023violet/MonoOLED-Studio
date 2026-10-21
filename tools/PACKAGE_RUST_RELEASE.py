@@ -108,12 +108,25 @@ def package_macos(target: Path, out: Path, ver: str) -> Path:
 </plist>
 """, encoding='utf-8')
     write_notice(stage, ver)
+    # Ad-hoc bundle signature (no identity, not notarised): seals Info.plist and
+    # resources so Gatekeeper reports "unidentified developer", not "damaged".
+    subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(stage / f'{APP}.app')], check=True)
     os.symlink('/Applications', stage / 'Applications')
     image = out / f'MonoOLED-Studio-{ver}-macos-{arch()}.dmg'
     image.unlink(missing_ok=True)
     subprocess.run(['hdiutil', 'create', '-volname', APP, '-srcfolder', str(stage), '-ov', '-format', 'UDZO', str(image)], check=True)
     shutil.rmtree(stage)
     return image
+
+
+def glibc_floor(paths: tuple[Path, ...]) -> str:
+    """Highest GLIBC_x.y symbol version the binaries import (for the libc6 Depends)."""
+    best = (2, 17)
+    for path in paths:
+        dump = subprocess.run(['objdump', '-T', str(path)], check=True, capture_output=True, text=True).stdout
+        for major, minor in re.findall(r'GLIBC_(\d+)\.(\d+)', dump):
+            best = max(best, (int(major), int(minor)))
+    return f'{best[0]}.{best[1]}'
 
 
 def package_linux(target: Path, out: Path, ver: str) -> Path:
@@ -154,7 +167,7 @@ def package_linux(target: Path, out: Path, ver: str) -> Path:
         f'Package: monooled-studio\nVersion: {deb_version}\nArchitecture: {deb_arch}\n'
         'Maintainer: MonoOLED Studio maintainers <noreply@users.noreply.github.com>\n'
         f'Installed-Size: {size_kb}\n'
-        'Depends: libc6, libfontconfig1, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libxcursor1, libxrandr2, libxi6, libgl1, libegl1, libwayland-client0, '
+        f'Depends: libc6 (>= {glibc_floor((gui, cli))}), libfontconfig1, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libxcursor1, libxrandr2, libxi6, libgl1, libegl1, libwayland-client0, '
         # The UI is Chinese-first; minimal Linux installs have no CJK font.
         'fonts-noto-cjk | fonts-wqy-microhei | fonts-wqy-zenhei\n'
         'Section: graphics\nPriority: optional\n'
@@ -172,7 +185,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--target-dir', default=str(ROOT / 'target' / 'release'))
     ap.add_argument('--out', default=str(ROOT / 'dist-rust'))
+    ap.add_argument('--print-version', action='store_true', help='print the workspace version and exit')
     args = ap.parse_args()
+    if args.print_version:
+        print(version())
+        return 0
     target, out = Path(args.target_dir), Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     ver = version()
@@ -183,8 +200,8 @@ def main() -> int:
     else:
         artifact = package_linux(target, out, ver)
     digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
-    with (out / 'SHA256SUMS').open('a', encoding='utf-8') as sums:
-        sums.write(f'{digest}  {artifact.name}\n')
+    # One artifact per platform run: rewrite rather than pile up stale lines.
+    (out / 'SHA256SUMS').write_text(f'{digest}  {artifact.name}\n', encoding='utf-8')
     print(artifact)
     print(f'sha256 {digest}')
     return 0

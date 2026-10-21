@@ -174,6 +174,8 @@ impl App {
             .set("startup.last_project", json!(posix(&project.path)));
         let _ = self.prefs.save();
         self.log_event(format!("OPEN_PROJECT {}", posix(&project.path)));
+        // Font packs belong to a project; never carry one into another.
+        self.font = None;
         self.project = Some(project);
         self.bind_scene(scene)?;
         self.scan_project_files();
@@ -182,6 +184,7 @@ impl App {
 
     pub fn open_scene_file(&mut self, path: &Path) -> Result<(), CoreError> {
         let scene = load_scene(path, None)?;
+        self.font = None;
         self.project = None;
         self.bind_scene(scene)?;
         self.scan_project_files();
