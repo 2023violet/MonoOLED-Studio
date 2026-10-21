@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Packages
+
+- Intel macOS (`macos-x64.dmg`) and Linux arm64 (`arm64.deb`) packages. CI now builds, tests and install-tests five platforms: Windows x64, macOS arm64 and x64, and Linux amd64 and arm64.
+
 ## 2.0.0 - 2026-10-20
 
 MonoOLED Studio 2.0 is a full rewrite in Rust with a Slint user interface. It runs on Windows, macOS and Linux and replaces the Python/Qt 1.x line. The last 1.x source is kept at the `v1-final` tag.

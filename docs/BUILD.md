@@ -56,12 +56,12 @@ This writes the current platform's package and `SHA256SUMS` to `dist-rust/`.
 | Platform | Package | Notes |
 | --- | --- | --- |
 | Windows | `MonoOLED-Studio-<ver>-windows-x64.zip` | Single folder with `monooled-studio.exe`, `mono.exe`, LICENSE and NOTICE. |
-| macOS | `MonoOLED-Studio-<ver>-macos-arm64.dmg` | `.app` bundle with an ad-hoc signature. No Developer ID and not notarised. |
-| Linux | `monooled-studio_<ver>_amd64.deb` | Installs to `/usr/lib/monooled-studio`, with links `/usr/bin/monooled-studio` and `/usr/bin/monooled-cli`. The `libc6` floor is computed from the binaries, and a CJK font is a dependency. |
+| macOS | `MonoOLED-Studio-<ver>-macos-<arm64\|x64>.dmg` | `.app` bundle with an ad-hoc signature. No Developer ID and not notarised. |
+| Linux | `monooled-studio_<ver>_<amd64\|arm64>.deb` | Installs to `/usr/lib/monooled-studio`, with links `/usr/bin/monooled-studio` and `/usr/bin/monooled-cli`. The `libc6` floor is computed from the binaries, and a CJK font is a dependency. |
 
 The scripts only use each platform's own tools (`zipfile`, `hdiutil`, `codesign`, `dpkg-deb`, `objdump`); nothing is downloaded.
 
-`.github/workflows/package.yml` builds and install-tests the packages on every relevant push to `main`:
+`.github/workflows/package.yml` builds and install-tests the packages on five runners (Windows x64, macOS arm64 and Intel, Linux x64 and arm64) on every relevant push to `main`:
 
 - Windows installs from the zip; Linux installs the `.deb` in a clean `ubuntu:24.04` container; macOS installs from the dmg.
 - Each installed program is version-checked, the installed CLI runs `validate` and `export`, and the installed desktop app takes screenshots with the software renderer and with the default renderer (Linux: software renderer only).

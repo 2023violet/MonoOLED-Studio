@@ -69,7 +69,11 @@ V2 文档描述的是删除 V1 之后的仓库，因此和删除放在同一个�
 
 - `g6/cutover` 的完整三平台 CI：B2 之前只有本地 Windows 检查（§1）；B2 之后已在删除后的树上通过（§7）。
 - 草稿 Release 的创建步骤（`gh release create --draft`）只能在真正打 tag 时运行，演练跳过了这一步。
-- 其余缺口同 G5（真实用户安装、macOS Gatekeeper、Intel Mac、Linux arm64、真实 OLED 硬件）。
+- 其余缺口同 G5：真实用户安装、macOS Gatekeeper、真实 OLED 硬件。
+- Intel Mac 与 Linux arm64 两个缺口已在发布后补上（`f0749fe`，MEASURED）：
+  - `Rust` run `39596612683`：五个 runner 上 golden 一致性测试全部通过；
+  - `Package` run `39596612635`：生成 `macos-x64.dmg`（`2c448c10…`）与 `arm64.deb`（`a1506815…`）；dmg 安装后两个程序的版本号都是 2.0.0，deb 在干净的 arm64 `ubuntu:24.04` 容器中安装成功；两个平台的截图都通过内容检查。
+  - 这两个包还没有发布，v2.0.0 中不包含它们。
 
 ## 7. B 段（需要用户逐步确认）
 
