@@ -9,6 +9,8 @@ FontPack validation; compact Preferences and accessibility; safe save/export,
 autosave and corrupt-input recovery; project/screen transaction safety;
 automation lifecycle/revision/long-job safeguards; and real-Qt DPI validation.
 
-Those safeguards remain implemented and tested. Their current operational
-entry points are `WINDOWS_BUILD.md`, `AUTOMATION_API_V1.md`, the user guides,
-the Windows build scripts, and the automated test suite.
+This history describes the Python 1.x line, whose source is kept at the
+`v1-final` tag. The 2.0 Rust rewrite carries the same contracts; they are
+checked against the frozen 1.x golden corpus (`fixtures/golden/`) and the
+workspace tests. Current entry points are `BUILD.md`, `AUTOMATION_API_V1.md`
+and the user guides.

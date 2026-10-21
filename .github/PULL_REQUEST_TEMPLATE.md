@@ -8,7 +8,7 @@
 
 ## Checklist
 
-- [ ] Source gate passes: `python VERIFY_PACKAGE.py`
+- [ ] `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` and `python -m pytest tools/tests` pass
 - [ ] Relevant tests are included/updated
 - [ ] No build artifacts or runtime state committed
 - [ ] Commit message follows the repo style

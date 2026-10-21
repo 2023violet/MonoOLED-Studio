@@ -138,7 +138,7 @@ Automation state is intentionally bounded for long-lived Agent sessions:
 - only a bounded number of Scene transactions may be open simultaneously; callers must commit or rollback before opening more;
 - `session.events` uses an absolute `since` cursor and returns `retained_from`, `dropped_before`, and `next_cursor`; old events may be compacted from memory rather than retained forever;
 - in-memory PixelDocuments are capped; `pixel.close` releases a clean document, while a dirty document requires an explicit `discard=true` after the caller has decided not to save it;
-- the Qt bridge may return `TIMEOUT` only while a request is still queued. Once the UI thread has claimed a request, the transport waits for the real response so a mutating command cannot execute after the caller was told it timed out.
+- the desktop bridge may return `TIMEOUT` only while a request is still queued. Once the UI thread has claimed a request, the transport waits for the real response so a mutating command cannot execute after the caller was told it timed out.
 
 ## Transaction discovery
 

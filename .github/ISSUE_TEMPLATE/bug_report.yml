@@ -11,15 +11,15 @@ body:
     id: version
     attributes:
       label: MonoOLED Studio version
-      description: The value of `src/VERSION`.
-      placeholder: e.g. 1.0.0
+      description: The output of `monooled-studio --version`.
+      placeholder: e.g. 2.0.0
     validations:
       required: true
   - type: input
     id: os
     attributes:
-      label: Windows version
-      placeholder: e.g. Windows 11 24H2
+      label: Operating system
+      placeholder: e.g. Windows 11 24H2, macOS 15.1, Ubuntu 24.04
     validations:
       required: true
   - type: textarea

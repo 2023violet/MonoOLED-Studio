@@ -51,7 +51,7 @@ def run_once(exe: Path, project: Path, scratch: Path, index: int) -> dict:
     out = scratch / f'bench_{index}.json'
     out.unlink(missing_ok=True)
     env = dict(os.environ, APPDATA=str(scratch), LOCALAPPDATA=str(scratch), XDG_CONFIG_HOME=str(scratch))
-    # Cold start counts from here, like tools/MEASURE_V1_BASELINE.py (MONO_T0).
+    # Cold start counts from here, like the V1 baseline probe (MONO_T0; tools/MEASURE_V1_BASELINE.py at v1-final).
     env['MONO_T0'] = repr(time.time())
     proc = subprocess.Popen([str(exe), str(project), '--bench', str(out)], env=env)
     memory = None

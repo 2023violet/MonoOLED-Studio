@@ -5,8 +5,8 @@
 ## Project
 
 - Project: MonoOLED Studio
-- Product version: 1.2.3
-- Current phase: Rust Rewrite G6 preparation (G4/G5 reviewed by the user 2026-10-20; four performance budgets accepted as recorded FAILs)
+- Product version: 2.0.0 (Rust; Python 1.x source at the v1-final tag)
+- Current phase: Rust Rewrite G6 cutover (V1 removed from main; v2.0.0 tag and release each need explicit user confirmation)
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
@@ -20,7 +20,7 @@
 - TASK-003 status: DONE
 - Independent Review: PASS (TASK-003, agent review)
 - Active task: NONE (Rust Rewrite G4 evidence recorded)
-- Next workflow action: G6 part B; B1 (v1-final tag) first, each B step on explicit user confirmation
+- Next workflow action: G6 B3 (v2.0.0 tag, draft release) and B4 (publish) on explicit user confirmation
 
 ## Current workstream
 

@@ -1,11 +1,11 @@
 # MonoOLED Studio Developer Tools
 
-## Current source/package verification
+Python 3 scripts used by CI and maintainers. None of them is a runtime dependency of the app.
 
-- `VERIFY_V120_GENERIC_PRODUCT_CLOSURE.py` — native Windows Real-Qt V12 closure gate.
-- `BUILD_SOURCE_DELIVERY.py` — regenerates `SHA256SUMS.txt`, creates the deterministic ASCII-path source ZIP, and writes a verified SHA-256 sidecar.
-- `BUILD_DELIVERY_V120.py` — compatibility wrapper for the current source delivery builder.
-- `BUILD_WINDOWS_EXE.bat` — Windows-only full GA builder for source groups, Real-Qt/DPI gates, PyInstaller, executable smoke/soak, ZIP and SHA-256.
-- `MonoOLEDStudio.spec` — current PyInstaller onedir specification rooted at `src/gui.py`.
+- `PACKAGE_RUST_RELEASE.py` — packages the release binaries for the current platform (Windows zip, macOS dmg, Linux deb) and writes `SHA256SUMS`. `--print-version` prints the workspace version.
+- `CHECK_SMOKE_SCREENSHOT.py` — rejects blank, single-colour or text-less desktop smoke screenshots (CI install tests).
+- `RUN_DESKTOP_BENCH.py` — runs the desktop app's `--bench` mode and reports the spec §5 interactive budgets and idle memory.
+- `BUILD_AI_CONTEXT.py` — writes the disposable `.ai/GENERATED_CONTEXT.md` navigation packet.
+- `tests/` — pytest tests for these scripts and the rewrite governance rules (`python -m pytest tools/tests -q`).
 
-Historical verification scripts remain under `tools/` only as regression gates; they are not the current release identity.
+The 1.x build, delivery and golden-corpus export tools are kept at the `v1-final` tag.

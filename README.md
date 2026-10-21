@@ -1,31 +1,35 @@
-# MonoOLED Studio V1.2.3 — Pixel Studio Experience Release
+# MonoOLED Studio 2
 
 [![Release](https://img.shields.io/github/v/release/2023violet/MonoOLED-Studio?display_name=tag&sort=semver)](https://github.com/2023violet/MonoOLED-Studio/releases/latest)
-[![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows)](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.3)
-[![CI](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/ci.yml)
+[![Rust](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/rust.yml/badge.svg)](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/rust.yml)
+[![Package](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/package.yml/badge.svg)](https://github.com/2023violet/MonoOLED-Studio/actions/workflows/package.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**MonoOLED Studio 是面向嵌入式开发者的单色 OLED 设计与取模工具。** 你可以在同一个 Windows 工作台中编排界面、绘制像素资源、制作字库，并将画布、选区、场景或 Font Pack 转换为可直接接入固件的数组或二进制数据。
+**MonoOLED Studio 是面向嵌入式开发者的单色 OLED 设计与取模工具。** 在同一个工作台里编排界面、绘制像素资源、制作字库，再把画布、选区、场景或 Font Pack 转换成可以直接放进固件的数组或二进制数据。
 
-## 下载与启动
+2.0 用 Rust 重写，界面使用 Slint，支持 Windows、macOS 和 Linux。项目文件、偏好设置与 Automation API 1.3.0 都与 1.2.3 兼容。Python 1.x 的最后源码保存在 `v1-final` 标签。
 
-普通用户请从 **[GitHub Releases](https://github.com/2023violet/MonoOLED-Studio/releases/tag/v1.2.3)** 下载 [`MonoOLEDStudio_v1.2.3_Windows_x64.zip`](https://github.com/2023violet/MonoOLED-Studio/releases/download/v1.2.3/MonoOLEDStudio_v1.2.3_Windows_x64.zip)。
+## 下载与安装
 
-1. 解压 ZIP，保持文件夹内的文件结构不变。
-2. 双击 `MonoOLEDStudio\MonoOLEDStudio.exe`。
-3. 新建或打开项目，进入 Designer、Pixel Studio 或 Font Lab 开始工作。
+从 **[GitHub Releases](https://github.com/2023violet/MonoOLED-Studio/releases/latest)** 下载对应平台的安装包。每个 Release 都附带 `SHA256SUMS`。
 
-Windows 发布包无需安装 Python、Git 或运行 BAT 文件。每个 Release 附带 `.sha256` 校验文件（见发布页附件），下载后验证文件完整性：
+| 平台 | 安装包 | 安装方式 |
+| --- | --- | --- |
+| Windows x64 | `MonoOLED-Studio-<版本>-windows-x64.zip` | 解压后双击 `monooled-studio.exe`。不需要安装 VC++ 运行库。 |
+| macOS（Apple Silicon） | `MonoOLED-Studio-<版本>-macos-arm64.dmg` | 把应用拖进"应用程序"。应用没有开发者签名，首次打开会被拦截，需要在"系统设置 → 隐私与安全性"里点"仍要打开"。 |
+| Linux amd64 | `monooled-studio_<版本>_amd64.deb` | `sudo apt install ./monooled-studio_*.deb`。需要 Ubuntu 24.04、Debian 13 或更新的发行版，会自动安装中文字体。 |
 
-```powershell
-Get-FileHash .\MonoOLEDStudio_v1.2.3_Windows_x64.zip -Algorithm SHA256
+校验下载文件：
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
 ```
+
+Windows PowerShell 中可以用 `Get-FileHash <文件> -Algorithm SHA256` 计算哈希，再与 `SHA256SUMS` 对照。
 
 ## 它解决什么问题
 
-常见 OLED 开发流程往往被拆成互不兼容的工具：一个软件排版界面，一个软件修改像素，一个软件生成字模，最后还要手工调整数组格式。MonoOLED Studio 将这些步骤放进同一个项目，并让预览、编码和保存共用同一条确定性数据路径。
-
-典型流程如下：
+常见的 OLED 开发流程往往分散在几个互不兼容的工具里：一个排版界面，一个改像素，一个生成字模，最后还要手工调整数组格式。MonoOLED Studio 把这些步骤放进同一个项目，预览、校验和导出共用同一条确定性的渲染与编码路径。
 
 `创建项目 → 编排场景/制作素材 → 配置取模规则 → 生成数组并核对预览 → 复制数组或保存文件 → 接入固件`
 
@@ -33,28 +37,22 @@ Get-FileHash .\MonoOLEDStudio_v1.2.3_Windows_x64.zip -Algorithm SHA256
 
 ### Scene Designer：编排 OLED 界面
 
-- 在画布中组织场景元素与 1-bit 位图资源。
-- 支持选择、多选、框选、对齐、分布、复制、锁定和撤销/重做。
-- 管理多个 Screen，并在切换前保护未保存修改。
-- 使用统一 Renderer 进行预览、校验和导出，减少界面预览与最终数据之间的偏差。
+- 在画布中组织场景元素和 1-bit 位图资源。
+- 选择、多选、框选、对齐、分布、复制、锁定、撤销/重做。
+- 管理多个 Screen，切换、删除或关闭前保护未保存的修改。
+- 预览、校验和导出使用同一个渲染器。
 
 ### Pixel Studio：像素级编辑
 
-- 左键连续绘制、右键擦除，支持插值笔迹和单手势撤销。
-- 支持选区、裁剪、旋转、翻转、Fit 缩放、中键平移和锚点缩放。
-- 可编辑项目资源，也可作为临时画布独立使用。
-- 绘制过程中采用局部缓存更新，输出预览在后台防抖刷新。
+- 左键绘制、右键擦除，支持插值笔迹，一次拖动只占一步撤销。
+- 支持直线、矩形、填充、选区、裁剪、旋转、翻转、缩放、中键或空格平移，以及键盘绘制。
+- 画布背景、网格线、像素填充和像素边框的颜色都可以自定义；它们只影响显示，不进入导出数据。
 
-### 取模与输出工作台：直接生成固件数据
+### 取模与输出工作台
 
-数据来源可以是：
+数据来源可以是当前 Pixel 画布、当前选区、当前 Designer 场景帧、项目中的 Font Pack，或一张图片。
 
-- 当前 Pixel Studio 画布；
-- 当前选区；
-- 当前 Designer 场景帧；
-- 项目中的 Font Pack。
-
-编码规则不依赖含义模糊的“阴码、阳码、顺向、逆向”标签，而是明确配置：
+取模方式不用含义模糊的"阴码、阳码、顺向、逆向"，而是写明具体规则：
 
 | 界面名称 | 采样方式 | 数据顺序 |
 | --- | --- | --- |
@@ -63,45 +61,53 @@ Get-FileHash .\MonoOLEDStudio_v1.2.3_Windows_x64.zip -Algorithm SHA256
 | 逐列式 | 每列从上向下，每 8 点组成一个字节 | 完成一列后进入下一列 |
 | 列行式 | 垂直每 8 点组成一个页面 | 完成一页的所有列后进入下一页；适用于 SSD1306 VLSB |
 
-每种方式都可以独立设置：
+每种方式都可以单独设置：
 
-- 第一个采样点写入 `bit7` 或 `bit0`；
+- 首点写入 `bit7` 或 `bit0`；
 - 亮点编码为 `1` 或 `0`；
-- 十六进制或十进制文本；
-- 原始 BIN、C Header、C51、自定义前后缀和每行字节数；
-- Font Pack 索引顺序以及内联或独立索引文件。
+- 十六进制或十进制；
+- 文本数组或原始 BIN；
+- 自定义前后缀和每行字节数；
+- Font Pack 索引写在数组内、写成单独文件，或不写。
 
-底部操作区可以直接执行“生成字模、复制数组、保存字模、清除输出”。
+精确公式见[取模与输出工作台文档](docs/OUTPUT_WORKBENCH.md)。
 
-### Font Lab：制作可复现字库
+### Font Lab：制作可复现的字库
 
-- 从系统字体或 TTF/OTF 生成 Font Pack。
-- 设置字符范围、字宽字高、Baseline、Advance、Bearing 和像素偏移。
-- 支持相对于字体集合或相对于单字宽度的对齐方式。
-- 支持 1×、2×、4× 抗锯齿采样，最终结果严格归一化为 1-bit。
-- 字形可继续在 Pixel Studio 中逐像素修正，并与场景中的位图文本共用同一份数据。
+- 用 TTF/OTF 字体文件或内置 5×7 字形生成 Font Pack。
+- 可设置字符范围、单元宽高、Baseline、Advance、阈值、对齐方式和抗锯齿采样。
+- 字形可以逐像素修改，修改后与场景中的位图文本共用同一份数据。
+- 生成在后台进行，不阻塞界面。
 
-### Automation API：让工具链可编排
+### Automation API 与 CLI
 
-可选的本地 JSON-RPC 2.0 接口允许脚本或 Code AI 客户端读取项目、编辑场景、管理输出配置、生成预览并导出位图或字体数据。当前 API 版本为 `1.3.0`，支持 revision guard、事务、异步任务和受项目根目录约束的文件写入。
+- 本地 JSON-RPC 2.0 接口（版本 `1.3.0`）供脚本或 Code AI 客户端读取项目、编辑场景、生成预览和导出数据。
+- 只监听本机回环地址，每次会话使用随机令牌，素材不会上传到任何服务器。
+- 支持 revision 校验、事务、异步任务，写入的文件限制在项目目录内。
+- 桌面程序中通过"工具 → Code AI Bridge"开启，并与正在编辑的 Designer 会话共享状态。也可以用命令行单独运行。
 
-接口不是云服务，不需要将项目素材上传到远端。完整契约见 [Automation API 文档](docs/AUTOMATION_API_V1.md)。
+完整契约见 [Automation API 文档](docs/AUTOMATION_API_V1.md)。
 
-## 输出配置与项目复现
+命令行工具（Windows/macOS 为 `mono`，Linux 安装后为 `monooled-cli`）：
 
-取模配置可以随项目保存，包括栅格化、遍历方式、位序、极性和文本格式。显示颜色（支持调色盘拾色）、缩放比例和输出区字体只属于本机显示偏好，不会改变导出字节。
+```bash
+mono validate --project path/to/project.oled.json
+mono export --project path/to/project.oled.json --output out/
+mono handoff --project path/to/project.oled.json --output handoff.zip
+mono bridge --project path/to/project.oled.json --permission edit
+```
 
-对于已经是 1-bit 的 Pixel 画布、Framebuffer 和 Font Pack 字形，软件不会再次执行颜色阈值处理。彩色图片可使用亮度阈值或 RGB 联合阈值转换，并将完全透明像素固定视为熄灭。
+## 输出的确定性
 
-同一份已保存的 1-bit 素材和输出配置应在不同机器上生成相同的字节及 SHA-256。项目字段和精确编码公式见[取模与输出工作台文档](docs/OUTPUT_WORKBENCH.md)。
+- 同一份已保存的 1-bit 素材，配合同一份输出配置，在任何平台上都生成相同的字节和 SHA-256。
+- 已经是 1-bit 的画布、Framebuffer 和 Font Pack 字形不会再次阈值化。
+- 彩色图片可以按亮度阈值或 RGB 联合阈值转换；完全透明的像素固定视为熄灭。
 
 ## 功能边界
 
-- 当前以 **Windows x64** 桌面体验和发布验证为主。
-- 输出目标是单色 `1-bit` 位图，不是通用彩色图片编辑器。
-- V1.2.3 不支持 GIF 导入、多帧 GIF 编辑或 GIF 导出。
-- 内置取模模板是确定性编码预设；目标硬件是否匹配，仍应使用已知正确数组和实际屏幕结果验证。
-- 旧版 `export.c_header`、Pixel C Header、项目 schema 和 Code AI 交接包继续保持兼容。
+- 输出目标是单色 1-bit 位图，不是通用的彩色图片编辑器。不支持 GIF。
+- 内置取模模板是确定性的编码预设。它们是否匹配你的硬件，仍需要用已知正确的数组和实际屏幕来验证。
+- 2.0 的已知限制（未达标的性能预算、未签名的 macOS 应用等）见 [CHANGELOG](CHANGELOG.md)。
 
 ## 文档
 
@@ -109,60 +115,62 @@ Get-FileHash .\MonoOLEDStudio_v1.2.3_Windows_x64.zip -Algorithm SHA256
 | --- | --- |
 | [中文使用手册](docs/USER_GUIDE_CN.md) | 首次使用、Designer、Pixel Studio、Font Lab 与导出流程 |
 | [English User Guide](docs/USER_GUIDE_EN.md) | English task-oriented guide |
-| [取模与输出工作台](docs/OUTPUT_WORKBENCH.md) | 四种取模公式、位序、极性、补位、索引和项目配置 |
+| [取模与输出工作台](docs/OUTPUT_WORKBENCH.md) | 取模公式、位序、极性、补位、索引和项目配置 |
 | [Automation API](docs/AUTOMATION_API_V1.md) | JSON-RPC 2.0 方法、数据契约和可靠性约束 |
 | [Scene Schema](docs/SCENE_SCHEMA.md) | 场景文件格式 |
-| [Windows 构建与发布](docs/WINDOWS_BUILD.md) | 开发构建、完整 GA 和发布流程 |
-| [设计系统](docs/DESIGN_SYSTEM.md) | 桌面界面设计与组件约束 |
+| [构建与发布](docs/BUILD.md) | 从源码构建、测试、打包与发布 |
+| [设计系统](docs/DESIGN_SYSTEM.md) | 界面设计令牌与组件约束 |
 
-## 从源码运行
+## 从源码构建
 
-需要 Python 和 Windows 环境。安装运行时依赖后启动 Qt 主程序：
+需要 `rust-toolchain.toml` 中指定的 Rust 版本（rustup 会自动安装）。Linux 还需要以下开发包：
 
-```powershell
-python -m pip install -r requirements.txt
-python src/gui.py
+```bash
+sudo apt install libfontconfig1-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libegl1-mesa-dev
 ```
 
-运行开发验证：
+启动桌面程序：
 
-```powershell
-python -m pip install -r requirements-dev.txt
-python -m pytest
-python VERIFY_PACKAGE.py
+```bash
+cargo run --release -p mono-desktop
 ```
 
-Windows 快速开发构建：
+运行测试（包含与 1.x 冻结黄金语料的一致性测试）：
 
-```bat
-tools\BUILD_WINDOWS_QUICK.bat
+```bash
+cargo test --workspace
 ```
 
-完整 Windows GA 构建会执行源码回归、Real-Qt 多 DPI 测试、启动/布局/设置/字体/交互/soak 检查，并生成 ZIP 与 SHA-256：
+打包当前平台的安装包：
 
-```bat
-tools\BUILD_WINDOWS_GA.bat
+```bash
+cargo build --release -p mono-desktop -p mono-cli
+python tools/PACKAGE_RUST_RELEASE.py
 ```
+
+详见[构建与发布](docs/BUILD.md)。
 
 ## 仓库结构
 
 | 路径 | 用途 |
 | --- | --- |
-| `src/` | 应用程序、编辑器、编码器、渲染器和 Automation API |
-| `tests/` | 核心、Qt、兼容性与发布工程回归测试 |
-| `tools/` | Windows 构建、发布和交付验证工具 |
-| `test_assets/` | 测试夹具及冻结的回归资源 |
-| `docs/` | 用户、格式、API、设计和构建文档 |
-| `.github/` | CI 与 GitHub Release 工作流 |
-
-仓库根目录不存放可能过期的 EXE。面向用户的 Windows 二进制文件统一发布在 [GitHub Releases](https://github.com/2023violet/MonoOLED-Studio/releases)。
+| `crates/mono-core` | 无界面核心：位图、取模、格式化、场景、渲染、Pixel 文档 |
+| `crates/mono-project` | 项目持久化、原子写入、导出、资源、模板、自动保存 |
+| `crates/mono-font` | TrueType 字形生成 |
+| `crates/mono-automation` | Automation API 1.3.0 服务与本地 JSON-RPC 桥 |
+| `apps/mono-desktop` | Slint 桌面程序 |
+| `apps/mono-cli` | 命令行工具 |
+| `fixtures/golden` | 由 1.x 导出的冻结黄金语料 |
+| `test_assets` | 测试夹具项目和资源 |
+| `tools` | 打包、截图检查、性能基准和治理脚本 |
+| `docs` | 用户、格式、API、设计、构建和重写证据文档 |
 
 ## 参与项目
 
 - 提交代码前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
-- 安全问题请按照 [SECURITY.md](SECURITY.md) 私下报告，不要先公开 Issue。
-- 版本变化记录见 [CHANGELOG.md](CHANGELOG.md)。
+- 安全问题请按照 [SECURITY.md](SECURITY.md) 私下报告，不要公开提 Issue。
+- 版本变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## License
 
-MonoOLED Studio 使用 [MIT License](LICENSE)。
+MonoOLED Studio 使用 [MIT License](LICENSE)。界面基于 [Slint](https://slint.dev)，按 Slint Royalty-free License 2.0 使用，"帮助 → 关于"中有相应署名。

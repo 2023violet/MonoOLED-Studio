@@ -1,43 +1,75 @@
-# MonoOLED Studio 1.2.3 中文使用手册
+# MonoOLED Studio 2 中文使用手册
 
-MonoOLED Studio 是面向 Windows 的通用 1-bit OLED 场景、像素资源和 FontPack 字模工作台。默认项目保持通用，不把具体产品内容混入发布基线。
+MonoOLED Studio 是通用的 1-bit OLED 场景、像素资源和 Font Pack 字库工作台，支持 Windows、macOS 和 Linux。项目文件与 1.2.3 兼容，可以直接打开旧项目。
 
-## 首次使用
+## 安装与首次使用
 
-1. 发布包中双击 `MonoOLEDStudio.exe`；开发时可运行 `python src/gui.py`。
-2. 打开或新建项目，在项目导航中选择场景。
-3. 使用 `Ctrl+S` 保存；当前文档 Tab 决定保存、撤销和重做作用的编辑器。
+1. 从 GitHub Releases 下载对应平台的安装包，安装方式见 [README](../README.md#下载与安装)。
+2. 启动后用"文件 → 打开项目"（`Ctrl+Shift+O`）选择 `project.oled.json`，或用 `Ctrl+N` 新建项目。也可以在启动时把项目路径作为参数传入：`monooled-studio path/to/project`。
+3. 用 `Ctrl+S` 保存。
 
-主窗口把 Scene Designer、Pixel Studio 和 Font Lab 放在同一个 Tab 工作区中。同一资源再次打开时会复用已有 Tab。
+窗口顶部的分段按钮在四个工作区之间切换：设计（Scene Designer）、Pixel Studio（`Ctrl+Shift+P`）、Font Lab（`Ctrl+Shift+F`）和评审。`Ctrl+K` 打开命令面板，可按名称搜索并执行命令。
 
 ## Scene Designer
 
-单击元素进行选择；`Ctrl + 左键` 追加或取消选择；在空白画布拖动可框选。最后加入的元素是主选区。对齐和分布可选择以选区、主元素或画布为参考；当前选区的整体边界和间距会显示在 Inspector 中。
-
-项目导航支持新建、复制、重命名和删除 Screen。切换 Screen 前会检查未保存修改。导出和代码交接入口位于项目操作中。
+- 单击元素即可选择，`Ctrl + 左键`追加或取消选择，在空白画布上拖动可框选。最后加入的元素是主选区。
+- 对齐和分布可以选择以选区、主元素或画布为参考，Inspector 中会显示选区的整体边界和间距。
+- `Ctrl+G` 编组，`Ctrl+Shift+G` 取消编组。`Ctrl+1`、`Ctrl+2` 分别显示或隐藏导航栏和 Inspector。
+- 项目导航支持新建、复制、重命名和删除 Screen。
+- 切换 Screen、删除 Screen、打开其他项目或关闭窗口之前，如果有未保存的修改，会询问保存、放弃还是取消。Pixel Studio 和 Font Lab 里未保存的修改也一样。
+- 自动保存默认每 3 分钟一次。程序异常退出后再次打开同一个 Screen 时，会提示恢复。
 
 ## Pixel Studio
 
-Pixel Studio 在嵌入式 Tab 中编辑 1-bit 位图。左键拖动绘制，右键拖动擦除；支持 Fit 缩放、中键平移、九点锚定缩放、裁剪、旋转、翻转以及单步撤销/重做。方向键定位画布光标后，可用 Enter 点亮、Delete/Backspace 熄灭，Esc 隐藏光标。画布顶部与左侧有随缩放/滚动联动的像素索引标尺，检查器与操作按钮带主题色线性图标，滚轮缩放按档位平滑缩放。输出工作台"显示"组中的画布颜色支持调色盘拾取，也可直接输入十六进制；缩放倍率在命令栏、显示组和滚轮之间保持同步。画布顶部与左侧显示像素索引标尺（随缩放与滚动联动），可在偏好设置的 Pixel Studio 页开关。导入 JPG/BMP 等非 PNG 文件后会另存为 PNG，不覆盖原文件。
+- 左键拖动绘制，右键拖动擦除。一次拖动只占一步撤销。
+- 工具包括铅笔、橡皮、直线、矩形、填充和选区。选区支持复制、剪切、粘贴、裁剪；画布支持旋转、翻转、反相、调整尺寸（九点锚定）和清空。
+- 滚轮缩放，"缩放"下拉框可选 Fit 或固定倍率。中键拖动或按住空格拖动可平移。
+- 用方向键移动画布光标后，Enter 点亮、Delete/Backspace 熄灭、Esc 隐藏光标。
+- 画布上方和左侧有像素索引标尺，可在偏好设置中关闭。
+- 打开 JPG/BMP 等非 PNG 图片时，先按阈值转换为 1-bit，保存时另存为 PNG，不会覆盖原文件。
 
-右侧“取模与输出工作台”可选择当前画布、当前选区、Designer 当前帧、FontPack 或图片文件（彩色图片按亮度/RGB 阈值直接转 1-bit，栅格化控件仅在图片源下可用），并明确设置四种取模走向、首点写入 bit7/bit0、亮点编码为 1/0、十六/十进制、自定义包装和 FontPack 索引。底部可以直接生成、复制、保存或只清除输出；“清除输出”不会清空画布。完整公式和项目配置见 `OUTPUT_WORKBENCH.md`。
+### 取模与输出工作台
+
+Inspector 的"输出"页是取模与输出工作台。
+
+- **数据源**：当前 Pixel 画布、当前选区、当前 Designer 场景帧、项目 Font Pack，或一张图片。只有图片来源需要阈值转换，其他来源已经是 1-bit。
+- **点阵**：四种取模方式、首点写入 bit7 还是 bit0、亮点编码为 1 还是 0。
+- **格式**：文本数组或 BIN、十六进制或十进制、每行字节数、Font Pack 索引方式，以及各段的前缀和后缀。
+- **输出配置**：可以另存为项目配置，随项目保存。
+- **显示**：画布背景、网格线、像素填充和像素边框的颜色（点色块从调色板选取，或直接输入 `#RRGGBB`），像素大小，以及输出区的字体和字号。这些设置只影响显示，不会改变导出字节。
+
+底部的输出区可以生成字模、复制数组、保存字模或清除输出。"清除输出"不会清空画布。完整公式见 [OUTPUT_WORKBENCH.md](OUTPUT_WORKBENCH.md)。
 
 ## Font Lab
 
-FontPack 通常保存在项目的 `.oled/fonts/`。字库记录字宽字高、Baseline、Advance、字符集合和字模像素。需要时可从 TTF/OTF 批量生成字模，可选择相对于整个字体集合或相对于单字宽度的水平对齐，以及 1×/2×/4× 抗锯齿采样，再逐字检查或修正。Scene 的 `bitmap_text` 与 Font Lab 使用同一份 FontPack 真源。
+- Font Pack 通常保存在项目的 `.oled/fonts/` 目录下，记录单元宽高、Baseline、Advance、字符集合和每个字形的像素。
+- 可以从 TTF/OTF 字体文件批量生成字形，也可以不指定字体、使用内置 5×7 字形。可设置字号、阈值、对齐方式和抗锯齿采样。
+- 生成在后台进行，进度显示在状态栏，生成期间界面可以继续使用。
+- 在字形列表中选择字符即可逐像素修改；切换字符时，已修改的字形会自动保存。
+- 场景中的 `bitmap_text` 与 Font Lab 使用同一份 Font Pack 数据。
 
-## Automation API
+## Automation API（Code AI Bridge）
 
-可选的 localhost Code AI Bridge 提供语义化 JSON-RPC 2.0 接口。建议先调用 `automation.capabilities`，再读取项目和场景契约。编辑时使用 revision guard，多项 Scene 修改使用 transaction。事务提交先改变内存；需要调用 `project.save` 或 `project.save_all` 才会写入磁盘。
+"工具 → Code AI Bridge"会在本机回环地址上开启 JSON-RPC 2.0 接口，并显示端口和会话令牌。它与正在编辑的 Designer 会话共享状态，Agent 的每批修改在界面里是一步可撤销的操作。
 
-长任务使用 `job.start`、`job.status`、`job.result`、`job.cancel` 和 `job.release`。渲染可返回 PNG、VLSB 字节、framebuffer 哈希、解析后的几何和像素差异。完整协议见 `AUTOMATION_API_V1.md`。
+- 建议先调用 `automation.capabilities`，再读取项目和场景契约。
+- 编辑时使用 revision 校验，多项修改使用事务。事务提交只改变内存，调用 `project.save` 或 `project.save_all` 才会写入磁盘。
+- 长任务使用 `job.start`、`job.status`、`job.result`、`job.cancel` 和 `job.release`。
 
-## 导出与校验
+不打开桌面程序时，也可以用命令行运行同一个接口：`mono bridge --project <project.oled.json> --permission edit`（Linux 上命令为 `monooled-cli`）。完整协议见 [AUTOMATION_API_V1.md](AUTOMATION_API_V1.md)。
 
-可直接运行 `python src/validate.py <scene>` 校验场景，运行 `python src/exporter.py <scene> <output>` 导出场景，运行 `python src/batch_validate.py` 执行状态矩阵校验。GUI 和 Automation API 使用同一套 Renderer 与校验逻辑。
+## 命令行校验与导出
 
-## Windows 发布
+```bash
+mono validate --project project.oled.json
+mono export --project project.oled.json --output exports/latest
+mono batch-validate --project project.oled.json
+mono handoff --project project.oled.json
+```
 
-普通用户下载 `MonoOLEDStudio_v1.2.3_Windows_x64.zip`，解压后运行 `MonoOLEDStudio\MonoOLEDStudio.exe`，不需要 Python。开发者可使用 `tools\BUILD_WINDOWS_QUICK.bat`；正式发布认证使用 `tools\BUILD_WINDOWS_GA.bat` 和 Real-Qt 分组测试。
+桌面程序、命令行和 Automation API 使用同一个渲染器和同一套校验逻辑。
 
-日志、自动保存、预览和资产缓存等运行时数据位于 `.oled/`，源码交付包会排除该目录。
+## 偏好设置与数据位置
+
+- 偏好设置（`Ctrl+,`）包括语言、外观、界面缩放、输入方式、自动保存、性能和快捷键。偏好文件与 1.2.3 相同：Windows 在 `%LOCALAPPDATA%\MonoOLEDStudio\preferences.json`，macOS 和 Linux 在 `~/.config/monooled-studio/preferences.json`（遵循 `XDG_CONFIG_HOME`）。
+- 日志、自动保存、预览和资产缓存等运行时数据位于项目的 `.oled/` 目录。
