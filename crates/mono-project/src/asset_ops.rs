@@ -90,7 +90,14 @@ mod tests {
         let project = root.join("project");
         std::fs::create_dir_all(&project).unwrap();
         let first = import_asset(&project, &a).unwrap();
-        assert_eq!(first, project.join("assets/imported/icon.png"));
+        // The target is resolved (macOS /private/var, Windows 8.3 names), so
+        // compare the project-relative tail.
+        assert!(
+            first.ends_with("assets/imported/icon.png"),
+            "{}",
+            first.display()
+        );
+        assert!(first.is_file());
         assert_eq!(import_asset(&project, &a).unwrap(), first);
         std::fs::write(
             &a,
