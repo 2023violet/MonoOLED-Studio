@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2.0.3 - 2026-10-23
 
 ### Performance
 
 - When an Automation API client calls `render.all_states`, `validate.all_states` or `export.all` synchronously through the bridge, the call is now computed on a worker thread from a snapshot. The desktop window no longer freezes, and the client receives the same response. Revision and permission checks still run first.
+
+### Security
+
+- tokio 1.54.1 fixes RUSTSEC-2026-0384, a race in `tokio::time::Interval`. tokio is only used by the Linux desktop-portal file dialogs. clipboard-win is updated to 5.4.3 because 5.4.1 was yanked.
 
 ## 2.0.2 - 2026-10-21
 
