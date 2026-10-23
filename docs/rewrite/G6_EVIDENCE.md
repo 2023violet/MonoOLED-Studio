@@ -104,3 +104,10 @@ B3 执行记录（MEASURED）：
 - 发布说明取自 CHANGELOG 2.0.0 一节。
 - 本机从草稿下载 zip，`sha256sum -c` 通过；解压后 `monooled-studio --version` 输出 `monooled-studio 2.0.0`，`mono version` 输出 `mono 2.0.0`。
 - CHANGELOG 中 2.0.0 的日期写的是 2026-10-20，tag 打在 2026-10-21。
+
+## 8. 发布后的版本
+
+- **v2.0.2**（用户确认后于 2026-10-23 12:59 UTC 发布，设为 Latest）：导出、交接包、批量验证和缩略图墙改为后台执行，修正了 G4 §4 中 UI 线程阻塞的桌面部分（提交 `f82540a`）。
+  - tag `v2.0.2` 指向 `87456ed`。
+  - `Release (Rust V2)` run `39628989922` 在五个平台上全部通过。
+  - 匿名从 `releases/latest` 下载 Windows zip 后，`sha256sum -c` 通过。
