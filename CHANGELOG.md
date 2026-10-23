@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- When an Automation API client calls `render.all_states`, `validate.all_states` or `export.all` synchronously through the bridge, the call is now computed on a worker thread from a snapshot. The desktop window no longer freezes, and the client receives the same response. Revision and permission checks still run first.
+
 ## 2.0.2 - 2026-10-21
 
 ### Performance

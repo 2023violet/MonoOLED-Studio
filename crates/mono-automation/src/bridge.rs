@@ -4,7 +4,10 @@
 //! Connections are served on background threads, but every request is executed
 //! by the owner of the `Service` (the UI thread in the desktop app) through
 //! `Bridge::drain`, exactly like V1's queued bridge: a caller may time out only
-//! while its request is still queued, never after the edit started.
+//! while its request is still queued, never after the edit started. The
+//! matrix-wide read/export methods (`Service::offload`) are guarded on the
+//! draining thread and then computed on a worker thread from a snapshot, so a
+//! synchronous `export.all` does not freeze the desktop UI.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -21,29 +24,65 @@ use crate::error::RpcError;
 use crate::service::Service;
 
 /// V1 `dispatch_json_rpc`.
+/// A parsed request: method, params, `_expected_revision`, `_transaction`.
+type Parsed = (String, Map<String, Value>, Option<Value>, Option<String>);
+
+fn parse(request: &Value) -> Result<Parsed, RpcError> {
+    if request.get("jsonrpc") != Some(&json!("2.0")) {
+        return Err(RpcError::invalid("jsonrpc must be 2.0"));
+    }
+    let method = request
+        .get("method")
+        .map(py_str)
+        .ok_or_else(|| RpcError::key("method"))?;
+    // V1 `dict(request.get('params') or {})`: every falsy value means no params.
+    let mut params: Map<String, Value> = match request.get("params") {
+        Some(Value::Object(map)) => map.clone(),
+        Some(value) if mono_core::pyvalue::py_truthy(value) => {
+            return Err(RpcError::invalid("params must be an object"));
+        }
+        _ => Map::new(),
+    };
+    let expected = params.remove("_expected_revision");
+    let tx = params
+        .remove("_transaction")
+        .filter(|v| !v.is_null())
+        .map(|v| py_str(&v));
+    Ok((method, params, expected, tx))
+}
+
+fn respond(id: Value, outcome: Result<Value, RpcError>) -> Value {
+    match outcome {
+        Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+        Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": error.to_json()}),
+    }
+}
+
+/// The response now, or work that produces it on another thread.
+pub enum Dispatch {
+    Now(Value),
+    Later(Box<dyn FnOnce() -> Value + Send>),
+}
+
+/// Like `dispatch_json_rpc`, but offloadable methods come back as `Later`.
+pub fn dispatch_or_offload(service: &mut Service, request: &Value) -> Dispatch {
+    if let Ok((method, params, expected, tx)) = parse(request) {
+        if let Some(prepared) = service.offload(&method, &params, expected.as_ref(), tx.as_deref())
+        {
+            let id = request.get("id").cloned().unwrap_or(Value::Null);
+            return match prepared {
+                Ok(work) => Dispatch::Later(Box::new(move || respond(id, work()))),
+                Err(error) => Dispatch::Now(respond(id, Err(error))),
+            };
+        }
+    }
+    Dispatch::Now(dispatch_json_rpc(service, request))
+}
+
 pub fn dispatch_json_rpc(service: &mut Service, request: &Value) -> Value {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     let outcome = (|| -> Result<Value, RpcError> {
-        if request.get("jsonrpc") != Some(&json!("2.0")) {
-            return Err(RpcError::invalid("jsonrpc must be 2.0"));
-        }
-        let method = request
-            .get("method")
-            .map(py_str)
-            .ok_or_else(|| RpcError::key("method"))?;
-        // V1 `dict(request.get('params') or {})`: every falsy value means no params.
-        let mut params: Map<String, Value> = match request.get("params") {
-            Some(Value::Object(map)) => map.clone(),
-            Some(value) if mono_core::pyvalue::py_truthy(value) => {
-                return Err(RpcError::invalid("params must be an object"));
-            }
-            _ => Map::new(),
-        };
-        let expected = params.remove("_expected_revision");
-        let tx = params
-            .remove("_transaction")
-            .filter(|v| !v.is_null())
-            .map(|v| py_str(&v));
+        let (method, params, expected, tx) = parse(request)?;
         match method.as_str() {
             "history.begin_transaction" => {
                 let tid = service.begin_transaction(expected.as_ref())?;
@@ -66,10 +105,7 @@ pub fn dispatch_json_rpc(service: &mut Service, request: &Value) -> Value {
             _ => service.call(&method, &params, expected.as_ref(), tx.as_deref()),
         }
     })();
-    match outcome {
-        Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
-        Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": error.to_json()}),
-    }
+    respond(id, outcome)
 }
 
 /// 24 random bytes from the OS CSPRNG as URL-safe base64 (V1
@@ -324,9 +360,27 @@ impl Bridge {
             if !call.claim() {
                 continue;
             }
-            let response = dispatch_json_rpc(service, &call.request);
-            call.complete(response.clone());
-            responses.push(response);
+            match dispatch_or_offload(service, &call.request) {
+                Dispatch::Now(response) => {
+                    call.complete(response.clone());
+                    responses.push(response);
+                }
+                Dispatch::Later(work) => {
+                    // Guarded already; the snapshot work answers the caller
+                    // from a worker thread while the UI keeps draining.
+                    let worker = Arc::clone(&call);
+                    let spawned = std::thread::Builder::new()
+                        .name("automation-offload".into())
+                        .spawn(move || worker.complete(work()));
+                    if spawned.is_err() {
+                        let id = call.request.get("id").cloned().unwrap_or(Value::Null);
+                        call.complete(respond(
+                            id,
+                            Err(RpcError::invalid("could not start a worker thread")),
+                        ));
+                    }
+                }
+            }
         }
         responses
     }
@@ -352,7 +406,7 @@ impl Drop for Bridge {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
+    #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
     use std::io::Read;
 
@@ -446,6 +500,38 @@ mod tests {
             "BUSY"
         );
         drop(held);
+        bridge.stop();
+    }
+
+    #[test]
+    fn matrix_calls_are_answered_off_the_draining_thread_with_the_same_result() {
+        let mut bridge = Bridge::start(0).unwrap();
+        let mut svc = service();
+        let request = json!({"jsonrpc": "2.0", "id": 7, "method": "validate.all_states", "params": {"integer_policy": "boundaries"}});
+        // Offloaded: drain returns without a response for it.
+        assert!(matches!(
+            dispatch_or_offload(&mut svc, &request),
+            Dispatch::Later(_)
+        ));
+        // Identical apart from the measured run time.
+        let timeless = |mut v: Value| {
+            v["result"]["elapsed_ms"] = Value::Null;
+            v
+        };
+        let expected = timeless(dispatch_json_rpc(&mut svc, &request));
+        let mut line = request.clone();
+        line["token"] = json!(bridge.token);
+        let responses = roundtrip(&bridge, &mut svc, &format!("{line}\n"));
+        assert_eq!(
+            responses.into_iter().map(timeless).collect::<Vec<_>>(),
+            vec![expected]
+        );
+        // Guards still apply up front: observe may not export.
+        let export = json!({"jsonrpc": "2.0", "id": 8, "method": "export.all", "params": {}});
+        match dispatch_or_offload(&mut svc, &export) {
+            Dispatch::Now(response) => assert_eq!(response["error"]["code"], "PERMISSION_DENIED"),
+            Dispatch::Later(_) => panic!("observe must not start an export"),
+        }
         bridge.stop();
     }
 

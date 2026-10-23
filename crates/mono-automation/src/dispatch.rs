@@ -1857,6 +1857,37 @@ fn pixel_edit(
 
 // --------------------------------------------------------------- jobs/events
 
+/// The matrix-wide work of `render.all_states`, `validate.all_states`,
+/// `export.all` and `export.code_ai_handoff` over a snapshot of the service,
+/// producing exactly the synchronous result (`ok`, `revision`, payload). Runs
+/// on any thread: `job.start` and the bridge's off-UI-thread calls use it.
+pub(crate) fn matrix_work(
+    service: &Service,
+    operation: &str,
+    arguments: Params,
+) -> crate::jobs::Runner {
+    let scene = service.scene().clone();
+    let root = service.session.doc.root.clone();
+    let project_root = service.project_root.clone();
+    let revision = service.revision;
+    let op = operation.to_string();
+    Box::new(move |progress| {
+        let payload = match op.as_str() {
+            "render.all_states" => ops::render_all_states(&scene, &root, &arguments, progress)?,
+            "validate.all_states" => ops::validate_all_states(&scene, &root, &arguments, progress)?,
+            "export.all" => ops::export_all(&scene, &root, &project_root, &arguments, progress)?,
+            _ => ops::handoff(&scene, &root, &project_root, &arguments, progress)?,
+        };
+        let mut out = Map::new();
+        out.insert("ok".into(), json!(true));
+        out.insert("revision".into(), json!(revision));
+        if let Value::Object(map) = payload {
+            out.extend(map);
+        }
+        Ok(Value::Object(out))
+    })
+}
+
 fn jobs_events(service: &mut Service, method: &str, params: &Params) -> RpcResult<Value> {
     match method {
         "job.start" => {
@@ -1876,35 +1907,8 @@ fn jobs_events(service: &mut Service, method: &str, params: &Params) -> RpcResul
                 return Err(RpcError::PermissionDenied(operation));
             }
             let arguments = object(params.get("arguments"));
-            let scene = service.scene().clone();
-            let root = service.session.doc.root.clone();
-            let project_root = service.project_root.clone();
-            let revision = service.revision;
-            let op = operation.clone();
-            let id = service.jobs.start(
-                &operation,
-                Box::new(move |progress| {
-                    let payload = match op.as_str() {
-                        "render.all_states" => {
-                            ops::render_all_states(&scene, &root, &arguments, progress)?
-                        }
-                        "validate.all_states" => {
-                            ops::validate_all_states(&scene, &root, &arguments, progress)?
-                        }
-                        "export.all" => {
-                            ops::export_all(&scene, &root, &project_root, &arguments, progress)?
-                        }
-                        _ => ops::handoff(&scene, &root, &project_root, &arguments, progress)?,
-                    };
-                    let mut out = Map::new();
-                    out.insert("ok".into(), json!(true));
-                    out.insert("revision".into(), json!(revision));
-                    if let Value::Object(map) = payload {
-                        out.extend(map);
-                    }
-                    Ok(Value::Object(out))
-                }),
-            )?;
+            let work = matrix_work(service, &operation, arguments);
+            let id = service.jobs.start(&operation, work)?;
             Ok(service.result(json!({"job_id": id, "operation": operation, "state": "queued"})))
         }
         "job.status" => {

@@ -37,6 +37,14 @@ pub fn spec_permission(method: &str) -> Option<&'static str> {
         .and_then(Value::as_str)
 }
 
+/// Synchronous methods whose result depends only on a snapshot of the scene
+/// (the same work `job.start` runs on a thread); the bridge computes them off
+/// the draining (UI) thread.
+pub const OFFLOADABLE: [&str; 3] = ["render.all_states", "validate.all_states", "export.all"];
+
+/// Snapshot work produced by `Service::offload`.
+pub type Offloaded = Box<dyn FnOnce() -> RpcResult<Value> + Send>;
+
 fn transaction_supported(method: &str) -> bool {
     method_specs()
         .get(method)
@@ -346,6 +354,28 @@ impl Service {
     }
 
     /// V1 `call`: guards, then the domain dispatchers.
+    /// For the matrix-wide synchronous methods: run `call`'s guards now and
+    /// return the work as a snapshot closure that may run on another thread
+    /// and yields the same result. `None` for every other call (and inside
+    /// transactions), which must go through `call`.
+    pub fn offload(
+        &self,
+        method: &str,
+        params: &Map<String, Value>,
+        expected: Option<&Value>,
+        transaction: Option<&str>,
+    ) -> Option<RpcResult<Offloaded>> {
+        if transaction.is_some() || !OFFLOADABLE.contains(&method) {
+            return None;
+        }
+        Some((|| {
+            self.check_revision(expected)?;
+            self.write_guard(method)?;
+            let work = crate::dispatch::matrix_work(self, method, params.clone());
+            Ok(Box::new(move || work(&mut |_, _, _| true)) as Offloaded)
+        })())
+    }
+
     pub fn call(
         &mut self,
         method: &str,
