@@ -111,3 +111,9 @@ B3 执行记录（MEASURED）：
   - tag `v2.0.2` 指向 `87456ed`。
   - `Release (Rust V2)` run `39628989922` 在五个平台上全部通过。
   - 匿名从 `releases/latest` 下载 Windows zip 后，`sha256sum -c` 通过。
+- **v2.0.3**（用户确认后于 2026-10-23 15:34 UTC 发布，设为 Latest）：
+  - Agent 通过桥同步调用 `render.all_states`、`validate.all_states`、`export.all` 时，改为在工作线程上按快照计算（`3494361`）。至此 G4 §4 的 UI 线程阻塞一项，桌面操作与 Agent 长调用都已离开 UI 线程。
+  - tokio 升级到 1.54.1，修复 RUSTSEC-2026-0384（`e725cad`）。
+  - tag `v2.0.3` 指向 `3817e6a`。
+  - `Release (Rust V2)` run `39969677244` 在五个平台上全部通过。
+  - 匿名从 `releases/latest` 下载 Windows zip 后，`sha256sum -c` 通过。
