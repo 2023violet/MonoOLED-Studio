@@ -21,14 +21,47 @@ impl App {
         self.session.as_ref().is_some_and(|s| s.dirty)
     }
 
+    fn font_dirty(&self) -> bool {
+        self.font
+            .as_ref()
+            .is_some_and(crate::fontlab::FontLab::dirty)
+    }
+
+    /// Bitmask of the documents that hold unsaved changes.
+    fn unsaved_mask(&self) -> u8 {
+        const SCENE: u8 = 1;
+        const PIXEL: u8 = 2;
+        const FONT: u8 = 4;
+        let mut mask = 0;
+        if self.scene_dirty() {
+            mask |= SCENE;
+        }
+        if self.pixel.doc.dirty {
+            mask |= PIXEL;
+        }
+        if self.font_dirty() {
+            mask |= FONT;
+        }
+        mask
+    }
+
     /// Designer scene, Pixel Studio bitmap or Font Lab glyph/metrics.
     pub fn has_unsaved(&self) -> bool {
-        self.scene_dirty()
-            || self.pixel.doc.dirty
-            || self
-                .font
-                .as_ref()
-                .is_some_and(crate::fontlab::FontLab::dirty)
+        self.unsaved_mask() != 0
+    }
+
+    /// i18n key naming the document(s) the user actually edited.
+    pub fn unsaved_context(&self) -> &'static str {
+        const SCENE: u8 = 1;
+        const PIXEL: u8 = 2;
+        const FONT: u8 = 4;
+        match self.unsaved_mask() {
+            0 => "dialog.unsaved_message",
+            SCENE => "dialog.unsaved_designer",
+            PIXEL => "dialog.unsaved_pixel",
+            FONT => "dialog.unsaved_font",
+            _ => "dialog.unsaved_multi",
+        }
     }
 
     /// Save / Discard / Cancel. Non-interactive runs (screenshots, benches,
@@ -116,10 +149,10 @@ impl App {
         if !self.has_unsaved() {
             return true;
         }
-        match self.ask_unsaved("dialog.unsaved_message") {
+        match self.ask_unsaved(self.unsaved_context()) {
             Unsaved::Cancel => false,
             Unsaved::Discard => {
-                self.pixel.doc.dirty = false;
+                self.pixel.doc.mark_clean();
                 // Close the pack so a later glyph switch cannot auto-save it.
                 if self
                     .font
@@ -139,7 +172,7 @@ impl App {
         if !self.scene_dirty() {
             return true;
         }
-        match self.ask_unsaved("dialog.unsaved_message") {
+        match self.ask_unsaved("dialog.unsaved_designer") {
             Unsaved::Cancel => false,
             Unsaved::Discard => true,
             Unsaved::Save => match self.save() {
@@ -188,7 +221,7 @@ impl App {
         }
         // The deleted screen's session is gone with its file; never save it.
         if let Some(session) = self.session.as_mut() {
-            session.dirty = false;
+            session.mark_clean();
         }
         self.switch_screen(&next)
     }
@@ -244,6 +277,55 @@ mod tests {
             .batch_move(&["hero_digits".to_string()], 1, 0, false)
             .unwrap();
         assert!(session.dirty);
+    }
+
+    #[test]
+    fn unsaved_context_designer() {
+        let (mut app, root) = app("ctx-designer");
+        edit(&mut app);
+        assert_eq!(app.unsaved_context(), "dialog.unsaved_designer");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn unsaved_context_pixel() {
+        let (mut app, root) = app("ctx-pixel");
+        app.pixel.doc.pencil(0, 0, true);
+        assert_eq!(app.unsaved_context(), "dialog.unsaved_pixel");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn unsaved_context_font() {
+        let (mut app, root) = app("ctx-font");
+        let pack = crate::fontlab::create_pack(&root.join(".oled/fonts"), "Guard 5x8").unwrap();
+        app.open_font_pack(&pack).unwrap();
+        app.font.as_mut().unwrap().studio.doc.pencil(0, 0, true);
+        assert_eq!(app.unsaved_context(), "dialog.unsaved_font");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn unsaved_context_multi() {
+        let (mut app, root) = app("ctx-multi");
+        edit(&mut app);
+        app.pixel.doc.pencil(0, 0, true);
+        assert_eq!(app.unsaved_context(), "dialog.unsaved_multi");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn pixel_prompt_key_is_pixel_specific() {
+        let (mut app, root) = app("ctx-keys");
+        app.pixel.doc.pencil(0, 0, true);
+        let key = app.unsaved_context();
+        assert_eq!(key, "dialog.unsaved_pixel");
+        for lang in ["zh_CN", "en_US"] {
+            let text = crate::i18n::tr(lang, key);
+            assert_ne!(text, key, "{lang} is missing {key}");
+            assert!(text.to_lowercase().contains("像素") || text.to_lowercase().contains("pixel"));
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

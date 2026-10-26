@@ -1,63 +1,64 @@
-# MonoOLED Studio V9 — UI Design System
+# MonoOLED Studio — UI Design System (Slint)
+
+> 真源：`apps/mono-desktop/ui/theme.slint`（颜色、密度、字体）与 `widgets.slint`（控件状态）。
+> 本文档描述这些文件实现的规则；与代码冲突时以代码为准，并更新本文档。
 
 ## Product language
 
-MonoOLED Studio is a **professional editor**, not a Bento dashboard. Canvas remains the visual center. Inspector/settings surfaces use flat sections and thin separators; cards are reserved for genuinely summary-oriented surfaces.
+MonoOLED Studio is a professional editor, not a dashboard. The canvas is the visual center. Inspector and settings surfaces use flat sections and thin separators; cards are reserved for genuinely summary-oriented surfaces.
 
 ## Interaction vocabulary
 
-Every control must distinguish Normal, Hover, Pressed, Selected, Selected+Hover, Keyboard Focus and Disabled. State changes must not change control geometry. Mouse focus and keyboard focus are separate.
+Every control distinguishes Normal, Hover, Pressed, Selected, Selected+Hover, Keyboard Focus and Disabled. State changes must not change control geometry. Mouse focus and keyboard focus are separate. Overlays return keyboard focus to the workspace when they close (`focus_if_idle`).
 
-## Semantic color tokens
+## Themes
 
-Components consume `app.background`, `surface.*`, `text.*`, `border.*`, `accent.*`, `status.*` and `canvas.*` tokens from `theme_system.py`; components must not invent local colors for ordinary states.
+`Theme.mode` selects one of three token sets:
 
-## Border Radius Systematic Scale (V9)
+| Mode | Name | Use |
+| --- | --- | --- |
+| 0 | `monooled-light` | Default light UI |
+| 1 | `one-dark-pro` | Dark UI |
+| 2 | High contrast | Black background, maximum-contrast text and accents |
 
-**Professional editor refinement** — consistent visual hierarchy:
+The mode comes from `appearance.theme_mode` (`system` resolves the OS hint, defaulting to light). Pixel Studio can either follow the theme (`pixel_studio.palette_mode = auto`) or keep custom colours (`custom`).
 
-| Element | Radius | Rationale |
-|---------|--------|-----------|
-| **Panels** (ProfessionalPanel, CanvasWorkspace, Popups, Lists) | **12px** | Primary containment surfaces |
-| **Controls** (Buttons, Inputs, Tabs, List Items) | **8px** | Interactive elements — unified hierarchy |
-| **Pills** (StatusPill badges) | **16px** | Deliberately rounded pill shape |
-| **Menus** (Menu items, Scrollbar handles) | **8px** | Ephemeral transient surfaces |
+## Semantic colour tokens
 
-**Implementation:** Tokens defined in `ui_metrics.py` (`radius_panel`, `radius_control`, `radius_pill`, `radius_menu`) and applied systematically in `qt_theme.py`.
+Components consume `app-background`, `surface-*`, `text-*`, `border-*`, `accent-*`, `status-*` and `canvas-*` tokens from `Theme`; components must not invent local colours for ordinary states. Selected pixels use `canvas-selection`; editor-only guides use `canvas-guide`; the pixel palette derives from `canvas-off` / `canvas-on` / `canvas-grid` / `canvas-selection` in `auto` mode.
 
-**Removed:** Legacy unused METRICS values (`radius_large: 24`, `radius_medium: 20`, `radius_small: 16`) eliminated.
+## Shape and density
 
-## Command Bar Visual Hierarchy (V9)
+| Token | Value |
+| --- | --- |
+| `radius-panel` | 12px |
+| `radius-control` | 8px |
+| `radius-pill` | 16px |
+| `control-height` | 28 / 32 / 38px (compact / comfortable / spacious) |
+| `pad`, `gap` | 6 / 8 / 12px |
 
-**Professional editor refinement** — semantic button roles without visual competition:
+Density changes control height and padding without changing information architecture. Font sizes: body 13px, small 11px, title 15px.
 
-| Tier | Role | Buttons | Rationale |
-|------|------|---------|-----------|
-| **Primary** | Main document action | **Save** | Single primary CTA — most frequent critical action |
-| **Secondary** | Workspace modes & delivery | Design, Pixel, Review, Project, Validate, Handoff | Supporting actions — equal weight within tier |
-| **Ghost** | Utility & settings | Diagnostics, Settings, AI Agent | De-emphasized support tools |
+## Component rules
 
-**Key principles:**
-- Only **one Primary button** visible at a time (Save)
-- Workspace mode buttons (Design/Pixel/Review) use **consistent Secondary style** — no role swapping
-- Enabled/disabled state indicates active mode, not role changes
-- Delivery actions (Validate/Handoff) treated as secondary, not competing primary CTAs
+- **Button**: primary only for the current document's main action (Save); secondary for workspace and delivery actions; ghost for utilities; danger for destructive actions. Disabled controls keep their size.
+- **IconButton / ToolButton**: always expose `accessible-label`; show a tooltip with the same text on hover. Pixel tool buttons show icon + short label.
+- **Segmented**: workspace switch; selected segment uses `surface-selected` plus a 2px accent underline.
+- **StatusPill**: severity/tone; never the only carrier of meaning (text is always present).
+- **Dialog / Scrim**: modal overlays trap Escape and restore focus on close. Non-modal panels (Agent Bridge) never use a scrim.
+- **ListView / ListRow**: `text` plus optional right-aligned `detail` (shortcut chords, codes).
 
-## Density
+## Layout
 
-Compact, Comfortable and Spacious alter control height/padding without changing information architecture.
+- Designer: Navigator | Canvas | Context Inspector, with a collapsible Problems/Diff/Logs drawer.
+- Diff Review: side-by-side baseline/current with the changed-pixel bounds and element change lists.
+- Pixel Studio: Tool Rail | Pixel Canvas | Flat Context Inspector, plus status/input hints.
+- Font Lab: Glyph list | Canvas + on-screen preview | Generator form.
+- Preferences: a separate flat dialog; global preferences never occupy the authoring header.
 
-## Workspace
+## Accent grammar
 
-Designer: Navigator | Canvas | Context Inspector, with a collapsible Problems/Diff/Logs drawer.
-
-Pixel Studio: Tool Rail | Pixel Canvas | Flat Context Inspector, plus status/input hints.
-
-Preferences: independent flat Settings window; global preferences never occupy the main authoring header.
-
-## V10.3 Blue Accent Grammar
-
-Blue is semantic rather than decorative:
+Blue/teal is semantic rather than decorative:
 
 - block = primary action;
 - rail = current interaction / selected tool;
@@ -66,4 +67,4 @@ Blue is semantic rather than decorative:
 - 1px outline = current spatial hover;
 - anchor = active smart-guide snap confirmation.
 
-A local surface should not accumulate multiple competing blue cues. The smallest sufficient cue wins.
+A local surface should not accumulate multiple competing accent cues. The smallest sufficient cue wins.

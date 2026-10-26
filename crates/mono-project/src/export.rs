@@ -32,6 +32,33 @@ pub struct Finding {
     pub element_id: Option<String>,
 }
 
+/// Every finding code the validator can emit (localized labels live in the UI).
+pub const FINDING_CODES: [&str; 23] = [
+    "NON_INTEGER_COORDINATE",
+    "INVALID_SIZE",
+    "OUT_OF_BOUNDS",
+    "ASSET_NOT_FOUND",
+    "NON_BINARY_ASSET",
+    "ASSET_SIZE_MISMATCH",
+    "INVALID_CANVAS_SIZE",
+    "CANVAS_HEIGHT_NOT_PAGE_ALIGNED",
+    "FRAMEBUFFER_SIZE_CONTRACT",
+    "MISSING_STATE",
+    "INVALID_STATE",
+    "UNKNOWN_ELEMENT_TYPE",
+    "INVALID_BINDING",
+    "DRAFT_PLACEHOLDER",
+    "INVALID_SEQUENCE",
+    "FONT_INVALID",
+    "FONT_MISSING_GLYPH",
+    "UNRESOLVED_VARIABLE",
+    "FRAMEBUFFER_SIZE",
+    "RENDER_FAILED",
+    "REQUIRED_ELEMENT_MISSING",
+    "ELEMENT_OUTSIDE_ZONE",
+    "BASELINE_MISMATCH",
+];
+
 impl Finding {
     fn new(
         severity: &str,

@@ -1,0 +1,116 @@
+// Non-modal Code AI Bridge panel: endpoint, permission, token reveal/copy.
+import { Theme, Metrics } from "theme.slint";
+import { I18n, Button, ButtonRole, Caption, Label, SectionTitle } from "widgets.slint";
+import { LineEdit, ComboBox } from "std-widgets.slint";
+
+export global AgentModel {
+    in property <bool> running;
+    in property <bool> can-start: true;
+    in property <string> host: "127.0.0.1";
+    in property <int> port;
+    in property <int> permission: 1;
+    in property <string> token;
+    in-out property <bool> token-visible;
+    in property <string> endpoint;
+    in property <string> status;
+    callback agent-action(string);
+}
+
+export component AgentPanel inherits Rectangle {
+    // `selected` carries the label, not the index (Slint ComboBoxBase).
+    property <[string]> permission-labels: [
+        I18n.tr(I18n.lang, "agent.permission.observe"),
+        I18n.tr(I18n.lang, "agent.permission.edit"),
+        I18n.tr(I18n.lang, "agent.permission.full")
+    ];
+    width: 340px;
+    height: 330px;
+    background: Theme.surface-panel;
+    border-radius: Metrics.radius-panel;
+    border-width: 1px;
+    border-color: Theme.border-normal;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: Theme.popover-shadow;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 8px;
+        HorizontalLayout {
+            SectionTitle { text: I18n.tr(I18n.lang, "agent.bridge.title"); vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: I18n.tr(I18n.lang, "dialog.close");
+                role: ButtonRole.ghost;
+                shrink: true;
+                clicked => { AgentModel.agent-action("close"); }
+            }
+        }
+        Caption { text: I18n.tr(I18n.lang, "agent.panel.hint"); }
+        Label { text: I18n.tr(I18n.lang, "agent.panel.permission"); }
+        ComboBox {
+            model: root.permission-labels;
+            current-index: AgentModel.permission;
+            selected(value) => {
+                AgentModel.agent-action("permission:" + (value == root.permission-labels[0] ? 0 : value == root.permission-labels[2] ? 2 : 1));
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            Label { text: I18n.tr(I18n.lang, "agent.panel.endpoint"); width: 74px; }
+            Text {
+                text: AgentModel.running ? AgentModel.host + ":" + AgentModel.port : I18n.tr(I18n.lang, "agent.panel.stopped");
+                color: Theme.text-primary;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+        }
+        if AgentModel.running: VerticalLayout {
+            spacing: 6px;
+            HorizontalLayout {
+                spacing: 6px;
+                LineEdit {
+                    text: AgentModel.token-visible ? AgentModel.token : "••••••••••••••••";
+                    read-only: true;
+                    horizontal-stretch: 1;
+                }
+                Button {
+                    text: AgentModel.token-visible
+                        ? I18n.tr(I18n.lang, "agent.panel.hide")
+                        : I18n.tr(I18n.lang, "agent.panel.show");
+                    role: ButtonRole.ghost;
+                    shrink: true;
+                    clicked => { AgentModel.token-visible = !AgentModel.token-visible; }
+                }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                Button {
+                    text: I18n.tr(I18n.lang, "agent.panel.copy_token");
+                    horizontal-stretch: 1;
+                    clicked => { AgentModel.agent-action("copy-token"); }
+                }
+                Button {
+                    text: I18n.tr(I18n.lang, "agent.panel.copy_endpoint");
+                    horizontal-stretch: 1;
+                    clicked => { AgentModel.agent-action("copy-endpoint"); }
+                }
+            }
+            Caption { text: AgentModel.status; }
+            Button {
+                text: I18n.tr(I18n.lang, "agent.panel.stop");
+                role: ButtonRole.danger;
+                clicked => { AgentModel.agent-action("stop"); }
+            }
+        }
+        if !AgentModel.running: VerticalLayout {
+            spacing: 6px;
+            Caption { text: AgentModel.status; }
+            Button {
+                text: I18n.tr(I18n.lang, "agent.panel.start");
+                role: ButtonRole.primary;
+                enabled: AgentModel.can-start;
+                clicked => { AgentModel.agent-action("start"); }
+            }
+        }
+    }
+}

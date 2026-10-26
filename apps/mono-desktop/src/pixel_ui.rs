@@ -18,9 +18,9 @@ use slint::Global;
 use crate::app::{App, Prompt, model, ss};
 use crate::canvas::{image_from_pixels, image_with_colors};
 use crate::i18n::trf;
-use crate::pixel::{PixelStudio, ZOOMS, default_symbol, load_import_source};
+use crate::pixel::{PixelOrigin, PixelStudio, ZOOMS, default_symbol, load_import_source};
 use crate::workbench::{MODES, SOURCES, bitmap_item, font_items, merged_profiles};
-use crate::{OutputModel, PixelModel, ProfileItem};
+use crate::{OutputModel, PillTone, PixelModel, ProfileItem};
 
 pub const ANCHORS: [&str; 9] = [
     "top-left",
@@ -157,7 +157,7 @@ impl App {
         }
     }
 
-    fn undo_limit(&self) -> usize {
+    pub(crate) fn undo_limit(&self) -> usize {
         usize::try_from(self.prefs.int("performance.undo_history")).unwrap_or(200)
     }
 
@@ -173,13 +173,13 @@ impl App {
     }
 
     /// `None` = cancel, `Some(true)` = save first, `Some(false)` = discard.
-    fn confirm_unsaved_pixel(&self) -> Option<bool> {
+    pub(crate) fn confirm_unsaved_pixel(&self) -> Option<bool> {
         if !self.pixel.doc.dirty {
             return Some(false);
         }
         let result = rfd::MessageDialog::new()
             .set_title(self.t("dialog.unsaved_title"))
-            .set_description(self.t("dialog.save_changes"))
+            .set_description(self.t("dialog.unsaved_pixel"))
             .set_buttons(rfd::MessageButtons::YesNoCancel)
             .show();
         match result {
@@ -228,12 +228,13 @@ impl App {
         let p = self.studio();
         pm.set_doc_w(w as i32);
         pm.set_doc_h(h as i32);
+        pm.set_asset_locked(p.is_asset());
         let title = match (&self.font, self.workspace) {
             (Some(font), 2) => font
                 .current
                 .map(|c| format!("{} · '{c}'", font.pack.name))
                 .unwrap_or_else(|| font.pack.name.clone()),
-            _ if p.path.is_some() => p.title(),
+            _ if p.path.is_some() || p.is_asset() => p.title(),
             _ => self.t("pixel.title"),
         };
         pm.set_title(ss(format!(
@@ -286,6 +287,10 @@ impl App {
         pm.set_selection_text(ss(selection));
         self.refresh_pixel_cursor();
         self.refresh_app();
+        // Font Lab shares this canvas: keep the pack title/state in step.
+        if self.workspace == 2 {
+            self.refresh_font();
+        }
     }
 
     fn refresh_pixel_cursor(&self) {
@@ -424,6 +429,10 @@ impl App {
                     self.show_prompt(Prompt::GlyphCharacters, &title, &label, "");
                 }
                 "canvas-size" => {
+                    if self.pixel.asset_locked() {
+                        self.set_status(self.t("asset.size_locked"));
+                        return Ok(());
+                    }
                     if let Some(ui) = self.ui.upgrade() {
                         let pm = PixelModel::get(&ui);
                         pm.set_resize_w(self.pixel.width() as i32);
@@ -460,13 +469,21 @@ impl App {
             Ok(())
         })();
         if let Err(e) = result {
-            self.error(&e);
+            if e.code == "E-ASSET-SIZE-LOCKED" {
+                let message = self.t("asset.size_locked");
+                self.set_status(message);
+            } else {
+                self.error(&e);
+            }
             self.refresh_pixel();
         }
     }
 
     /// V1 `save_png`: reuse the current `.png` path, else ask. Returns false on cancel.
     pub fn pixel_save(&mut self) -> Result<bool, CoreError> {
+        if self.pixel.is_asset() {
+            return self.pixel_save_asset();
+        }
         let path = match &self.pixel.path {
             Some(p) if p.extension().is_some_and(|e| e.eq_ignore_ascii_case("png")) => p.clone(),
             _ => {
@@ -485,6 +502,43 @@ impl App {
         self.scan_project_files();
         self.refresh_navigator();
         self.refresh_pixel();
+        Ok(true)
+    }
+
+    /// Write the asset document back to its project PNG. Returns false on cancel.
+    fn pixel_save_asset(&mut self) -> Result<bool, CoreError> {
+        let rel = match &self.pixel.origin {
+            PixelOrigin::Asset { rel, .. } => rel.clone(),
+            _ => String::new(),
+        };
+        match self.pixel.save_asset(false) {
+            Ok(_) => {}
+            Err(e) if e.code == "E-ASSET-EXTERNAL-MODIFICATION" => {
+                if !self.interactive {
+                    return Err(e);
+                }
+                let answer = rfd::MessageDialog::new()
+                    .set_title(self.t("dialog.unsaved_title"))
+                    .set_description(self.t("asset.external_changed"))
+                    .set_buttons(rfd::MessageButtons::YesNo)
+                    .show();
+                if answer != rfd::MessageDialogResult::Yes {
+                    return Ok(false);
+                }
+                self.pixel.save_asset(true)?;
+            }
+            Err(e) if e.code == "E-ASSET-ENCODE-POLARITY" => {
+                return Err(CoreError::invalid(self.t("asset.polarity")));
+            }
+            Err(e) => return Err(e),
+        }
+        if let Some(session) = self.session.as_mut() {
+            session.clear_resource_cache();
+        }
+        self.refresh_canvas();
+        self.refresh_navigator();
+        self.refresh_pixel();
+        self.set_status(trf(&self.lang, "asset.saved", &[("path", rel)]));
         Ok(true)
     }
 
@@ -660,17 +714,20 @@ impl App {
                 if text.is_empty() {
                     return true;
                 }
-                let mut profile = self.bench.profile.clone();
+                let previous_id = self.bench.profile_id.clone();
+                let previous_profile = self.bench.profile.clone();
+                let previous_dirty = self.bench.profile_dirty;
+                let mut profile = previous_profile.clone();
                 profile.name = text.to_string();
-                match self.project.as_mut() {
-                    Some(project) => project
-                        .upsert_output_profile(&id, &profile, true)
-                        .map(|()| {
-                            self.bench.profile_id = id;
-                            self.bench.profile = profile;
-                        }),
-                    None => Ok(()),
+                self.bench.profile_id = id;
+                self.bench.profile = profile;
+                let result = self.bench_commit_profile(true);
+                if result.is_err() {
+                    self.bench.profile_id = previous_id;
+                    self.bench.profile = previous_profile;
+                    self.bench.profile_dirty = previous_dirty;
                 }
+                result
             }
             _ => return false,
         };
@@ -703,6 +760,7 @@ impl App {
             .unwrap_or_default();
         self.bench.profile_id = id;
         self.bench.profile = profile;
+        self.bench.profile_dirty = false;
         self.bench.last = None;
         self.refresh_bench();
     }
@@ -718,8 +776,26 @@ impl App {
                 .collect(),
         ));
         om.set_source(b.source as i32);
-        let (_, saved) = self.saved_profiles();
+        let (active, saved) = self.saved_profiles();
         let merged = merged_profiles(&saved);
+        let in_project = saved.iter().any(|(id, _)| *id == b.profile_id);
+        om.set_profile_dirty(b.profile_dirty);
+        om.set_profile_source(i32::from(in_project));
+        om.set_profile_is_default(active == b.profile_id);
+        om.set_profile_state_text(ss(if b.profile_dirty {
+            self.t("bench.profile_state.draft")
+        } else if in_project {
+            self.t("bench.profile_state.project")
+        } else {
+            self.t("bench.profile_state.builtin")
+        }));
+        om.set_profile_state_tone(if b.profile_dirty {
+            PillTone::Warning
+        } else if in_project {
+            PillTone::Success
+        } else {
+            PillTone::Neutral
+        });
         om.set_profiles(model(
             merged
                 .iter()
@@ -779,29 +855,61 @@ impl App {
         om.set_lines(model(b.display_text().split('\n').map(ss).collect()));
     }
 
-    fn persist_profile(&mut self) {
+    fn bench_apply(&mut self) {
+        self.bench.profile_dirty = true;
+        if self.bench.last.is_some() {
+            self.bench_generate();
+        }
+    }
+
+    /// Write the in-memory profile to the project; the only path that persists it.
+    pub fn bench_commit_profile(&mut self, activate: bool) -> Result<(), CoreError> {
+        let no_project = CoreError::invalid(self.t("bench.no_project"));
         let Some(project) = self.project.as_mut() else {
-            return;
+            self.bench.message = no_project.message.clone();
+            return Err(no_project);
         };
         let id = self.bench.profile_id.clone();
-        self.bench.message = match project.upsert_output_profile(&id, &self.bench.profile, true) {
-            Ok(()) => tr_static(&self.lang, "bench.profile_saved"),
-            Err(e) => trf(
-                &self.lang,
-                "bench.profile_save_failed",
-                &[("error", e.message)],
-            ),
+        match project.upsert_output_profile(&id, &self.bench.profile, activate) {
+            Ok(()) => {
+                self.bench.profile_dirty = false;
+                self.bench.message = tr_static(&self.lang, "bench.profile_saved");
+                Ok(())
+            }
+            Err(e) => {
+                self.bench.message = trf(
+                    &self.lang,
+                    "bench.profile_save_failed",
+                    &[("error", e.message.clone())],
+                );
+                Err(e)
+            }
+        }
+    }
+
+    /// Point the project's active profile at the current selection (builtins allowed).
+    pub fn bench_set_default(&mut self) -> Result<(), CoreError> {
+        let no_project = CoreError::invalid(self.t("bench.no_project"));
+        let Some(project) = self.project.as_mut() else {
+            self.bench.message = no_project.message.clone();
+            return Err(no_project);
         };
+        let result = project.set_active_output_profile(&self.bench.profile_id);
+        match result {
+            Ok(()) => {
+                self.bench.message = tr_static(&self.lang, "bench.profile_default_set");
+                Ok(())
+            }
+            Err(e) => {
+                self.bench.message = e.message.clone();
+                Err(e)
+            }
+        }
     }
 
     pub fn bench_field(&mut self, key: &str, value: &str) {
         match self.bench.set_field(key, value) {
-            Ok(()) => {
-                self.persist_profile();
-                if self.bench.last.is_some() {
-                    self.bench_generate();
-                }
-            }
+            Ok(()) => self.bench_apply(),
             Err(e) => self.bench.message = e.message,
         }
         self.refresh_bench();
@@ -816,13 +924,35 @@ impl App {
     pub fn bench_profile(&mut self, index: i32) {
         let (_, saved) = self.saved_profiles();
         let merged = merged_profiles(&saved);
-        if let Some((id, profile)) = usize::try_from(index).ok().and_then(|i| merged.get(i)) {
-            self.bench.profile_id = id.clone();
-            self.bench.profile = profile.clone();
-            self.persist_profile();
-            if self.bench.last.is_some() {
-                self.bench_generate();
+        let Some((id, profile)) = usize::try_from(index)
+            .ok()
+            .and_then(|i| merged.get(i))
+            .map(|(id, profile)| (id.clone(), profile.clone()))
+        else {
+            self.refresh_bench();
+            return;
+        };
+        if id == self.bench.profile_id {
+            // Re-selecting the current entry must not drop an edited draft.
+            self.refresh_bench();
+            return;
+        }
+        if self.bench.profile_dirty && self.interactive {
+            let answer = rfd::MessageDialog::new()
+                .set_title(self.t("dialog.unsaved_title"))
+                .set_description(self.t("bench.draft_switch_confirm"))
+                .set_buttons(rfd::MessageButtons::YesNo)
+                .show();
+            if answer != rfd::MessageDialogResult::Yes {
+                self.refresh_bench();
+                return;
             }
+        }
+        self.bench.profile_id = id;
+        self.bench.profile = profile;
+        self.bench.profile_dirty = false;
+        if self.bench.last.is_some() {
+            self.bench_generate();
         }
         self.refresh_bench();
     }
@@ -945,6 +1075,12 @@ impl App {
                     self.bench.message = e.message;
                 }
             }
+            "commit-profile" => {
+                let _ = self.bench_commit_profile(false);
+            }
+            "set-default-profile" => {
+                let _ = self.bench_set_default();
+            }
             "save-as" => {
                 if self.project.is_some() {
                     let (title, label) = (self.t("bench.save_as"), self.t("bench.profile_id"));
@@ -1021,6 +1157,175 @@ fn tr_static(lang: &str, key: &str) -> String {
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+    use std::path::Path;
+
+    fn copy_dir(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_dir(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+
+    fn app(name: &str) -> (App, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!("mono-bench-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        copy_dir(&repo.join("test_assets/projects/curing_lite"), &root);
+        let prefs = crate::prefs::Preferences::load_from(root.join("prefs.json"));
+        let mut app = App::new(slint::Weak::default(), prefs);
+        app.open_project(&root.join("project.oled.json")).unwrap();
+        (app, root)
+    }
+
+    fn manifest_bytes(app: &App) -> Vec<u8> {
+        let path = app.project.as_ref().unwrap().path.clone();
+        std::fs::read(path).unwrap()
+    }
+
+    fn manifest_json(app: &App) -> Value {
+        serde_json::from_slice(&manifest_bytes(app)).unwrap()
+    }
+
+    #[test]
+    fn switching_profiles_discards_the_draft_without_writing() {
+        let (mut app, root) = app("switch");
+        app.bench_field("text.bytes_per_line", "8");
+        assert!(app.bench.profile_dirty);
+        let before = manifest_bytes(&app);
+        app.bench_profile(1);
+        assert_eq!(app.bench.profile_id, "row_msb_c51");
+        assert!(!app.bench.profile_dirty);
+        assert_eq!(app.bench.field("text.bytes_per_line"), "16");
+        assert_eq!(manifest_bytes(&app), before);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn builtin_selection_does_not_write_the_manifest() {
+        let (mut app, root) = app("builtin");
+        let before = manifest_bytes(&app);
+        app.bench_profile(1);
+        assert_eq!(app.bench.profile_id, "row_msb_c51");
+        assert_eq!(manifest_bytes(&app), before);
+        assert!(!app.bench.profile_dirty);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn field_edits_stay_in_memory_until_commit() {
+        let (mut app, root) = app("field");
+        let before = manifest_bytes(&app);
+        app.bench_field("text.bytes_per_line", "8");
+        assert_eq!(app.bench.field("text.bytes_per_line"), "8");
+        assert!(app.bench.profile_dirty);
+        assert_eq!(manifest_bytes(&app), before);
+        app.bench_commit_profile(true).unwrap();
+        assert!(!app.bench.profile_dirty);
+        let json = manifest_json(&app);
+        assert_eq!(
+            json.pointer("/output_workbench/profiles/ssd1306_vlsb_c/text/bytes_per_line"),
+            Some(&Value::from(8))
+        );
+        assert_eq!(
+            json.pointer("/output_workbench/active_profile"),
+            Some(&Value::from("ssd1306_vlsb_c"))
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn open_project_loads_the_active_profile() {
+        let (mut app, root) = app("active");
+        let path = app.project.as_ref().unwrap().path.clone();
+        let mut project = mono_project::project::ProjectWorkspace::load(&path).unwrap();
+        project.set_active_output_profile("row_msb_c51").unwrap();
+        app.bench.profile_id = "ssd1306_vlsb_c".into();
+        app.open_project(&path).unwrap();
+        assert_eq!(app.bench.profile_id, "row_msb_c51");
+        assert!(!app.bench.profile_dirty);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn default_may_reference_a_builtin_without_copying_it() {
+        let (mut app, root) = app("default");
+        app.bench_profile(2);
+        let id = app.bench.profile_id.clone();
+        app.bench_set_default().unwrap();
+        let json = manifest_json(&app);
+        assert_eq!(
+            json.pointer("/output_workbench/active_profile"),
+            Some(&Value::from(id.as_str()))
+        );
+        assert!(
+            json.pointer(&format!("/output_workbench/profiles/{id}"))
+                .is_none(),
+            "the default builtin must not be written as a project profile"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn legacy_manifest_without_workbench_opens_with_defaults() {
+        let (mut app, root) = app("legacy");
+        let path = app.project.as_ref().unwrap().path.clone();
+        let mut json = manifest_json(&app);
+        json.as_object_mut().unwrap().remove("output_workbench");
+        std::fs::write(&path, serde_json::to_vec_pretty(&json).unwrap()).unwrap();
+        app.open_project(&path).unwrap();
+        let (active, saved) = app.saved_profiles();
+        assert_eq!(active, "ssd1306_vlsb_c");
+        assert_eq!(app.bench.profile_id, "ssd1306_vlsb_c");
+        // `output_profiles` reports the builtin default when the key is absent.
+        assert_eq!(saved.len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn open_scene_file_resets_the_workbench_to_the_builtin() {
+        let (mut app, root) = app("scene-reset");
+        app.bench_profile(2);
+        app.bench_field("text.bytes_per_line", "8");
+        assert!(app.bench.profile_dirty);
+        app.open_scene_file(&root.join("scenes/123.json")).unwrap();
+        assert!(app.project.is_none());
+        assert_eq!(app.bench.profile_id, "ssd1306_vlsb_c");
+        assert!(!app.bench.profile_dirty);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reselecting_the_current_profile_keeps_the_draft() {
+        let (mut app, root) = app("reselect");
+        app.bench_field("text.bytes_per_line", "8");
+        assert!(app.bench.profile_dirty);
+        let before = manifest_bytes(&app);
+        app.bench_profile(0);
+        assert!(app.bench.profile_dirty);
+        assert_eq!(app.bench.field("text.bytes_per_line"), "8");
+        assert_eq!(manifest_bytes(&app), before);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn failed_save_as_keeps_the_previous_profile() {
+        let (mut app, root) = app("save-as-fail");
+        let before_id = app.bench.profile_id.clone();
+        let before_name = app.bench.profile.name.clone();
+        let before_manifest = manifest_bytes(&app);
+        assert!(app.pixel_prompt(Prompt::ProfileName("Bad ID".into()), "Renamed"));
+        assert_eq!(app.bench.profile_id, before_id);
+        assert_eq!(app.bench.profile.name, before_name);
+        assert!(!app.bench.profile_dirty);
+        assert_eq!(manifest_bytes(&app), before_manifest);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn glyph_dir_matches_v1_layout_and_prunes_stale_pngs() {

@@ -5,8 +5,8 @@
 ## Project
 
 - Project: MonoOLED Studio
-- Product version: 2.0.0 (Rust; Python 1.x source at the v1-final tag)
-- Current phase: Rust Rewrite G6 complete — v2.0.0 released 2026-10-21 (G6 B1–B4 executed on explicit user confirmation)
+- Product version: 2.2.0 (Rust; Python 1.x source at the v1-final tag)
+- Current phase: Rust Rewrite G6 complete; 2.0.4 trust fixes complete (TASK-004 DONE); 2.0.5 project loop complete (TASK-005 DONE, review PASS WITH MINOR NOTES); 2.1.0 professional workflow implemented (TASK-006 VERIFY, T12–T17); 2.2.0 polish and governance implemented (TASK-007 VERIFY, T18–T21)
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
@@ -14,13 +14,17 @@
 
 ## Workflow
 
-- Last completed workflow task: TASK-003
+- Last completed workflow task: TASK-005
 - TASK-001 status: DONE
 - TASK-002 status: DONE
 - TASK-003 status: DONE
-- Independent Review: PASS (TASK-003, agent review)
-- Active task: NONE (Rust Rewrite G4 evidence recorded)
-- Next workflow action: NONE (2.x maintenance; known gaps in CHANGELOG 2.0.0 and docs/rewrite/G6_EVIDENCE.md §6)
+- TASK-004 status: DONE (2.0.4 trust fixes T1–T8 plus review rework; all CI gates green)
+- TASK-005 status: DONE (2.0.5; T9 recent projects, T10 asset-to-Pixel, T11 atomic write-back; review PASS WITH MINOR NOTES)
+- TASK-006 status: VERIFY (2.1.0; T12–T17 professional workflow; Result recorded, two GUI-found defects fixed)
+- TASK-007 status: VERIFY (2.2.0; T18–T21 terminology, help/tooltips, new-project wizard, docs and version truth)
+- Independent Review: PASS (TASK-003, TASK-004, TASK-005); PENDING for TASK-006/TASK-007
+- Active tasks: `.ai/tasks/TASK-006.md`, `.ai/tasks/TASK-007.md`
+- Next workflow action: independent review of TASK-006/TASK-007 (owns DONE/PASS); then the 2.2.0 release close-out (commit, merge to main, tag) which the user explicitly authorized
 
 ## Current workstream
 

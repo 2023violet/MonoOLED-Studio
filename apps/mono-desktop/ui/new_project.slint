@@ -1,0 +1,101 @@
+// New-project wizard: name, canvas size (height page-aligned), then folder.
+import { Theme, Metrics } from "theme.slint";
+import { I18n, Button, ButtonRole, Caption, Dialog, Scrim, Label } from "widgets.slint";
+import { LineEdit, SpinBox } from "std-widgets.slint";
+
+export global NewProjectModel {
+    in-out property <bool> visible;
+    in-out property <string> name;
+    in-out property <int> canvas-w: 128;
+    in-out property <int> canvas-h: 32;
+    in property <string> error;
+    callback create(string, int, int);
+    callback cancel();
+}
+
+export component NewProjectDialog inherits Scrim {
+    callback refocus();
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                NewProjectModel.visible = false;
+                NewProjectModel.cancel();
+                root.refocus();
+                return accept;
+            }
+            return reject;
+        }
+        Dialog {
+            width: 470px;
+            height: 340px;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text {
+                    text: I18n.tr(I18n.lang, "new_project.title");
+                    font-size: Metrics.font-title;
+                    font-weight: 700;
+                    color: Theme.text-primary;
+                }
+                Caption { text: I18n.tr(I18n.lang, "new_project.hint"); }
+                Label { text: I18n.tr(I18n.lang, "new_project.name"); }
+                name := LineEdit {
+                    text <=> NewProjectModel.name;
+                    placeholder-text: I18n.tr(I18n.lang, "new_project.name_placeholder");
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    VerticalLayout {
+                        spacing: 4px;
+                        Label { text: I18n.tr(I18n.lang, "new_project.width"); }
+                        SpinBox {
+                            value <=> NewProjectModel.canvas-w;
+                            minimum: 1;
+                            maximum: 1024;
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 4px;
+                        Label { text: I18n.tr(I18n.lang, "new_project.height"); }
+                        SpinBox {
+                            value <=> NewProjectModel.canvas-h;
+                            minimum: 8;
+                            maximum: 1024;
+                        }
+                    }
+                }
+                if NewProjectModel.error != "": Text {
+                    text: NewProjectModel.error;
+                    color: Theme.status-error;
+                    font-size: Metrics.font-small;
+                    wrap: word-wrap;
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Button {
+                        text: I18n.tr(I18n.lang, "dialog.cancel");
+                        clicked => {
+                            NewProjectModel.visible = false;
+                            NewProjectModel.cancel();
+                            root.refocus();
+                        }
+                    }
+                    Button {
+                        text: I18n.tr(I18n.lang, "dialog.create");
+                        role: ButtonRole.primary;
+                        clicked => {
+                            NewProjectModel.create(
+                                NewProjectModel.name,
+                                NewProjectModel.canvas-w,
+                                NewProjectModel.canvas-h
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    init => { scope.focus(); name.focus(); }
+}

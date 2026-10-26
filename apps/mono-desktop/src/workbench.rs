@@ -42,6 +42,9 @@ pub fn merged_profiles(saved: &[(String, OutputProfile)]) -> Vec<(String, Output
 pub struct Workbench {
     pub profile_id: String,
     pub profile: OutputProfile,
+    /// The in-memory profile differs from what the project stores; only an
+    /// explicit commit writes it to `project.oled.json`.
+    pub profile_dirty: bool,
     pub source: usize,
     pub characters: String,
     pub image_path: String,
@@ -55,6 +58,7 @@ impl Default for Workbench {
         Self {
             profile_id: "ssd1306_vlsb_c".into(),
             profile,
+            profile_dirty: false,
             source: 0,
             characters: String::new(),
             image_path: String::new(),

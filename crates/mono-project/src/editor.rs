@@ -5,6 +5,8 @@
 //! step; a pointer drag coalesces into a single step until `end_coalesced_edit`.
 
 use std::collections::BTreeSet;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use mono_core::pyvalue::{is_py_int, py_int, py_str};
@@ -61,10 +63,26 @@ pub struct EditorSession {
     pub resources: DiskResources,
     pub dirty: bool,
     disk_fingerprint: Option<String>,
+    saved_fingerprint: u64,
     undo: Vec<Command>,
     redo: Vec<Command>,
     coalesce_open: bool,
     max_history: usize,
+}
+
+/// Hash of the persisted scene shape (runtime-only `_` keys excluded).
+fn scene_fingerprint(data: &Map<String, Value>) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    let persisted: Map<String, Value> = data
+        .iter()
+        .filter(|(k, _)| !k.starts_with('_'))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    match serde_json::to_vec(&persisted) {
+        Ok(bytes) => hasher.write(&bytes),
+        Err(_) => persisted.len().hash(&mut hasher),
+    }
+    hasher.finish()
 }
 
 fn key_error(message: impl Into<String>) -> CoreError {
@@ -93,6 +111,7 @@ impl EditorSession {
     pub fn new(doc: SceneDoc) -> CoreResult<Self> {
         let state = SceneRuntime::new(&doc.data, None)?.state;
         let disk_fingerprint = std::fs::read(&doc.path).ok().map(|b| hex_digest(&b));
+        let saved_fingerprint = scene_fingerprint(&doc.data);
         Ok(Self {
             doc,
             state,
@@ -100,11 +119,26 @@ impl EditorSession {
             resources: DiskResources::new(),
             dirty: false,
             disk_fingerprint,
+            saved_fingerprint,
             undo: Vec::new(),
             redo: Vec::new(),
             coalesce_open: false,
             max_history: MAX_HISTORY,
         })
+    }
+
+    /// Re-derive `dirty` from content equality with the last save point.
+    pub fn sync_dirty(&mut self) {
+        self.dirty = scene_fingerprint(&self.doc.data) != self.saved_fingerprint;
+    }
+
+    pub fn mark_saved(&mut self) {
+        self.saved_fingerprint = scene_fingerprint(&self.doc.data);
+        self.dirty = false;
+    }
+
+    pub fn mark_clean(&mut self) {
+        self.mark_saved();
     }
 
     /// V1 `reset_scene`: rebind this session to another scene. History,
@@ -117,6 +151,7 @@ impl EditorSession {
         self.state = state;
         self.elapsed = 0;
         self.resources = DiskResources::new();
+        self.saved_fingerprint = scene_fingerprint(&self.doc.data);
         self.dirty = false;
         self.undo.clear();
         self.redo.clear();
@@ -203,7 +238,7 @@ impl EditorSession {
             return Ok(false);
         }
         self.set_elements(working.clone());
-        self.dirty = true;
+        self.sync_dirty();
         self.push_undo(Command::Elements {
             label: label.into(),
             before,
@@ -435,7 +470,7 @@ impl EditorSession {
             return Ok(false);
         }
         self.set_elements(after.clone());
-        self.dirty = true;
+        self.sync_dirty();
         self.redo.clear();
         let coalesced = coalesce
             && self.coalesce_open
@@ -534,7 +569,7 @@ impl EditorSession {
                 self.resources = DiskResources::new();
             }
         }
-        self.dirty = true;
+        self.sync_dirty();
     }
 
     pub fn undo(&mut self) -> bool {
@@ -575,7 +610,7 @@ impl EditorSession {
             after,
         });
         self.redo.clear();
-        self.dirty = true;
+        self.sync_dirty();
         self.coalesce_open = false;
         true
     }
@@ -592,7 +627,7 @@ impl EditorSession {
             after,
         });
         self.redo.clear();
-        self.dirty = true;
+        self.sync_dirty();
         self.coalesce_open = false;
         true
     }
@@ -876,7 +911,7 @@ impl EditorSession {
         canvas["h"] = json!(height);
         let storage = self.doc.data.entry("storage").or_insert_with(|| json!({}));
         storage["bytes_per_frame"] = json!(width * (height / 8));
-        self.dirty = true;
+        self.sync_dirty();
         Ok(())
     }
 
@@ -944,7 +979,7 @@ impl EditorSession {
             .collect();
         atomic_write_json(&self.doc.path, &Value::Object(data))?;
         self.disk_fingerprint = std::fs::read(&self.doc.path).ok().map(|b| hex_digest(&b));
-        self.dirty = false;
+        self.mark_saved();
         Ok(self.doc.path.clone())
     }
 
@@ -1233,4 +1268,97 @@ pub fn selection_metrics(
         horizontal_gaps: hs,
         vertical_gaps: vs,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use crate::scene_io::load_scene;
+
+    fn temp_scene(dir: &str) -> SceneDoc {
+        let root = std::env::temp_dir().join(format!("mono-editor-{dir}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("scene.json");
+        let data = json!({
+            "schema_version": 1,
+            "canvas": {"w": 8, "h": 8},
+            "states": {},
+            "elements": [{"id": "a", "type": "rect", "x": 0, "y": 0, "w": 2, "h": 2}]
+        });
+        std::fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        load_scene(&path, None).unwrap()
+    }
+
+    fn move_a(session: &mut EditorSession) {
+        session.batch_move(&["a".to_string()], 1, 0, false).unwrap();
+    }
+
+    #[test]
+    fn undo_to_saved_scene_is_clean() {
+        let doc = temp_scene("undo");
+        let mut session = EditorSession::new(doc).unwrap();
+        assert!(!session.dirty);
+        move_a(&mut session);
+        assert!(session.dirty);
+        assert!(session.undo());
+        assert!(!session.dirty);
+    }
+
+    #[test]
+    fn redo_after_save_is_dirty() {
+        let doc = temp_scene("redo");
+        let mut session = EditorSession::new(doc).unwrap();
+        move_a(&mut session);
+        session.mark_saved();
+        assert!(!session.dirty);
+        assert!(session.undo());
+        assert!(session.dirty);
+        assert!(session.redo());
+        assert!(!session.dirty);
+    }
+
+    #[test]
+    fn external_record_marks_dirty() {
+        let doc = temp_scene("external");
+        let mut session = EditorSession::new(doc).unwrap();
+        let before = session.elements();
+        let mut changed = before.clone();
+        changed[0]["x"] = json!(3);
+        session.set_elements(changed);
+        assert!(session.record_external_batch(before, "agent"));
+        assert!(session.dirty);
+    }
+
+    #[test]
+    fn save_failure_keeps_dirty() {
+        let doc = temp_scene("failure");
+        let path = doc.path.clone();
+        let mut session = EditorSession::new(doc).unwrap();
+        move_a(&mut session);
+        std::fs::write(&path, b"{\"external\":true}").unwrap();
+        assert!(session.save().is_err());
+        assert!(session.dirty);
+    }
+
+    #[test]
+    fn successful_save_clears_dirty() {
+        let doc = temp_scene("save");
+        let mut session = EditorSession::new(doc).unwrap();
+        move_a(&mut session);
+        session.save().unwrap();
+        assert!(!session.dirty);
+    }
+
+    #[test]
+    fn reset_scene_resets_fingerprint() {
+        let doc = temp_scene("reset");
+        let mut session = EditorSession::new(doc).unwrap();
+        move_a(&mut session);
+        assert!(session.dirty);
+        let other = temp_scene("reset-other");
+        session.reset_scene(other).unwrap();
+        assert!(!session.dirty);
+    }
 }

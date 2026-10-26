@@ -9,7 +9,13 @@ use slint::Global;
 use crate::app::{App, Prompt, model, ss};
 use crate::fontlab::{FontLab, Poll, create_pack};
 use crate::i18n::trf;
-use crate::{FontModel, GlyphItem};
+use crate::{FontModel, GlyphItem, PillTone};
+
+/// Pixels of the current glyph as OLED colours (white lit on black).
+#[cfg(test)]
+pub fn preview_colors(studio: &crate::pixel::PixelStudio) -> Vec<slint::Rgba8Pixel> {
+    crate::canvas::rgba_pixels(studio.doc.pixels(), crate::canvas::LIT, crate::canvas::OFF)
+}
 
 impl App {
     fn fonts_root(&self) -> Option<PathBuf> {
@@ -87,8 +93,25 @@ impl App {
         fm.set_alignment(f.alignment);
         fm.set_antialias(i32::from(f.antialias == 2));
         fm.set_busy(font.running());
+        fm.set_pack_state(ss(self.t(if font.studio.doc.dirty {
+            "font.pack_state.glyph"
+        } else if font.metrics_dirty() {
+            "font.pack_state.pack"
+        } else {
+            "font.pack_state.clean"
+        })));
+        fm.set_pack_tone(if font.dirty() {
+            PillTone::Warning
+        } else {
+            PillTone::Success
+        });
         fm.set_status(ss(&font.status));
         fm.set_error(ss(&font.error));
+        fm.set_preview(crate::canvas::image_from_pixels(
+            font.studio.width(),
+            font.studio.height(),
+            font.studio.doc.pixels(),
+        ));
     }
 
     fn refresh_font_all(&mut self) {
@@ -261,5 +284,29 @@ impl App {
         }
         self.refresh_navigator();
         self.refresh_font_all();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn font_preview_is_white_lit_on_black() {
+        let colors = crate::canvas::rgba_pixels(&[0, 1], crate::canvas::LIT, crate::canvas::OFF);
+        assert_eq!(colors[0], crate::canvas::OFF);
+        assert_eq!(colors[1], crate::canvas::LIT);
+    }
+
+    #[test]
+    fn font_preview_updates_after_edit() {
+        let mut studio = crate::pixel::PixelStudio::new(5, 8).unwrap();
+        let before = preview_colors(&studio);
+        studio.pointer_down(0, 0, false);
+        studio.pointer_up(0, 0);
+        let after = preview_colors(&studio);
+        assert_ne!(before, after);
+        assert_eq!(after[0], crate::canvas::LIT);
     }
 }

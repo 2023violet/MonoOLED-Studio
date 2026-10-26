@@ -1,0 +1,82 @@
+// First-run / no-document empty state. Replaces the Designer canvas so the
+// window never shows a blank grid without a next step.
+import { Theme, Metrics } from "theme.slint";
+import { I18n, Button, ButtonRole, Panel } from "widgets.slint";
+
+export component WelcomeView inherits VerticalLayout {
+    in property <[string]> recent-projects;
+    callback open-project();
+    callback new-project();
+    callback recent-chosen(int);
+
+    alignment: center;
+    spacing: 16px;
+    HorizontalLayout {
+        alignment: center;
+        Panel {
+            width: 560px;
+            VerticalLayout {
+                padding: 32px;
+                spacing: 14px;
+                Text {
+                    text: "MonoOLED Studio";
+                    font-size: 26px;
+                    font-weight: 700;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: I18n.tr(I18n.lang, "app.subtitle");
+                    color: Theme.text-secondary;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                }
+                Rectangle { height: 1px; background: Theme.border-subtle; }
+                Text {
+                    text: I18n.tr(I18n.lang, "welcome.open_hint");
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: I18n.tr(I18n.lang, "welcome.new_hint");
+                    color: Theme.text-primary;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: I18n.tr(I18n.lang, "welcome.scene_hint");
+                    font-size: Metrics.font-small;
+                    color: Theme.text-muted;
+                    wrap: word-wrap;
+                }
+                if recent-projects.length > 0: VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: I18n.tr(I18n.lang, "welcome.recent");
+                        font-size: Metrics.font-small;
+                        color: Theme.text-muted;
+                    }
+                    for item[i] in recent-projects: Button {
+                        text: item;
+                        role: ButtonRole.ghost;
+                        shrink: true;
+                        width: parent.width;
+                        clicked => { root.recent-chosen(i); }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 10px;
+                    Button {
+                        text: I18n.tr(I18n.lang, "action.open_project");
+                        role: ButtonRole.primary;
+                        clicked => { root.open-project(); }
+                    }
+                    Button {
+                        text: I18n.tr(I18n.lang, "action.new_project");
+                        clicked => { root.new-project(); }
+                    }
+                }
+            }
+        }
+    }
+}

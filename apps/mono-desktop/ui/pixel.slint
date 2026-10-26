@@ -3,7 +3,7 @@
 import { ScrollView, LineEdit, SpinBox, ComboBox, CheckBox, ListView } from "std-widgets.slint";
 import { Theme, Metrics } from "theme.slint";
 import { Icon } from "icons.slint";
-import { Shell, I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, Scrim, Dialog } from "widgets.slint";
+import { Shell, I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, Scrim, Dialog, Tooltip } from "widgets.slint";
 
 export struct BorderLine { x: int, y: int, len: int, vertical: bool }
 
@@ -12,6 +12,7 @@ export global PixelModel {
     in property <int> doc-w: 16;
     in property <int> doc-h: 16;
     in property <string> title;
+    in property <bool> asset-locked;
     in-out property <int> tool: 0;
     in-out property <int> brush-size: 1;
     in-out property <int> zoom-index: 0; // 0 = Fit, then V1 ZOOMS
@@ -75,6 +76,8 @@ export global PixelModel {
     callback zoom-step(int);
     callback import-changed();
     callback dialog-accepted();
+    // Return keyboard focus to the workspace after a dialog closes inside Slint.
+    callback refocus();
 }
 
 export struct ProfileItem { id: string, name: string }
@@ -86,6 +89,12 @@ export global OutputModel {
     in property <[string]> profile-names;
     in-out property <int> profile: 0;
     in property <bool> project-profiles;
+    in property <bool> profile-dirty;
+    // 0 = builtin, 1 = saved in the project.
+    in property <int> profile-source: 0;
+    in property <bool> profile-is-default;
+    in property <string> profile-state-text;
+    in property <PillTone> profile-state-tone: PillTone.neutral;
     in property <[string]> font-packs;
     in-out property <int> font-pack: 0;
     in-out property <string> characters;
@@ -120,6 +129,7 @@ export global OutputModel {
     in property <string> display-error;
     in property <string> output-font;
     in property <int> output-font-size: 14;
+    in property <bool> follow-theme: true;
     callback display(string /* key */, string /* value */);
     callback field(string /* key */, string /* value */);
     callback source-chosen(int);
@@ -132,23 +142,52 @@ component ToolButton inherits Rectangle {
     in property <string> tip;
     in property <bool> checked;
     callback clicked();
-    width: Metrics.control-height + 6px;
-    height: Metrics.control-height + 6px;
+    width: 78px;
+    height: Metrics.control-height + 4px;
     border-radius: Metrics.radius-control;
     background: checked ? Theme.surface-selected : touch.has-hover ? Theme.surface-hover : transparent;
     accessible-role: button;
     accessible-label: tip;
-    Icon {
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        name: root.icon;
-        tint: root.checked ? Theme.accent-hover : Theme.text-secondary;
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 4px;
+        spacing: 6px;
+        alignment: center;
+        Icon {
+            width: 16px;
+            height: 16px;
+            name: root.icon;
+            tint: root.checked ? Theme.accent-hover : Theme.text-secondary;
+        }
+        Text {
+            text: root.tip;
+            font-size: Metrics.font-small;
+            color: root.checked ? Theme.accent-hover : Theme.text-secondary;
+            vertical-alignment: center;
+            overflow: elide;
+        }
     }
-    touch := TouchArea { clicked => { root.clicked(); } }
+    tooltip-window := Tooltip {
+        text: root.tip;
+        anchor-x: root.absolute-position.x;
+        anchor-y: root.absolute-position.y;
+        anchor-w: root.width;
+        anchor-h: root.height;
+    }
+    touch := TouchArea {
+        changed has-hover => {
+            if (touch.has-hover && root.tip != "") {
+                tooltip-window.show();
+            } else {
+                tooltip-window.close();
+            }
+        }
+        clicked => { root.clicked(); }
+    }
 }
 
 export component ToolRail inherits Panel {
-    width: Metrics.control-height + 22px;
+    width: 94px;
     VerticalLayout {
         padding: 8px;
         spacing: 4px;
@@ -257,6 +296,15 @@ export component PixelCanvas inherits Rectangle {
                 width: line.vertical ? 1px : line.len * root.px + 1px;
                 height: line.vertical ? line.len * root.px + 1px : 1px;
                 background: PixelModel.border-color;
+            }
+            if PixelModel.has-selection: Rectangle {
+                x: PixelModel.sel-x * root.px - 2px;
+                y: PixelModel.sel-y * root.px - 2px;
+                width: PixelModel.sel-w * root.px + 4px;
+                height: PixelModel.sel-h * root.px + 4px;
+                border-width: 1px;
+                border-color: Theme.dark ? #000000 : #FFFFFF;
+                background: transparent;
             }
             if PixelModel.has-selection: Rectangle {
                 x: PixelModel.sel-x * root.px;
@@ -498,13 +546,13 @@ component PixelInspector inherits Panel {
                             Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.flip_v"); clicked => { PixelModel.action("flip-v"); } }
                         }
                         Row {
-                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.rotate90"); clicked => { PixelModel.action("rotate90"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.rotate90"); enabled: !PixelModel.asset-locked; clicked => { PixelModel.action("rotate90"); } }
                             Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.rotate180"); clicked => { PixelModel.action("rotate180"); } }
-                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.rotate270"); clicked => { PixelModel.action("rotate270"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.rotate270"); enabled: !PixelModel.asset-locked; clicked => { PixelModel.action("rotate270"); } }
                         }
                         Row {
-                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.canvas_size"); clicked => { PixelModel.action("canvas-size"); } }
-                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.crop_selection"); enabled: PixelModel.has-selection; clicked => { PixelModel.action("crop"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.canvas_size"); enabled: !PixelModel.asset-locked; clicked => { PixelModel.action("canvas-size"); } }
+                            Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.crop_selection"); enabled: PixelModel.has-selection && !PixelModel.asset-locked; clicked => { PixelModel.action("crop"); } }
                             Button { shrink: true; text: I18n.tr(I18n.lang, "pixel.action.clear"); role: ButtonRole.danger; clicked => { PixelModel.action("clear"); } }
                         }
                     }
@@ -534,7 +582,35 @@ component PixelInspector inherits Panel {
                     }
                     Field {
                         label: I18n.tr(I18n.lang, "bench.profile");
-                        ComboBox { model: OutputModel.profile-names; current-index <=> OutputModel.profile; selected => { OutputModel.profile-chosen(self.current-index); } }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            ComboBox {
+                                model: OutputModel.profile-names;
+                                current-index <=> OutputModel.profile;
+                                horizontal-stretch: 1;
+                                selected => { OutputModel.profile-chosen(self.current-index); }
+                            }
+                            StatusPill {
+                                text: OutputModel.profile-state-text;
+                                tone: OutputModel.profile-state-tone;
+                            }
+                        }
+                    }
+                    if OutputModel.profile-is-default: Caption { text: I18n.tr(I18n.lang, "bench.profile_is_default"); }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Button {
+                            text: I18n.tr(I18n.lang, "bench.commit_profile");
+                            enabled: OutputModel.project-profiles && OutputModel.profile-dirty;
+                            horizontal-stretch: 1;
+                            clicked => { OutputModel.bench-action("commit-profile"); }
+                        }
+                        Button {
+                            text: I18n.tr(I18n.lang, "bench.set_default_profile");
+                            enabled: OutputModel.project-profiles && !OutputModel.profile-is-default;
+                            horizontal-stretch: 1;
+                            clicked => { OutputModel.bench-action("set-default-profile"); }
+                        }
                     }
                     HorizontalLayout {
                         spacing: 6px;
@@ -620,6 +696,11 @@ component PixelInspector inherits Panel {
                     Caption { text: I18n.tr(I18n.lang, "bench.template_hint"); }
                     Divider { }
                     SectionTitle { text: I18n.tr(I18n.lang, "bench.group.display"); }
+                    CheckBox {
+                        text: I18n.tr(I18n.lang, "bench.display.follow_theme");
+                        checked: OutputModel.follow-theme;
+                        toggled => { OutputModel.display("palette_mode", self.checked ? "auto" : "custom"); }
+                    }
                     ColorField { label: I18n.tr(I18n.lang, "bench.display.background"); index: 0; key: "canvas_background"; }
                     ColorField { label: I18n.tr(I18n.lang, "bench.display.grid"); index: 1; key: "grid_color"; }
                     ColorField { label: I18n.tr(I18n.lang, "bench.display.fill"); index: 2; key: "pixel_fill"; }
@@ -689,7 +770,7 @@ component DialogButtons inherits VerticalLayout {
     HorizontalLayout {
         alignment: end;
         spacing: 8px;
-        Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { PixelModel.dialog = 0; } }
+        Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { PixelModel.dialog = 0; PixelModel.refocus(); } }
         Button { text: root.accept-text; role: ButtonRole.primary; clicked => { PixelModel.dialog-accepted(); } }
     }
 }
@@ -774,9 +855,20 @@ component TextDialog inherits Scrim {
 }
 
 export component PixelDialogs inherits Rectangle {
-    if PixelModel.dialog == 1: ResizeDialog { width: root.width; height: root.height; }
-    if PixelModel.dialog == 2: ImportDialog { width: root.width; height: root.height; }
-    if PixelModel.dialog == 3: TextDialog { width: root.width; height: root.height; }
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                PixelModel.dialog = 0;
+                PixelModel.refocus();
+                return accept;
+            }
+            return reject;
+        }
+        if PixelModel.dialog == 1: ResizeDialog { width: root.width; height: root.height; }
+        if PixelModel.dialog == 2: ImportDialog { width: root.width; height: root.height; }
+        if PixelModel.dialog == 3: TextDialog { width: root.width; height: root.height; }
+    }
+    init => { scope.focus(); }
 }
 
 export component PixelView inherits VerticalLayout {

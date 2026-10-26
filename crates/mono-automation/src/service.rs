@@ -221,7 +221,7 @@ impl Service {
 
     pub fn refresh_saved_baseline(&mut self) {
         self.saved_fingerprint = self.fingerprint();
-        self.session.dirty = false;
+        self.session.mark_saved();
     }
 
     // ------------------------------------------------------------- results

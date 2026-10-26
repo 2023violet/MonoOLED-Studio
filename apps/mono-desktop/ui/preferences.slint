@@ -75,74 +75,97 @@ component PrefRowView inherits HorizontalLayout {
         text: item.text;
         accepted(t) => { PrefsModel.changed(item.key, t); }
     }
+    if item.kind == "shortcut": HorizontalLayout {
+        spacing: 6px;
+        LineEdit {
+            width: 190px;
+            text: item.text;
+            accepted(t) => { PrefsModel.changed(item.key, t); }
+        }
+        Button {
+            text: I18n.tr(I18n.lang, "pref.shortcut.reset");
+            role: ButtonRole.ghost;
+            clicked => { PrefsModel.button("shortcut-reset:" + item.key); }
+        }
+    }
     if item.kind == "value": Text { width: 220px; text: item.text; color: Theme.text-secondary; vertical-alignment: center; }
     if item.kind == "button": Button { width: 220px; text: item.text; clicked => { PrefsModel.button(item.key); } }
     if item.kind == "danger": Button { width: 220px; text: item.text; role: ButtonRole.danger; clicked => { PrefsModel.button(item.key); } }
 }
 
 export component PreferencesDialog inherits Scrim {
-    Rectangle {
-        width: min(root.width - 80px, 980px);
-        height: min(root.height - 80px, 720px);
-        background: Theme.surface-panel;
-        border-radius: Metrics.radius-panel;
-        border-width: 1px;
-        border-color: Theme.border-normal;
-        drop-shadow-blur: 24px;
-        drop-shadow-color: Theme.popover-shadow;
-        VerticalLayout {
-            padding: 22px;
-            spacing: 16px;
-            HorizontalLayout {
-                spacing: 12px;
-                Text { text: I18n.tr(I18n.lang, "pref.title"); font-size: 20px; font-weight: 700; color: Theme.text-primary; vertical-alignment: center; }
-                Rectangle { horizontal-stretch: 1; }
-                if PrefsModel.save-state != "": Caption { text: PrefsModel.save-state; vertical-alignment: center; wrap: no-wrap; }
-                LineEdit {
-                    width: 280px;
-                    text <=> PrefsModel.search;
-                    placeholder-text: I18n.tr(I18n.lang, "pref.search");
-                    edited(t) => { PrefsModel.search-changed(t); }
-                }
-                Button { text: I18n.tr(I18n.lang, "dialog.close"); role: ButtonRole.primary; clicked => { PrefsModel.close(); } }
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                PrefsModel.close();
+                return accept;
             }
-            HorizontalLayout {
-                vertical-stretch: 1;
-                spacing: 28px;
-                VerticalLayout {
-                    width: 172px;
-                    spacing: 4px;
-                    for name[index] in PrefsModel.sections: ListRow {
-                        text: name;
-                        selected: index == PrefsModel.section && PrefsModel.search == "";
-                        clicked => { PrefsModel.section = index; PrefsModel.search = ""; PrefsModel.section-chosen(index); }
+            return reject;
+        }
+        Rectangle {
+            width: min(root.width - 80px, 980px);
+            height: min(root.height - 80px, 720px);
+            background: Theme.surface-panel;
+            border-radius: Metrics.radius-panel;
+            border-width: 1px;
+            border-color: Theme.border-normal;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: Theme.popover-shadow;
+            VerticalLayout {
+                padding: 22px;
+                spacing: 16px;
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text { text: I18n.tr(I18n.lang, "pref.title"); font-size: 20px; font-weight: 700; color: Theme.text-primary; vertical-alignment: center; }
+                    Rectangle { horizontal-stretch: 1; }
+                    if PrefsModel.save-state != "": Caption { text: PrefsModel.save-state; vertical-alignment: center; wrap: no-wrap; }
+                    LineEdit {
+                        width: 280px;
+                        text <=> PrefsModel.search;
+                        placeholder-text: I18n.tr(I18n.lang, "pref.search");
+                        edited(t) => { PrefsModel.search-changed(t); }
                     }
-                    Rectangle { vertical-stretch: 1; }
-                    Caption { text: "MonoOLED Studio"; }
-                    Caption { text: "v" + PrefsModel.version; }
+                    Button { text: I18n.tr(I18n.lang, "dialog.close"); role: ButtonRole.primary; clicked => { PrefsModel.close(); } }
                 }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 8px;
-                    Text { text: PrefsModel.page-title; font-size: 17px; font-weight: 700; color: Theme.text-primary; }
-                    Caption { text: PrefsModel.page-desc; }
-                    if PrefsModel.error != "": Text { text: PrefsModel.error; color: Theme.status-error; font-size: Metrics.font-small; wrap: word-wrap; }
-                    if PrefsModel.rows.length == 0: Caption { text: I18n.tr(I18n.lang, "pref.search.no_results"); }
-                    ListView {
-                        vertical-stretch: 1;
-                        for row in PrefsModel.rows: VerticalLayout {
-                            if row.kind == "group": VerticalLayout {
-                                padding-top: 14px;
-                                spacing: 4px;
-                                SectionTitle { text: row.label; }
-                                if row.help != "": Caption { text: row.help; }
-                                Divider { }
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    spacing: 28px;
+                    VerticalLayout {
+                        width: 172px;
+                        spacing: 4px;
+                        for name[index] in PrefsModel.sections: ListRow {
+                            text: name;
+                            selected: index == PrefsModel.section && PrefsModel.search == "";
+                            clicked => { PrefsModel.section = index; PrefsModel.search = ""; PrefsModel.section-chosen(index); }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                        Caption { text: "MonoOLED Studio"; }
+                        Caption { text: "v" + PrefsModel.version; }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 8px;
+                        Text { text: PrefsModel.page-title; font-size: 17px; font-weight: 700; color: Theme.text-primary; }
+                        Caption { text: PrefsModel.page-desc; }
+                        if PrefsModel.error != "": Text { text: PrefsModel.error; color: Theme.status-error; font-size: Metrics.font-small; wrap: word-wrap; }
+                        if PrefsModel.rows.length == 0: Caption { text: I18n.tr(I18n.lang, "pref.search.no_results"); }
+                        ListView {
+                            vertical-stretch: 1;
+                            for row in PrefsModel.rows: VerticalLayout {
+                                if row.kind == "group": VerticalLayout {
+                                    padding-top: 14px;
+                                    spacing: 4px;
+                                    SectionTitle { text: row.label; }
+                                    if row.help != "": Caption { text: row.help; }
+                                    Divider { }
+                                }
+                                if row.kind != "group": PrefRowView { item: row; }
                             }
-                            if row.kind != "group": PrefRowView { item: row; }
                         }
                     }
                 }
             }
         }
     }
+    init => { scope.focus(); }
 }

@@ -307,7 +307,10 @@ impl ProjectWorkspace {
                 .get("active_profile")
                 .map(py_str)
                 .unwrap_or_default();
-            if !profiles.contains_key(&active_profile) {
+            // A builtin id names a profile the app always ships, so it may be
+            // the default without a project copy.
+            if !profiles.contains_key(&active_profile) && builtin_profile(&active_profile).is_none()
+            {
                 return Err(CoreError::invalid("active output profile does not exist"));
             }
         }
@@ -530,12 +533,16 @@ impl ProjectWorkspace {
     pub fn set_active_output_profile(&mut self, profile_id: &str) -> CoreResult<()> {
         validate_profile_id(profile_id)?;
         let id = profile_id.to_string();
-        self.transact(|data| {
+        // A builtin id is always selectable as the default, even when the
+        // project has never stored a copy of it.
+        let builtin = builtin_profile(&id).is_some();
+        self.transact(move |data| {
             let workbench = Self::workbench(data)?;
-            if !workbench
-                .get("profiles")
-                .and_then(Value::as_object)
-                .is_some_and(|p| p.contains_key(&id))
+            if !builtin
+                && !workbench
+                    .get("profiles")
+                    .and_then(Value::as_object)
+                    .is_some_and(|p| p.contains_key(&id))
             {
                 return Err(key_error(format!("unknown output profile: {id}")));
             }
@@ -794,4 +801,36 @@ pub fn create_project(root: &Path, name: &str, canvas: (i64, i64)) -> CoreResult
     project.set_active_screen("main")?;
     project.save()?;
     Ok(project)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("mono-project-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn active_output_profile_may_be_a_builtin() {
+        let root = temp("builtin-profile");
+        let mut project = create_project(&root, "Test", (128, 32)).unwrap();
+        project.set_active_output_profile("row_msb_c51").unwrap();
+        let reloaded = ProjectWorkspace::load(&root.join("project.oled.json")).unwrap();
+        let (active, saved) = reloaded.output_profiles().unwrap();
+        assert_eq!(active, "row_msb_c51");
+        assert!(
+            saved.iter().all(|(id, _)| id != "row_msb_c51"),
+            "selecting a builtin must not copy it into the manifest"
+        );
+        assert!(
+            project
+                .set_active_output_profile("no_such_profile")
+                .is_err()
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

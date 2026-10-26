@@ -4,6 +4,8 @@
 //! gesture (`begin_gesture`..`end_gesture`) is always exactly one undo step.
 
 use std::collections::VecDeque;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use crate::error::{CoreError, CoreResult};
 use crate::font::FontPack;
@@ -21,6 +23,7 @@ pub struct PixelDocument {
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
     gesture_before: Option<Snapshot>,
+    saved_fingerprint: u64,
     pub dirty: bool,
 }
 
@@ -50,7 +53,7 @@ impl PixelDocument {
         if pixels.len() != width * height {
             return Err(CoreError::invalid("pixel buffer does not match dimensions"));
         }
-        Ok(Self {
+        let mut doc = Self {
             width,
             height,
             pixels: pixels.into_iter().map(|v| u8::from(v != 0)).collect(),
@@ -58,8 +61,11 @@ impl PixelDocument {
             undo: Vec::new(),
             redo: Vec::new(),
             gesture_before: None,
+            saved_fingerprint: 0,
             dirty: false,
-        })
+        };
+        doc.saved_fingerprint = doc.content_fingerprint();
+        Ok(doc)
     }
 
     pub fn from_rows(rows: &[Vec<u8>]) -> CoreResult<Self> {
@@ -122,12 +128,40 @@ impl PixelDocument {
 
     fn snapshot(&mut self) {
         if self.gesture_before.is_some() {
-            self.dirty = true;
             return;
         }
         let state = self.state();
         self.push_undo(state);
         self.redo.clear();
+    }
+
+    fn content_fingerprint(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.width.hash(&mut hasher);
+        self.height.hash(&mut hasher);
+        self.pixels.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Re-derive `dirty` from content equality with the last save point.
+    pub fn sync_dirty(&mut self) {
+        self.dirty = self.content_fingerprint() != self.saved_fingerprint;
+    }
+
+    /// Record the current content as the save point (called after a successful write).
+    pub fn mark_saved(&mut self) {
+        self.saved_fingerprint = self.content_fingerprint();
+        self.dirty = false;
+    }
+
+    /// Treat the current content as accepted without writing (discard / fresh load).
+    pub fn mark_clean(&mut self) {
+        self.mark_saved();
+    }
+
+    /// A direct edit always dirties the document (Automation 1.3.0 keeps this
+    /// contract); only undo/redo and gesture end re-derive it from the save point.
+    fn touched(&mut self) {
         self.dirty = true;
     }
 
@@ -157,8 +191,8 @@ impl PixelDocument {
         if before != self.state() {
             self.push_undo(before);
             self.redo.clear();
-            self.dirty = true;
         }
+        self.sync_dirty();
     }
 
     pub fn in_gesture(&self) -> bool {
@@ -188,6 +222,7 @@ impl PixelDocument {
     pub fn pencil(&mut self, x: i64, y: i64, value: bool) {
         self.snapshot();
         self.set_raw(x, y, value);
+        self.touched();
     }
 
     pub fn erase(&mut self, x: i64, y: i64) {
@@ -197,6 +232,7 @@ impl PixelDocument {
     pub fn brush(&mut self, x: i64, y: i64, value: bool, size: i64) {
         self.snapshot();
         self.brush_raw(x, y, value, size);
+        self.touched();
     }
 
     fn bresenham(mut x0: i64, mut y0: i64, x1: i64, y1: i64, mut plot: impl FnMut(i64, i64)) {
@@ -229,6 +265,7 @@ impl PixelDocument {
         for (x, y) in points {
             self.set_raw(x, y, value);
         }
+        self.touched();
     }
 
     /// Continuous stroke segment; inside a gesture all segments form one undo step.
@@ -243,6 +280,7 @@ impl PixelDocument {
         for (x, y) in points {
             self.brush_raw(x, y, value, size);
         }
+        self.touched();
     }
 
     pub fn rectangle(&mut self, x0: i64, y0: i64, x1: i64, y1: i64, filled: bool, value: bool) {
@@ -256,6 +294,7 @@ impl PixelDocument {
                 }
             }
         }
+        self.touched();
     }
 
     pub fn flood_fill(&mut self, x: i64, y: i64, value: bool) -> CoreResult<()> {
@@ -280,12 +319,14 @@ impl PixelDocument {
             self.pixels[index] = value;
             queue.extend([(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)]);
         }
+        self.touched();
         Ok(())
     }
 
     pub fn clear(&mut self, value: bool) {
         self.snapshot();
         self.pixels.fill(u8::from(value));
+        self.touched();
     }
 
     pub fn invert(&mut self) {
@@ -293,6 +334,7 @@ impl PixelDocument {
         for v in &mut self.pixels {
             *v = 1 - *v;
         }
+        self.touched();
     }
 
     pub fn flip_horizontal(&mut self) {
@@ -300,6 +342,7 @@ impl PixelDocument {
         for row in self.pixels.chunks_mut(self.width) {
             row.reverse();
         }
+        self.touched();
     }
 
     pub fn flip_vertical(&mut self) {
@@ -311,6 +354,7 @@ impl PixelDocument {
             .map(<[u8]>::to_vec)
             .collect();
         self.pixels = rows.concat();
+        self.touched();
     }
 
     pub fn rotate90(&mut self) -> CoreResult<()> {
@@ -329,12 +373,14 @@ impl PixelDocument {
         self.pixels = out;
         self.width = oh;
         self.height = ow;
+        self.touched();
         Ok(())
     }
 
     pub fn rotate180(&mut self) {
         self.snapshot();
         self.pixels.reverse();
+        self.touched();
     }
 
     pub fn rotate270(&mut self) {
@@ -350,6 +396,7 @@ impl PixelDocument {
         self.pixels = out;
         self.width = oh;
         self.height = ow;
+        self.touched();
     }
 
     pub fn copy_region(&self, x: usize, y: usize, w: usize, h: usize) -> CoreResult<Vec<Vec<u8>>> {
@@ -368,6 +415,7 @@ impl PixelDocument {
                 self.set_raw(x + rx as i64, y + ry as i64, *value != 0);
             }
         }
+        self.touched();
     }
 
     pub fn clear_region(&mut self, x: i64, y: i64, w: i64, h: i64) {
@@ -377,6 +425,7 @@ impl PixelDocument {
                 self.set_raw(xx, yy, false);
             }
         }
+        self.touched();
     }
 
     pub fn move_region(
@@ -407,6 +456,7 @@ impl PixelDocument {
                 );
             }
         }
+        self.touched();
         Ok(())
     }
 
@@ -443,6 +493,7 @@ impl PixelDocument {
         self.width = width as usize;
         self.height = height as usize;
         self.pixels = out;
+        self.touched();
         Ok(())
     }
 
@@ -462,6 +513,7 @@ impl PixelDocument {
         self.pixels = out;
         self.width = w as usize;
         self.height = h as usize;
+        self.touched();
         Ok(())
     }
 
@@ -472,7 +524,7 @@ impl PixelDocument {
         let current = self.state();
         self.redo.push(current);
         self.restore(previous);
-        self.dirty = true;
+        self.sync_dirty();
         true
     }
 
@@ -483,7 +535,7 @@ impl PixelDocument {
         let current = self.state();
         self.push_undo(current);
         self.restore(next);
-        self.dirty = true;
+        self.sync_dirty();
         true
     }
 
@@ -581,6 +633,45 @@ pub fn insert_fontpack_text(
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    #[test]
+    fn from_pixels_starts_clean() {
+        let doc = PixelDocument::from_pixels(4, 2, vec![1, 0, 0, 1, 0, 1, 1, 0]).unwrap();
+        assert!(!doc.dirty);
+    }
+
+    #[test]
+    fn undo_to_saved_state_is_clean() {
+        let mut doc = PixelDocument::new(8, 8).unwrap();
+        doc.pencil(1, 1, true);
+        assert!(doc.dirty);
+        assert!(doc.undo());
+        assert!(!doc.dirty);
+    }
+
+    #[test]
+    fn redo_after_save_is_dirty() {
+        let mut doc = PixelDocument::new(8, 8).unwrap();
+        doc.pencil(1, 1, true);
+        doc.mark_saved();
+        assert!(!doc.dirty);
+        assert!(doc.undo());
+        assert!(doc.dirty);
+        assert!(doc.redo());
+        assert!(!doc.dirty);
+    }
+
+    #[test]
+    fn mark_saved_records_the_current_content() {
+        let mut doc = PixelDocument::new(8, 8).unwrap();
+        doc.pencil(0, 0, true);
+        doc.mark_saved();
+        assert!(!doc.dirty);
+        doc.clear(false);
+        assert!(doc.dirty);
+        doc.undo();
+        assert!(!doc.dirty);
+    }
 
     #[test]
     fn gesture_is_one_undo_step() {

@@ -102,16 +102,16 @@ cargo test --workspace --locked
 
 ### 5.4 桌面程序
 
-- `main.rs`：负责启动参数、窗口接线、快捷键路由和定时器。定时器包括作业轮询（60 ms）和自动保存（5 s）。
+- `main.rs`：负责启动参数、窗口接线、快捷键路由和定时器。定时器包括作业轮询（60 ms）和自动保存（5 s）。菜单、命令面板和快捷键统一由 `commands.rs` 的注册表驱动，新增命令只改注册表加一个分发分支。
   - 启动参数：`--screenshot`、`--action`、`--screen`、`--window-size`、`--bench`、`--lang`、`--theme`、`--workspace`、`--version`。
-- `app.rs`：`App` 状态，以及 Designer 的绑定与刷新。
+- `app.rs`：`App` 状态，以及 Designer 的绑定与刷新；差异评审（基线/当前帧、bbox、元素增删改）与最近项目列表也在这里计算。
 - `guard.rs`：未保存修改保护，覆盖 Designer、Pixel 和 Font Lab，询问保存、放弃或取消。
-- `pixel.rs` / `pixel_ui.rs`：Pixel Studio。
-- `display.rs` / `canvas.rs`：显示颜色与像素边框。
-- `fontlab.rs` / `fontlab_ui.rs`：Font Lab，在后台线程生成字形。
+- `pixel.rs` / `pixel_ui.rs`：Pixel Studio。文档带来源（Scratch / PNG / 项目资产）；项目资产可原子写回并做外部修改检查。
+- `display.rs` / `canvas.rs`：显示颜色与像素边框；`auto` 调色板从主题派生。
+- `fontlab.rs` / `fontlab_ui.rs`：Font Lab，在后台线程生成字形；预览条显示真实白亮黑底 1-bit 效果。
 - `prefs.rs` / `prefs_ui.rs`：偏好设置与快捷键。文件、键名与 1.x 兼容。
 - `extras.rs`：模板、资源、自动保存恢复、命令面板、性能面板。
-- `agent.rs`：桌面版 Agent Bridge。每批请求把实时会话借给 Service，处理完一批记为一步撤销。
+- `agent.rs`：桌面版 Agent Bridge（非模态面板）。每批请求把实时会话借给 Service，处理完一批记为一步撤销；权限切换会以新 token 重启。
 - `bench.rs`：`--bench` 交互性能测量。
 - `watchdog.rs`：debug 构建的 UI 线程阻塞报告。
 - `ui/*.slint`：界面；`i18n/strings.json`：中英文界面字符串（有测试保证两种语言的键齐全）。
@@ -141,6 +141,16 @@ API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.al
 - 输出配置 ID 只能使用小写 ASCII 字母、数字、`_`、`-`，最长 64 字符。
 - 项目成员路径必须解析在项目根目录内。
 - 原子写入（临时文件 + fsync + 重命名）、外部修改指纹和 Windows 大小写碰撞检查是可靠性契约，不得为了性能绕过。完整证据包导出的性能预算未达标，正是这个原因，见 G4 证据 §4。
+
+### 6.1.1 2.0.4–2.2.0 新增契约
+
+- **保存点**：`PixelDocument` 与 `EditorSession` 以内容指纹判断 dirty；撤销回到保存点即恢复 clean。Automation 的 `touched()` 只在直接编辑时标记。
+- **项目资产写回**：只有项目内静态 `.png` image 元素可进入 Pixel Studio；写回前比较打开时记录的 SHA-256，外部修改即拒绝（交互模式可确认覆盖）；资产文档禁止 resize/crop/旋转 90°，避免改变元素几何契约。
+- **输出配置三态**：apply（应用草稿）/ commit（写入项目）/ default（恢复默认）分离；内置配置可作为 active id。
+- **最近项目**：`startup.recent_projects` 存绝对 POSIX 路径，读取时过滤已删除项；打开只通过索引回调，不把路径拼进 action 字符串。
+- **命令注册表**：菜单/命令面板/快捷键/fixed chords 只从 `commands.rs` 读取；新增命令不得再复制列表。
+- **校验文案**：`FindingItem.label` 是本地化摘要，`message` 保留英文原始 detail；`FINDING_CODES` 是 code 清单。
+- **Slint `ComboBox`**：1.18 起 `selected(value)` 传的是当前项的**文本**（`ComboBoxBase.selected(current-value: string)`），不是索引。需要索引时用同名元素的 `self.current-index` / `<id>.current-index`（`select()` 会先写好 `current-index` 再发回调），或把标签映射回索引；不要对参数做算术或 `+` 拼接成 `"key:" + index`。`current-index`/`current-value` 的声明式绑定会被用户选择打断，不要依赖它回灌。
 
 ### 6.2 字节确定性
 
@@ -215,7 +225,7 @@ API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.al
 ## 10. 已知风险与证据缺口
 
 - **取模名称与硬件事实错配**：黄金数组只能证明编码公式自洽。没有目标驱动的已知正确数组和实际上屏结果，不能声称某个预设适配某块硬件。
-- **性能预算**：2.0 有四项预算记录为未达标，见 G4 证据 §4。导出全部、交接包、批量校验和缩略图墙仍在 UI 线程上同步执行；debug 构建的 watchdog 会报告这些阻塞。
+- **性能预算**：2.0 有四项预算记录为未达标，见 G4 证据 §4。自 2.0.2 起，导出全部、交接包、批量校验和缩略图墙在后台任务中执行（状态栏进度，可取消）；长同步 Automation 调用也移出 UI 线程。
 - **平台覆盖**：
   - 真人在 macOS 和 Linux 桌面上的使用、Linux 的 GL 渲染器、Intel Mac 与 Linux arm64 都未验证。
   - macOS 应用没有开发者签名，也未公证。

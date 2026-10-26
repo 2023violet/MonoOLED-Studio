@@ -53,7 +53,7 @@ cargo run -p mono-cli -- validate --project test_assets/projects/curing_lite/pro
 
 - 2.0 是 Rust 全量重写（ADR-005），设计见 `docs/rewrite/2026-10-19-rust-rewrite-design.md`，各 Gate 证据见 `docs/rewrite/`。
 - Python 1.x 已从 `main` 删除，最后源码在 `v1-final` 标签。
-- 已知未达标的性能预算与限制：见 `CHANGELOG.md` 2.0.0 与 `docs/rewrite/G4_EVIDENCE.md` §4。
+- 已知未达标的性能预算与限制：见 `CHANGELOG.md` 2.0.0、后续版本的“已知限制”与 `docs/rewrite/G4_EVIDENCE.md` §4。
 
 ## AI Workflow Control Plane
 

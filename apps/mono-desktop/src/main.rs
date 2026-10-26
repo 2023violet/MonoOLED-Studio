@@ -6,6 +6,7 @@ mod app;
 mod bench;
 mod bgjob;
 mod canvas;
+mod commands;
 mod display;
 mod extras;
 mod fontlab;
@@ -122,7 +123,7 @@ fn parse_args() -> Args {
     args
 }
 
-fn theme_mode(prefs: &Preferences, override_mode: Option<&str>) -> i32 {
+pub(crate) fn theme_mode(prefs: &Preferences, override_mode: Option<&str>) -> i32 {
     match override_mode
         .map(str::to_string)
         .unwrap_or_else(|| prefs.str("appearance.theme_mode"))
@@ -192,6 +193,9 @@ fn save_dialog(title: &str, name: &str, ext: &str) -> Option<PathBuf> {
 }
 
 fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
+    if !app.borrow_mut().require_document(action) {
+        return;
+    }
     let lang = app.borrow().lang.clone();
     let t = |key: &str| i18n::tr(&lang, key);
     match action {
@@ -211,19 +215,12 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             if !app.borrow_mut().confirm_transition() {
                 return;
             }
-            if let Some(dir) = rfd::FileDialog::new()
-                .set_title(t("action.new_project"))
-                .pick_folder()
-            {
-                let name = dir
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "MonoOLED Project".into());
-                let mut a = app.borrow_mut();
-                if let Err(e) = a.new_project(&dir, &name) {
-                    a.error(&e);
-                }
-            }
+            let model = NewProjectModel::get(ui);
+            model.set_name(SharedString::from(""));
+            model.set_canvas_w(128);
+            model.set_canvas_h(32);
+            model.set_error(SharedString::from(""));
+            model.set_visible(true);
         }
         "export-current" | "export-all" => {
             let Some(dir) = rfd::FileDialog::new()
@@ -267,6 +264,28 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
                 a.error(&e);
             }
         }
+        "open-docs" => {
+            let lang = app.borrow().lang.clone();
+            let guide = if lang == "en_US" {
+                "USER_GUIDE_EN.md"
+            } else {
+                "USER_GUIDE_CN.md"
+            };
+            let local = Path::new("docs").join(guide);
+            let url =
+                format!("https://github.com/2023violet/MonoOLED-Studio/blob/main/docs/{guide}");
+            if let Err(e) = open_local_or_url(&local, &url) {
+                app.borrow_mut().error(&e);
+            }
+        }
+        "report-issue" => {
+            if let Err(e) = open_local_or_url(
+                Path::new(""),
+                "https://github.com/2023violet/MonoOLED-Studio/issues",
+            ) {
+                app.borrow_mut().error(&e);
+            }
+        }
         "preferences" => app.borrow_mut().open_preferences(),
         "about" => AppModel::get(ui).set_about_visible(true),
         "exit" => {
@@ -306,6 +325,20 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             }
             a.refresh_all();
         }
+        "edit-asset" => {
+            let primary = app.borrow().selection.primary().map(str::to_string);
+            let Some(id) = primary else {
+                let mut a = app.borrow_mut();
+                let message = a.t("asset.no_selection");
+                a.set_status(message);
+                return;
+            };
+            let mut a = app.borrow_mut();
+            if let Err(e) = a.open_element_asset(&id) {
+                a.error(&e);
+            }
+            a.refresh_all();
+        }
         "assign-bitmap" => {
             let Some(path) = rfd::FileDialog::new()
                 .set_title(t("dialog.assign_bitmap"))
@@ -325,10 +358,8 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             a.refresh_all();
         }
         "agent-bridge" => {
-            let mut a = app.borrow_mut();
-            if let Err(e) = a.toggle_agent() {
-                a.error(&e);
-            }
+            AppModel::get(ui).set_agent_panel_visible(true);
+            app.borrow().refresh_agent_panel();
         }
         "canvas-only" => {
             let shell = Shell::get(ui);
@@ -346,6 +377,12 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
         other if other.starts_with("pixel-inspector:") => {
             let tab = other["pixel-inspector:".len()..].parse().unwrap_or(0);
             PixelModel::get(ui).set_inspector_tab(tab);
+        }
+        other if other.starts_with("pixel-tool:") => {
+            let index: i32 = other["pixel-tool:".len()..].parse().unwrap_or(0);
+            let mut a = app.borrow_mut();
+            a.studio_mut().tool = pixel::Tool::from_index(index);
+            a.refresh_pixel();
         }
         other if other.starts_with("workspace:") => {
             let index: i32 = other[10..].parse().unwrap_or(0);
@@ -367,11 +404,29 @@ fn finish_prompt(app: &mut App, result: Result<(), mono_core::CoreError>) {
     app.refresh_all();
 }
 
+/// Open a local file when present, otherwise the canonical web URL.
+fn open_local_or_url(path: &Path, url: &str) -> Result<(), mono_core::CoreError> {
+    let target = if path.is_file() {
+        path.to_string_lossy().into_owned()
+    } else {
+        url.to_string()
+    };
+    let spawned = if cfg!(windows) {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", target.as_str()])
+            .spawn()
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(&target).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(&target).spawn()
+    };
+    spawned
+        .map(|_| ())
+        .map_err(|error| mono_core::CoreError::invalid(error.to_string()))
+}
+
 fn switch_workspace(app: &Rc<RefCell<App>>, ui: &MainWindow, index: i32) {
     AppModel::get(ui).set_workspace(index);
-    if index == 3 {
-        DesignerModel::get(ui).set_drawer_tab(1);
-    }
     let mut a = app.borrow_mut();
     a.workspace = index;
     if index == 1 {
@@ -380,8 +435,70 @@ fn switch_workspace(app: &Rc<RefCell<App>>, ui: &MainWindow, index: i32) {
     } else if index == 2 {
         a.refresh_font();
         a.refresh_pixel();
+    } else if index == 3 {
+        a.refresh_review();
+        a.refresh_app();
     } else {
         a.refresh_app();
+    }
+}
+
+fn apply_prompt(app: &mut App, text: &str) {
+    let Some(prompt) = app.prompt.take() else {
+        return;
+    };
+    let text = text.trim().to_string();
+    let prompt = match prompt {
+        Prompt::NewScreen | Prompt::DuplicateScreen => prompt,
+        Prompt::NewFontPack => {
+            app.create_font_pack(&text);
+            return;
+        }
+        Prompt::TemplateName => {
+            let result = app.save_template(&text);
+            finish_prompt(app, result);
+            return;
+        }
+        Prompt::TemplatePrefix(name) => {
+            let result = app.insert_template(&name, &text);
+            finish_prompt(app, result);
+            return;
+        }
+        Prompt::BitmapText(dir) => {
+            let result = app.bitmap_text_entered(dir, &text);
+            finish_prompt(app, result);
+            return;
+        }
+        Prompt::BitmapTextId(dir, value) => {
+            let result = app.insert_bitmap_text(&dir, &value, &text);
+            finish_prompt(app, result);
+            return;
+        }
+        other => {
+            app.pixel_prompt(other, &text);
+            return;
+        }
+    };
+    let result = match (Some(prompt), app.project.as_mut()) {
+        (Some(Prompt::NewScreen), Some(project)) => project
+            .add_screen(&text, Some(&text), None, None)
+            .map(|_| Some(text.clone())),
+        (Some(Prompt::DuplicateScreen), Some(project)) => {
+            let active = project.active_screen();
+            project
+                .duplicate_screen(&active, &text, Some(&text))
+                .map(|_| Some(text.clone()))
+        }
+        _ => Ok(None),
+    };
+    match result {
+        Ok(Some(screen)) => {
+            if let Err(e) = app.open_screen(&screen) {
+                app.error(&e);
+            }
+        }
+        Ok(None) => {}
+        Err(e) => app.error(&e),
     }
 }
 
@@ -405,6 +522,7 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     AppModel::get(ui).on_action(move |action| {
         if let Some(ui) = w.upgrade() {
             handle_action(&a, &ui, &action);
+            focus_if_idle(&ui);
         }
     });
 
@@ -412,67 +530,16 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     AppModel::get(ui).on_prompt_accepted(move |text| {
         let Some(ui) = w.upgrade() else { return };
         AppModel::get(&ui).set_prompt_visible(false);
-        let mut app = a.borrow_mut();
-        let Some(prompt) = app.prompt.take() else {
-            return;
-        };
-        let text = text.trim().to_string();
-        let prompt = match prompt {
-            Prompt::NewScreen | Prompt::DuplicateScreen => prompt,
-            Prompt::NewFontPack => {
-                app.create_font_pack(&text);
-                return;
-            }
-            Prompt::TemplateName => {
-                let result = app.save_template(&text);
-                finish_prompt(&mut app, result);
-                return;
-            }
-            Prompt::TemplatePrefix(name) => {
-                let result = app.insert_template(&name, &text);
-                finish_prompt(&mut app, result);
-                return;
-            }
-            Prompt::BitmapText(dir) => {
-                let result = app.bitmap_text_entered(dir, &text);
-                finish_prompt(&mut app, result);
-                return;
-            }
-            Prompt::BitmapTextId(dir, value) => {
-                let result = app.insert_bitmap_text(&dir, &value, &text);
-                finish_prompt(&mut app, result);
-                return;
-            }
-            other => {
-                app.pixel_prompt(other, &text);
-                return;
-            }
-        };
-        let result = match (Some(prompt), app.project.as_mut()) {
-            (Some(Prompt::NewScreen), Some(project)) => project
-                .add_screen(&text, Some(&text), None, None)
-                .map(|_| Some(text.clone())),
-            (Some(Prompt::DuplicateScreen), Some(project)) => {
-                let active = project.active_screen();
-                project
-                    .duplicate_screen(&active, &text, Some(&text))
-                    .map(|_| Some(text.clone()))
-            }
-            _ => Ok(None),
-        };
-        match result {
-            Ok(Some(screen)) => {
-                if let Err(e) = app.open_screen(&screen) {
-                    app.error(&e);
-                }
-            }
-            Ok(None) => {}
-            Err(e) => app.error(&e),
-        }
+        apply_prompt(&mut a.borrow_mut(), &text);
+        focus_if_idle(&ui);
     });
     let a = app.clone();
+    let w = ui.as_weak();
     AppModel::get(ui).on_prompt_cancelled(move || {
         a.borrow_mut().prompt = None;
+        if let Some(ui) = w.upgrade() {
+            focus_if_idle(&ui);
+        }
     });
 
     let a = app.clone();
@@ -545,52 +612,112 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     wire_pixel(ui, app);
     wire_prefs(ui, app);
     wire_picker(ui, app);
+
+    let (a, w) = (app.clone(), ui.as_weak());
+    AppModel::get(ui).on_recent_chosen(move |index| {
+        let Some(ui) = w.upgrade() else { return };
+        let path = a
+            .borrow()
+            .recent_projects()
+            .get(usize::try_from(index).unwrap_or(usize::MAX))
+            .cloned();
+        if let Some(path) = path {
+            let mut app = a.borrow_mut();
+            if let Err(e) = app.open_path_guarded(&path, false) {
+                app.error(&e);
+            }
+            app.refresh_all();
+        }
+        focus_if_idle(&ui);
+    });
+
+    let (a, w) = (app.clone(), ui.as_weak());
+    AgentModel::get(ui).on_agent_action(move |action| {
+        let Some(ui) = w.upgrade() else { return };
+        if action == "close" {
+            AppModel::get(&ui).set_agent_panel_visible(false);
+            AgentModel::get(&ui).set_token_visible(false);
+            focus_if_idle(&ui);
+            return;
+        }
+        {
+            let mut app = a.borrow_mut();
+            if let Err(e) = app.agent_action(&action) {
+                app.error(&e);
+            }
+            app.refresh_agent_panel();
+        }
+        focus_if_idle(&ui);
+    });
+
+    let (a, w) = (app.clone(), ui.as_weak());
+    NewProjectModel::get(ui).on_create(move |name, width, height| {
+        let Some(ui) = w.upgrade() else { return };
+        let title = i18n::tr(&a.borrow().lang, "new_project.choose_folder");
+        let Some(dir) = rfd::FileDialog::new().set_title(title).pick_folder() else {
+            return;
+        };
+        let mut app = a.borrow_mut();
+        match app.new_project(&dir, &name, (i64::from(width), i64::from(height))) {
+            Ok(()) => {
+                let model = NewProjectModel::get(&ui);
+                model.set_visible(false);
+                model.set_error(SharedString::from(""));
+                app.refresh_all();
+                drop(app);
+                focus_if_idle(&ui);
+            }
+            Err(e) => {
+                NewProjectModel::get(&ui).set_error(SharedString::from(e.message.clone()));
+                app.error(&e);
+            }
+        }
+    });
+    let w = ui.as_weak();
+    NewProjectModel::get(ui).on_cancel(move || {
+        if let Some(ui) = w.upgrade() {
+            NewProjectModel::get(&ui).set_visible(false);
+            focus_if_idle(&ui);
+        }
+    });
+}
+
+/// Return keyboard focus to the workspace after a menu/overlay action when no
+/// overlay is still open. Destroying a focused overlay otherwise leaves the
+/// window without a key owner.
+fn focus_if_idle(ui: &MainWindow) {
+    let app = AppModel::get(ui);
+    let pixel_dialog = app.get_workspace() == 1 && PixelModel::get(ui).get_dialog() != 0;
+    if app.get_preferences_visible()
+        || app.get_picker_visible()
+        || app.get_prompt_visible()
+        || app.get_about_visible()
+        || pixel_dialog
+    {
+        return;
+    }
+    ui.invoke_focus_shortcuts();
 }
 
 /// Configured shortcut → command (V1 command registry). Returns true if handled.
 fn run_shortcut(app: &Rc<RefCell<App>>, ui: &MainWindow, chord: &str) -> bool {
-    let Some(command) = app.borrow_mut().shortcut(chord) else {
-        // V1 fixed menu shortcuts (not user-configurable).
-        let action = match prefs_ui::normalize_shortcut(chord).as_str() {
-            "ctrl+n" => "new-project",
-            "ctrl+shift+o" => "open-project",
-            "ctrl+o" => "open-scene",
-            "ctrl+shift+e" => "handoff",
-            "ctrl+g" => "group",
-            "ctrl+shift+g" => "ungroup",
-            "ctrl+j" => "diagnostics",
-            "ctrl+1" => "toggle-navigator",
-            "ctrl+2" => "toggle-inspector",
-            "ctrl+shift+p" => "workspace:1",
-            "ctrl+shift+f" => "workspace:2",
-            "ctrl+k" => "command-palette",
-            _ => return false,
+    if let Some(id) = app.borrow_mut().shortcut(chord) {
+        let Some(spec) = commands::spec(id) else {
+            return false;
         };
-        handle_action(app, ui, action);
+        let workspace = app.borrow().workspace;
+        if spec.requires == commands::Requirement::PixelOrFont
+            && !(workspace == 1 || workspace == 2)
+        {
+            return false;
+        }
+        handle_action(app, ui, spec.action);
         return true;
-    };
-    let workspace = app.borrow().workspace;
-    match command {
-        "preferences.open" => app.borrow_mut().open_preferences(),
-        "workspace.canvas_only" => {
-            let shell = Shell::get(ui);
-            shell.set_canvas_only(!shell.get_canvas_only());
-        }
-        "project.save" => handle_action(app, ui, "save"),
-        "designer.undo" => handle_action(app, ui, "undo"),
-        "designer.redo" => handle_action(app, ui, "redo"),
-        tool if workspace == 1 || workspace == 2 => {
-            let index = match tool {
-                "pixel.select" => 5,
-                "pixel.fill" => 4,
-                _ => 0,
-            };
-            let mut a = app.borrow_mut();
-            a.studio_mut().tool = pixel::Tool::from_index(index);
-            a.refresh_pixel();
-        }
-        _ => return false,
     }
+    let Some(action) = commands::fixed_action(chord) else {
+        return false;
+    };
+    handle_action(app, ui, action);
     true
 }
 
@@ -605,6 +732,7 @@ fn wire_picker(ui: &MainWindow, app: &Rc<RefCell<App>>) {
         if let Some(action) = action {
             handle_action(&a, &ui, &action);
         }
+        focus_if_idle(&ui);
     });
 }
 
@@ -627,6 +755,7 @@ fn wire_prefs(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     pm.on_close(move || {
         if let Some(ui) = w.upgrade() {
             AppModel::get(&ui).set_preferences_visible(false);
+            focus_if_idle(&ui);
         }
     });
 }
@@ -644,6 +773,12 @@ fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     pm.on_pointer(move |phase, x, y, button| {
         if let Ok(mut app) = a.try_borrow_mut() {
             app.pixel_pointer(&phase, x, y, button);
+        }
+    });
+    let w = ui.as_weak();
+    pm.on_refocus(move || {
+        if let Some(ui) = w.upgrade() {
+            focus_if_idle(&ui);
         }
     });
     let a = app.clone();
@@ -672,8 +807,13 @@ fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     pm.on_zoom_step(move |direction| a.borrow_mut().pixel_zoom_step(direction));
     let a = app.clone();
     pm.on_import_changed(move || a.borrow_mut().pixel_import_changed());
-    let a = app.clone();
-    pm.on_dialog_accepted(move || a.borrow_mut().pixel_dialog_accepted());
+    let (a, w) = (app.clone(), ui.as_weak());
+    pm.on_dialog_accepted(move || {
+        a.borrow_mut().pixel_dialog_accepted();
+        if let Some(ui) = w.upgrade() {
+            focus_if_idle(&ui);
+        }
+    });
 
     let fm = FontModel::get(ui);
     let a = app.clone();
@@ -849,5 +989,24 @@ fn main() {
     watchdog::start();
     if let Err(error) = ui.run() {
         eprintln!("MonoOLED Studio stopped: {error}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fallback_action_maps_fixed_chords() {
+        assert_eq!(commands::fixed_action("Ctrl+K"), Some("command-palette"));
+        assert_eq!(commands::fixed_action("ctrl+shift+p"), Some("workspace:1"));
+        assert_eq!(commands::fixed_action("Ctrl+Shift+O"), Some("open-project"));
+    }
+
+    #[test]
+    fn fallback_action_rejects_unknown_or_configured_chords() {
+        assert_eq!(commands::fixed_action("Ctrl+S"), None);
+        assert_eq!(commands::fixed_action("Ctrl+Alt+Q"), None);
+        assert_eq!(commands::fixed_action(""), None);
     }
 }

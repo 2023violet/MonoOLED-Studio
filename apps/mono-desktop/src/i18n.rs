@@ -58,6 +58,17 @@ pub fn trf(lang: &str, key: &str, values: &[(&str, String)]) -> String {
     text
 }
 
+/// Readable label for a validation finding; unknown codes stay as the code.
+pub fn finding_label(lang: &str, code: &str) -> String {
+    let key = format!("finding.{code}");
+    let label = tr(lang, &key);
+    if label == key {
+        code.to_string()
+    } else {
+        label
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -117,6 +128,31 @@ mod tests {
             tr("en_US", "pixel.cursor")
                 .replace("{x}", "3")
                 .replace("{y}", "4")
+        );
+    }
+
+    #[test]
+    fn every_finding_code_has_label() {
+        for code in mono_project::export::FINDING_CODES {
+            for lang in LANGUAGES {
+                let key = format!("finding.{code}");
+                assert!(
+                    tables()
+                        .get(lang)
+                        .is_some_and(|table| table.contains_key(&key)),
+                    "{lang} is missing {key}"
+                );
+                assert_ne!(tr(lang, &key), key, "{lang} {key}");
+            }
+        }
+    }
+
+    #[test]
+    fn unknown_finding_falls_back_to_code() {
+        assert_eq!(finding_label("zh_CN", "NO_SUCH_FINDING"), "NO_SUCH_FINDING");
+        assert_eq!(
+            finding_label("zh_CN", "REQUIRED_ELEMENT_MISSING"),
+            tr("zh_CN", "finding.REQUIRED_ELEMENT_MISSING")
         );
     }
 }

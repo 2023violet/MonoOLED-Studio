@@ -24,6 +24,14 @@ pub fn image_from_pixels(width: usize, height: usize, pixels: &[u8]) -> Image {
     image_with_colors(width, height, pixels, LIT, OFF)
 }
 
+/// RGBA colours for a 0/1 pixel buffer (1 = `lit`).
+pub fn rgba_pixels(pixels: &[u8], lit: Rgba8Pixel, off: Rgba8Pixel) -> Vec<Rgba8Pixel> {
+    pixels
+        .iter()
+        .map(|value| if *value != 0 { lit } else { off })
+        .collect()
+}
+
 /// Image of `pixels` with explicit lit / off colours.
 pub fn image_with_colors(
     width: usize,
@@ -32,10 +40,11 @@ pub fn image_with_colors(
     lit: Rgba8Pixel,
     off: Rgba8Pixel,
 ) -> Image {
+    let colors = rgba_pixels(pixels, lit, off);
     let mut buffer = SharedPixelBuffer::<Rgba8Pixel>::new(width as u32, height as u32);
-    for (slot, value) in buffer.make_mut_slice().iter_mut().zip(pixels) {
-        *slot = if *value != 0 { lit } else { off };
-    }
+    let slice = buffer.make_mut_slice();
+    let count = slice.len().min(colors.len());
+    slice[..count].copy_from_slice(&colors[..count]);
     Image::from_rgba8(buffer)
 }
 

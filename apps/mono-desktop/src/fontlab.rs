@@ -101,9 +101,7 @@ pub struct FontLab {
 }
 
 fn blank_glyph(pack: &FontPack) -> CoreResult<PixelStudio> {
-    let mut studio = PixelStudio::new(pack.cell.0, pack.cell.1)?;
-    studio.doc.dirty = false;
-    Ok(studio)
+    PixelStudio::new(pack.cell.0, pack.cell.1)
 }
 
 impl FontLab {
@@ -190,7 +188,6 @@ impl FontLab {
         let mut studio = blank_glyph(&self.pack)?;
         let flat: Vec<u8> = rows.into_iter().flatten().collect();
         studio.doc = PixelDocument::from_pixels(self.pack.cell.0, self.pack.cell.1, flat)?;
-        studio.doc.dirty = false;
         studio.tool = tool;
         studio.brush = brush;
         self.studio = studio;
@@ -235,7 +232,7 @@ impl FontLab {
         self.pack
             .set_metrics(Some(self.form.baseline), Some(self.form.advance))?;
         save_font_pack(&self.root, &self.pack, Some(&changed))?;
-        self.studio.doc.dirty = false;
+        self.studio.doc.mark_saved();
         Ok(())
     }
 
@@ -544,6 +541,27 @@ mod tests {
                 .all(|v| *v == 1)
         );
         assert_eq!(lab.current, Some('B'));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn glyph_undo_to_saved_state_is_clean() {
+        let root = temp("undo");
+        let mut lab = FontLab::open(&root, "OLED Font", (5, 8)).unwrap();
+        lab.edit("characters", "A");
+        lab.start_generate().unwrap();
+        lab.wait();
+        lab.studio.doc.pencil(0, 0, true);
+        assert!(lab.dirty());
+        lab.save().unwrap();
+        assert!(!lab.dirty());
+        lab.studio.doc.pencil(1, 1, true);
+        assert!(lab.dirty());
+        lab.studio.doc.undo();
+        assert!(
+            !lab.studio.doc.dirty,
+            "undo back to the saved glyph is clean"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

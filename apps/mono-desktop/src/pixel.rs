@@ -43,6 +43,22 @@ impl Tool {
 
 pub type Rect = (usize, usize, usize, usize);
 
+/// Where the current Pixel document came from. Scratch documents never write
+/// into a project; asset documents write back to their element's PNG.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum PixelOrigin {
+    #[default]
+    Scratch,
+    Png(PathBuf),
+    Asset {
+        root: PathBuf,
+        rel: String,
+        element_id: String,
+        sha256: String,
+        inverted: bool,
+    },
+}
+
 #[derive(Debug, Clone)]
 enum Gesture {
     Paint {
@@ -67,6 +83,7 @@ enum Gesture {
 pub struct PixelStudio {
     pub doc: PixelDocument,
     pub path: Option<PathBuf>,
+    pub origin: PixelOrigin,
     pub tool: Tool,
     pub brush: i64,
     pub interpolation: bool,
@@ -82,6 +99,7 @@ impl PixelStudio {
         Ok(Self {
             doc: PixelDocument::new(width, height)?,
             path: None,
+            origin: PixelOrigin::Scratch,
             tool: Tool::Pencil,
             brush: 1,
             interpolation: true,
@@ -121,6 +139,21 @@ impl PixelStudio {
 
     /// Replace the document (open/import/new); clears transient state.
     pub fn replace(&mut self, doc: PixelDocument, path: Option<PathBuf>, max_undo: usize) {
+        self.origin = path
+            .as_ref()
+            .map(|p| PixelOrigin::Png(p.clone()))
+            .unwrap_or(PixelOrigin::Scratch);
+        self.load(doc, path, max_undo);
+    }
+
+    /// Open a document that belongs to a project asset.
+    pub fn open_asset(&mut self, doc: PixelDocument, origin: PixelOrigin, max_undo: usize) {
+        debug_assert!(matches!(origin, PixelOrigin::Asset { .. }));
+        self.origin = origin;
+        self.load(doc, None, max_undo);
+    }
+
+    fn load(&mut self, doc: PixelDocument, path: Option<PathBuf>, max_undo: usize) {
         self.doc = doc;
         self.doc.set_max_undo(max_undo);
         self.path = path;
@@ -130,7 +163,81 @@ impl PixelStudio {
         self.hover = None;
     }
 
+    pub fn is_asset(&self) -> bool {
+        matches!(self.origin, PixelOrigin::Asset { .. })
+    }
+
+    /// Asset documents keep the element's native size; geometry stays locked.
+    pub fn asset_locked(&self) -> bool {
+        self.is_asset()
+    }
+
+    /// Write the document back to its project PNG (atomic, external-change aware).
+    pub fn save_asset(&mut self, force: bool) -> CoreResult<PathBuf> {
+        let PixelOrigin::Asset {
+            root,
+            rel,
+            sha256,
+            inverted,
+            ..
+        } = self.origin.clone()
+        else {
+            return Err(CoreError::new(
+                "E-ASSET-NOT-ASSET",
+                "document is not a project asset",
+            ));
+        };
+        let path = mono_project::project::resolve_under_root(&root, &rel, "asset")?;
+        let current = std::fs::read(&path).ok();
+        let current_sha = current.as_deref().map(mono_project::resources::hex_digest);
+        if !force && current_sha.as_deref() != Some(sha256.as_str()) {
+            return Err(CoreError::new(
+                "E-ASSET-EXTERNAL-MODIFICATION",
+                "asset changed on disk since it was opened",
+            ));
+        }
+        let canonical = self.doc.rows();
+        let complement = |rows: &[Vec<u8>]| -> Vec<Vec<u8>> {
+            rows.iter()
+                .map(|row| row.iter().map(|pixel| 1 - pixel).collect())
+                .collect()
+        };
+        // Keep the source polarity when it still decodes to the same bitmap;
+        // otherwise the polarity detector would invert the rendered result.
+        let preferred = if inverted {
+            complement(&canonical)
+        } else {
+            canonical.clone()
+        };
+        let mut png =
+            mono_project::image_io::encode_bitmap_png(self.width(), self.height(), &preferred)?;
+        let decodes_to_document = |bytes: &[u8]| {
+            mono_project::resources::DiskResources::decode_bitmap(&path, bytes)
+                .is_ok_and(|asset| asset.rows == canonical)
+        };
+        if !decodes_to_document(&png) {
+            let alternate = complement(&preferred);
+            png =
+                mono_project::image_io::encode_bitmap_png(self.width(), self.height(), &alternate)?;
+            if !decodes_to_document(&png) {
+                return Err(CoreError::new(
+                    "E-ASSET-ENCODE-POLARITY",
+                    "bitmap polarity cannot round-trip through the PNG decoder",
+                ));
+            }
+        }
+        mono_project::atomic::atomic_write(&path, &png)?;
+        if let PixelOrigin::Asset { sha256, .. } = &mut self.origin {
+            *sha256 = mono_project::resources::hex_digest(&png);
+        }
+        self.doc.mark_saved();
+        Ok(path)
+    }
+
     pub fn title(&self) -> String {
+        if let PixelOrigin::Asset { rel, .. } = &self.origin {
+            return format!("asset: {rel}");
+        }
         self.path
             .as_ref()
             .and_then(|p| p.file_name())
@@ -384,6 +491,12 @@ impl PixelStudio {
 
     /// Document actions; `Err` carries a user-visible message.
     pub fn try_action(&mut self, action: &str) -> CoreResult<bool> {
+        if self.asset_locked() && matches!(action, "rotate90" | "rotate270" | "crop") {
+            return Err(CoreError::new(
+                "E-ASSET-SIZE-LOCKED",
+                "asset size is locked; resize the source image instead",
+            ));
+        }
         let changed = match action {
             "undo" => self.doc.undo(),
             "redo" => self.doc.redo(),
@@ -466,6 +579,12 @@ impl PixelStudio {
     }
 
     pub fn resize(&mut self, width: i64, height: i64, anchor: &str) -> CoreResult<()> {
+        if self.asset_locked() {
+            return Err(CoreError::new(
+                "E-ASSET-SIZE-LOCKED",
+                "asset size is locked; resize the source image instead",
+            ));
+        }
         self.doc.resize_canvas(width, height, anchor)?;
         self.selection = None;
         self.key_cursor = None;
@@ -508,7 +627,7 @@ impl PixelStudio {
             &self.doc.rows(),
         )?;
         mono_project::atomic::atomic_write(&target, &png)?;
-        self.doc.dirty = false;
+        self.doc.mark_saved();
         self.path = Some(target.clone());
         Ok(target)
     }
@@ -552,6 +671,171 @@ mod tests {
 
     fn studio() -> PixelStudio {
         PixelStudio::new(16, 8).unwrap()
+    }
+
+    fn asset_studio(
+        name: &str,
+        rows: &[Vec<u8>],
+        inverted: bool,
+    ) -> (PixelStudio, PathBuf, PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("mono-asset-save-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("assets")).unwrap();
+        let path = root.join("assets/icon.png");
+        let height = rows.len();
+        let width = rows.first().map_or(0, Vec::len);
+        let stored: Vec<Vec<u8>> = if inverted {
+            rows.iter()
+                .map(|row| row.iter().map(|value| 1 - value).collect())
+                .collect()
+        } else {
+            rows.to_vec()
+        };
+        let png = mono_project::image_io::encode_bitmap_png(width, height, &stored).unwrap();
+        std::fs::write(&path, &png).unwrap();
+        let mut studio = PixelStudio::new(width, height).unwrap();
+        let doc = PixelDocument::from_rows(rows).unwrap();
+        studio.open_asset(
+            doc,
+            PixelOrigin::Asset {
+                root: root.clone(),
+                rel: "assets/icon.png".into(),
+                element_id: "icon".into(),
+                sha256: mono_project::resources::hex_digest(&png),
+                inverted,
+            },
+            200,
+        );
+        (studio, root, path)
+    }
+
+    fn canonical_rows(path: &Path) -> Vec<Vec<u8>> {
+        let raw = std::fs::read(path).unwrap();
+        mono_project::resources::DiskResources::decode_bitmap(path, &raw)
+            .unwrap()
+            .rows
+    }
+
+    #[test]
+    fn asset_save_preserves_canonical_rows() {
+        let rows = vec![
+            vec![0, 1, 0, 0],
+            vec![0, 0, 1, 0],
+            vec![0, 0, 0, 1],
+            vec![0, 0, 0, 0],
+        ];
+        let (mut studio, root, path) = asset_studio("rows", &rows, false);
+        assert!(!studio.doc.dirty);
+        studio.doc.pencil(0, 0, true);
+        assert!(studio.doc.dirty);
+        let saved = studio.save_asset(false).unwrap();
+        assert_eq!(saved, path);
+        assert!(!studio.doc.dirty);
+        assert_eq!(canonical_rows(&path), studio.doc.rows());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn asset_save_complements_inverted_source() {
+        let rows = vec![
+            vec![0, 0, 0, 0],
+            vec![0, 1, 0, 0],
+            vec![0, 0, 0, 0],
+            vec![0, 0, 0, 0],
+        ];
+        let (mut studio, root, path) = asset_studio("inverted", &rows, true);
+        assert_eq!(canonical_rows(&path), rows);
+        studio.save_asset(false).unwrap();
+        let raw = std::fs::read(&path).unwrap();
+        let asset = mono_project::resources::DiskResources::decode_bitmap(&path, &raw).unwrap();
+        assert!(asset.inverted, "stored polarity must stay black-on-white");
+        assert_eq!(asset.rows, rows);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn asset_save_refuses_external_change() {
+        let rows = vec![vec![0, 1], vec![1, 0]];
+        let (mut studio, root, path) = asset_studio("external", &rows, false);
+        studio.doc.pencil(0, 0, true);
+        let other =
+            mono_project::image_io::encode_bitmap_png(2, 2, &[vec![1, 1], vec![1, 1]]).unwrap();
+        std::fs::write(&path, &other).unwrap();
+        let error = studio.save_asset(false).unwrap_err();
+        assert_eq!(error.code, "E-ASSET-EXTERNAL-MODIFICATION");
+        assert_eq!(std::fs::read(&path).unwrap(), other);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn asset_force_overwrites_after_confirmation() {
+        let rows = vec![vec![0, 0], vec![0, 0]];
+        let (mut studio, root, path) = asset_studio("force", &rows, false);
+        studio.doc.pencil(0, 0, true);
+        std::fs::write(
+            &path,
+            mono_project::image_io::encode_bitmap_png(2, 2, &[vec![1, 1], vec![1, 1]]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            studio.save_asset(false).unwrap_err().code,
+            "E-ASSET-EXTERNAL-MODIFICATION"
+        );
+        studio.save_asset(true).unwrap();
+        assert_eq!(canonical_rows(&path), studio.doc.rows());
+        assert!(!studio.doc.dirty);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn asset_save_refuses_unrepresentable_polarity() {
+        let rows = vec![vec![0, 0], vec![0, 0]];
+        let (mut studio, root, _) = asset_studio("polarity", &rows, false);
+        for (x, y) in [(0, 0), (1, 0), (0, 1)] {
+            studio.doc.pencil(x, y, true);
+        }
+        let error = studio.save_asset(false).unwrap_err();
+        assert_eq!(error.code, "E-ASSET-ENCODE-POLARITY");
+        assert!(
+            studio.doc.dirty,
+            "a refused save must keep the document dirty"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn asset_origin_blocks_resize_and_rotate() {
+        let rows = vec![vec![0, 1], vec![1, 0]];
+        let (mut studio, root, _) = asset_studio("locked", &rows, false);
+        assert!(studio.asset_locked());
+        assert_eq!(
+            studio.try_action("rotate90").unwrap_err().code,
+            "E-ASSET-SIZE-LOCKED"
+        );
+        assert_eq!(
+            studio.try_action("rotate270").unwrap_err().code,
+            "E-ASSET-SIZE-LOCKED"
+        );
+        studio.selection = Some((0, 0, 1, 1));
+        assert_eq!(
+            studio.try_action("crop").unwrap_err().code,
+            "E-ASSET-SIZE-LOCKED"
+        );
+        assert_eq!(
+            studio.resize(4, 4, "center").unwrap_err().code,
+            "E-ASSET-SIZE-LOCKED"
+        );
+        assert!(studio.try_action("rotate180").unwrap());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scratch_never_writes_project() {
+        let mut studio = studio();
+        assert!(!studio.asset_locked());
+        let error = studio.save_asset(false).unwrap_err();
+        assert_eq!(error.code, "E-ASSET-NOT-ASSET");
     }
 
     #[test]

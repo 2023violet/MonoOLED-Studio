@@ -6,7 +6,7 @@ import { Shell, I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption
 export struct ScreenItem { id: string, label: string, active: bool }
 export struct ElementItem { id: string, kind: string, detail: string, selected: bool, hidden: bool, locked: bool }
 export struct AssetItem { path: string, detail: string }
-export struct FindingItem { severity: string, code: string, message: string }
+export struct FindingItem { severity: string, code: string, label: string, message: string }
 export struct OverlayBox { id: string, x: int, y: int, w: int, h: int, selected: bool, primary: bool, hidden: bool }
 export struct StateVar { name: string, kind: string, value: string, options: [string], current: int, minimum: int, maximum: int }
 
@@ -36,6 +36,7 @@ export global DesignerModel {
     // Inspector
     in-out property <int> inspector-tab: 0;
     in property <bool> has-selection;
+    in property <bool> can-edit-asset;
     in property <int> selection-count;
     in property <string> element-id;
     in property <string> element-type;
@@ -396,6 +397,13 @@ component Inspector inherits Panel {
                         }
                         if !DesignerModel.edit-w && DesignerModel.element-type == "image": Caption { text: I18n.tr(I18n.lang, "property.native_size_locked"); }
                         HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "property.asset"); width: 64px; } LineEdit { text: DesignerModel.element-asset; read-only: true; } }
+                        Button {
+                            shrink: true;
+                            horizontal-stretch: 1;
+                            text: I18n.tr(I18n.lang, "action.edit_asset");
+                            enabled: DesignerModel.can-edit-asset;
+                            clicked => { DesignerModel.inspector-action("edit-asset"); }
+                        }
                         HorizontalLayout {
                             spacing: 12px;
                             CheckBox { text: I18n.tr(I18n.lang, "property.locked"); checked: DesignerModel.element-locked; toggled => { DesignerModel.inspector-action(self.checked ? "lock" : "unlock"); } }
@@ -495,7 +503,7 @@ component Drawer inherits Panel {
                         text: finding.severity;
                         tone: finding.severity == "BLOCKER" || finding.severity == "ERROR" ? PillTone.error : finding.severity == "WARNING" ? PillTone.warning : PillTone.neutral;
                     }
-                    Text { text: finding.code + " — " + finding.message; font-size: Metrics.font-body; color: Theme.text-primary; vertical-alignment: center; overflow: elide; }
+                    Text { text: finding.label + " — " + finding.message; font-size: Metrics.font-body; color: Theme.text-primary; vertical-alignment: center; overflow: elide; }
                 }
             }
         }

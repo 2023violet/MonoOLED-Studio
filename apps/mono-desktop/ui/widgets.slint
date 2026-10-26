@@ -21,6 +21,30 @@ export global Shell {
 
 export enum ButtonRole { primary, secondary, ghost, danger }
 
+// Hover tooltip: the caller passes the anchor rectangle's absolute position.
+export component Tooltip inherits PopupWindow {
+    in property <length> anchor-x;
+    in property <length> anchor-y;
+    in property <length> anchor-w;
+    in property <length> anchor-h;
+    in property <string> text;
+    x: anchor-x;
+    y: anchor-y + anchor-h + 4px;
+    width: tip-text.preferred-width + 16px;
+    height: tip-text.preferred-height + 8px;
+    Rectangle {
+        background: Theme.text-primary;
+        border-radius: 4px;
+        tip-text := Text {
+            x: 8px;
+            y: 4px;
+            text: root.text;
+            font-size: Metrics.font-small;
+            color: Theme.surface-panel;
+        }
+    }
+}
+
 export component Button inherits Rectangle {
     in property <string> text;
     in property <ButtonRole> role: ButtonRole.secondary;
@@ -60,9 +84,23 @@ export component Button inherits Rectangle {
         x: 6px;
         width: parent.width - 12px;
     }
+    tooltip-window := Tooltip {
+        text: root.tooltip;
+        anchor-x: root.absolute-position.x;
+        anchor-y: root.absolute-position.y;
+        anchor-w: root.width;
+        anchor-h: root.height;
+    }
     touch := TouchArea {
         enabled: root.enabled;
         mouse-cursor: root.enabled ? pointer : default;
+        changed has-hover => {
+            if (touch.has-hover && root.tooltip != "" && root.enabled) {
+                tooltip-window.show();
+            } else {
+                tooltip-window.close();
+            }
+        }
         clicked => { root.clicked(); }
     }
     focus := FocusScope {

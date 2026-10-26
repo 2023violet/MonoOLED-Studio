@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use slint::Global;
 
 use crate::app::{App, model, ss};
+use crate::commands::{CONFIGURABLE as SHORTCUTS, normalize_shortcut};
 use crate::i18n::tr;
 use crate::prefs::defaults;
 use crate::{DesignerModel, PrefRow, PrefsModel};
@@ -17,18 +18,6 @@ pub const SECTIONS: [&str; 7] = [
     "keyboard",
     "recovery",
     "advanced",
-];
-
-/// V1 shortcut command ids, in registry order.
-pub const SHORTCUTS: [&str; 8] = [
-    "preferences.open",
-    "workspace.canvas_only",
-    "project.save",
-    "designer.undo",
-    "designer.redo",
-    "pixel.pencil",
-    "pixel.select",
-    "pixel.fill",
 ];
 
 enum Spec {
@@ -75,6 +64,7 @@ fn specs(section: &str) -> Vec<Spec> {
                     ("system", "mode.system"),
                     ("light", "mode.light"),
                     ("dark", "mode.dark"),
+                    ("high-contrast", "mode.high_contrast"),
                 ],
             ),
             Combo(
@@ -153,6 +143,12 @@ fn specs(section: &str) -> Vec<Spec> {
             Check("pixel_studio.pixel_grid", "check.pixel_grid", None),
             Check("pixel_studio.actual_preview", "check.actual_preview", None),
             Check("pixel_studio.rulers", "check.pixel_rulers", None),
+            Combo(
+                "pixel_studio.palette_mode",
+                "label.palette_mode",
+                Some("help.palette_mode"),
+                &[("auto", "palette.auto"), ("custom", "palette.custom")],
+            ),
         ],
         "keyboard" => {
             let mut rows = vec![Group("group.shortcuts", Some("help.shortcuts"))];
@@ -225,23 +221,41 @@ fn specs(section: &str) -> Vec<Spec> {
     }
 }
 
-/// Normalised shortcut text for conflict checks (`ctrl+s` == `Ctrl+S`).
-pub fn normalize_shortcut(text: &str) -> String {
-    text.split('+')
-        .map(|part| part.trim().to_lowercase())
-        .collect::<Vec<_>>()
-        .join("+")
-}
-
 /// The command bound to a key chord, if any (`chord` like `Ctrl+S`).
 pub fn command_for(shortcuts: &Value, chord: &str) -> Option<&'static str> {
     let wanted = normalize_shortcut(chord);
+    if wanted.is_empty() {
+        return None;
+    }
     SHORTCUTS.iter().copied().find(|command| {
         shortcuts
             .get(*command)
             .and_then(Value::as_str)
-            .is_some_and(|bound| normalize_shortcut(bound) == wanted)
+            .is_some_and(|bound| !bound.trim().is_empty() && normalize_shortcut(bound) == wanted)
     })
+}
+
+/// The command already using `text`, ignoring empty (cleared) bindings.
+pub fn shortcut_conflict(shortcuts: &Value, command: &str, text: &str) -> Option<&'static str> {
+    let wanted = normalize_shortcut(text);
+    if wanted.is_empty() {
+        return None;
+    }
+    SHORTCUTS.iter().copied().find(|other| {
+        *other != command
+            && shortcuts
+                .get(*other)
+                .and_then(Value::as_str)
+                .is_some_and(|bound| {
+                    !bound.trim().is_empty() && normalize_shortcut(bound) == wanted
+                })
+    })
+}
+
+/// Command id from a `shortcut-reset:<PrefRow.key>` button action.
+fn reset_command(action: &str) -> Option<&str> {
+    let command = action.strip_prefix("shortcut-reset:")?;
+    Some(command.strip_prefix("shortcuts.").unwrap_or(command))
 }
 
 impl App {
@@ -323,7 +337,7 @@ impl App {
                 row.help = ss(help(h));
             }
             Spec::Shortcut(command) => {
-                row.kind = "text".into();
+                row.kind = "shortcut".into();
                 row.key = ss(format!("shortcuts.{command}"));
                 row.label = ss(self.pt(&format!("shortcut.{command}")));
                 row.text = ss(self.prefs.str(&format!("shortcuts.{command}")));
@@ -413,12 +427,7 @@ impl App {
         let typed = self.typed_value(key, value);
         let mut error = String::new();
         if let (Some(command), Some(text)) = (key.strip_prefix("shortcuts."), typed.as_str()) {
-            let wanted = normalize_shortcut(text);
-            let clash = SHORTCUTS.iter().find(|other| {
-                **other != command
-                    && normalize_shortcut(&self.prefs.str(&format!("shortcuts.{other}"))) == wanted
-            });
-            if let Some(other) = clash {
+            if let Some(other) = shortcut_conflict(&self.prefs.get("shortcuts"), command, text) {
                 error = crate::i18n::trf(
                     &self.lang,
                     "pref.shortcut.conflict",
@@ -470,6 +479,11 @@ impl App {
         {
             self.apply_pixel_preferences();
         }
+        if key == "appearance.theme_mode" {
+            self.load_display_draft();
+            self.refresh_display_model();
+            self.refresh_pixel();
+        }
         if key == "performance.undo_history" {
             let limit = usize::try_from(self.prefs.int(key)).unwrap_or(200);
             if let Some(session) = self.session.as_mut() {
@@ -520,6 +534,19 @@ impl App {
                 }
                 self.set_status(self.pt("status.saved"));
             }
+            _ if action.starts_with("shortcut-reset:") => {
+                let saved = reset_command(action)
+                    .is_some_and(|command| self.prefs.reset_shortcut(command) && self.prefs.save());
+                if let Some(ui) = self.ui.upgrade() {
+                    let pm = PrefsModel::get(&ui);
+                    pm.set_error(ss(""));
+                    pm.set_save_state(ss(self.pt(if saved {
+                        "status.saved"
+                    } else {
+                        "status.failed"
+                    })));
+                }
+            }
             // Slint panels have fixed geometry; there is no saved layout to restore.
             _ => self.set_status(self.pt("status.saved")),
         }
@@ -556,5 +583,37 @@ mod tests {
             .map(|m| m.keys().map(String::as_str).collect())
             .unwrap_or_default();
         assert_eq!(keys, SHORTCUTS.to_vec());
+    }
+
+    #[test]
+    fn empty_binding_does_not_resolve() {
+        let mut shortcuts = defaults()["shortcuts"].clone();
+        shortcuts["project.save"] = json!("");
+        assert_eq!(command_for(&shortcuts, "Ctrl+S"), None);
+        assert_eq!(command_for(&shortcuts, ""), None);
+    }
+
+    #[test]
+    fn cleared_binding_does_not_conflict() {
+        let mut shortcuts = defaults()["shortcuts"].clone();
+        shortcuts["project.save"] = json!("");
+        assert_eq!(shortcut_conflict(&shortcuts, "project.save", ""), None);
+        assert_eq!(
+            shortcut_conflict(&shortcuts, "project.save", "Ctrl+Z"),
+            Some("designer.undo")
+        );
+    }
+
+    #[test]
+    fn reset_action_accepts_pref_row_keys() {
+        assert_eq!(
+            reset_command("shortcut-reset:shortcuts.project.save"),
+            Some("project.save")
+        );
+        assert_eq!(
+            reset_command("shortcut-reset:project.save"),
+            Some("project.save")
+        );
+        assert_eq!(reset_command("reset_all"), None);
     }
 }

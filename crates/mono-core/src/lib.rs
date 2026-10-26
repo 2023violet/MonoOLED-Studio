@@ -7,6 +7,7 @@
 pub mod assets;
 pub mod bitmap;
 pub mod c_header;
+pub mod diff;
 pub mod encoding;
 pub mod error;
 pub mod font;

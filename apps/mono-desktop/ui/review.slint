@@ -1,0 +1,175 @@
+// Review workspace: side-by-side render of the baseline (last open/save) and the
+// current scene, with the changed-pixel bounds and the element change lists.
+import { Theme, Metrics } from "theme.slint";
+import { I18n, Panel, Caption } from "widgets.slint";
+import { ListView } from "std-widgets.slint";
+
+export global ReviewModel {
+    in property <image> baseline;
+    in property <image> current;
+    in property <int> baseline-w: 1;
+    in property <int> baseline-h: 1;
+    in property <int> current-w: 1;
+    in property <int> current-h: 1;
+    in property <int> changed;
+    in property <float> percent;
+    in property <int> bbox-x;
+    in property <int> bbox-y;
+    in property <int> bbox-w;
+    in property <int> bbox-h;
+    in property <string> summary;
+    in property <string> detail;
+    in property <bool> has-baseline;
+    in property <[string]> added;
+    in property <[string]> removed;
+    in property <[string]> modified;
+}
+
+component DiffPane inherits Rectangle {
+    in property <image> source;
+    in property <int> source-w: 1;
+    in property <int> source-h: 1;
+    in property <string> title;
+    in property <bool> has-box;
+    in property <int> box-x;
+    in property <int> box-y;
+    in property <int> box-w;
+    in property <int> box-h;
+    background: Theme.surface-panel;
+    border-radius: Metrics.radius-panel;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+        Caption { text: root.title; }
+        pane := Rectangle {
+            vertical-stretch: 1;
+            min-height: 120px;
+            background: Theme.canvas-off;
+            border-radius: Metrics.radius-control;
+            property <length> zoom: min(
+                pane.width / max(1, root.source-w),
+                pane.height / max(1, root.source-h)
+            );
+            image-area := Rectangle {
+                x: (pane.width - self.width) / 2;
+                y: (pane.height - self.height) / 2;
+                width: root.source-w * pane.zoom;
+                height: root.source-h * pane.zoom;
+                Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: root.source;
+                    image-fit: fill;
+                    image-rendering: pixelated;
+                }
+                if root.has-box: Rectangle {
+                    x: root.box-x * pane.zoom;
+                    y: root.box-y * pane.zoom;
+                    width: max(2px, root.box-w * pane.zoom);
+                    height: max(2px, root.box-h * pane.zoom);
+                    background: transparent;
+                    border-width: 2px;
+                    border-color: Theme.canvas-selection;
+                }
+            }
+        }
+    }
+}
+
+component ChangeColumn inherits VerticalLayout {
+    in property <string> title;
+    in property <[string]> items;
+    spacing: 2px;
+    Caption { text: root.title; }
+    if root.items.length == 0: Caption { text: "—"; }
+    ListView {
+        vertical-stretch: 1;
+        min-height: 60px;
+        for item in root.items: Text {
+            text: item;
+            font-size: Metrics.font-small;
+            color: Theme.text-secondary;
+            overflow: elide;
+        }
+    }
+}
+
+export component ReviewView inherits VerticalLayout {
+    spacing: 8px;
+    Panel {
+        height: 46px;
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 10px;
+            Text {
+                text: I18n.tr(I18n.lang, "workspace.review");
+                font-size: Metrics.font-title;
+                font-weight: 700;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+            }
+            Caption { text: ReviewModel.summary; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+            Caption { text: ReviewModel.detail; vertical-alignment: center; }
+        }
+    }
+    if ReviewModel.has-baseline: HorizontalLayout {
+        spacing: 8px;
+        vertical-stretch: 1;
+        DiffPane {
+            horizontal-stretch: 1;
+            title: I18n.tr(I18n.lang, "review.baseline");
+            source: ReviewModel.baseline;
+            source-w: ReviewModel.baseline-w;
+            source-h: ReviewModel.baseline-h;
+        }
+        DiffPane {
+            horizontal-stretch: 1;
+            title: I18n.tr(I18n.lang, "review.current");
+            source: ReviewModel.current;
+            source-w: ReviewModel.current-w;
+            source-h: ReviewModel.current-h;
+            has-box: ReviewModel.changed > 0;
+            box-x: ReviewModel.bbox-x;
+            box-y: ReviewModel.bbox-y;
+            box-w: ReviewModel.bbox-w;
+            box-h: ReviewModel.bbox-h;
+        }
+    } 
+    if !ReviewModel.has-baseline: Rectangle {
+        vertical-stretch: 1;
+        background: Theme.surface-panel;
+        border-radius: Metrics.radius-panel;
+        Text {
+            text: ReviewModel.summary;
+            color: Theme.text-muted;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    Panel {
+        height: 150px;
+        HorizontalLayout {
+            padding: 10px;
+            spacing: 14px;
+            ChangeColumn {
+                horizontal-stretch: 1;
+                title: I18n.tr(I18n.lang, "review.added");
+                items: ReviewModel.added;
+            }
+            ChangeColumn {
+                horizontal-stretch: 1;
+                title: I18n.tr(I18n.lang, "review.removed");
+                items: ReviewModel.removed;
+            }
+            ChangeColumn {
+                horizontal-stretch: 1;
+                title: I18n.tr(I18n.lang, "review.modified");
+                items: ReviewModel.modified;
+            }
+        }
+    }
+}

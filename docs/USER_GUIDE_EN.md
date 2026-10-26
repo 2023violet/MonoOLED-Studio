@@ -83,3 +83,21 @@ In the desktop app, export, the Code AI handoff, batch validation and the thumbn
   - Windows: `%LOCALAPPDATA%\MonoOLEDStudio\preferences.json`.
   - macOS and Linux: `~/.config/monooled-studio/preferences.json`, or under `XDG_CONFIG_HOME` when that is set.
 - Logs, autosaves, previews and asset caches are kept in the project's `.oled/` folder.
+
+## Glossary
+
+The English UI keeps the product names and the established OLED vocabulary below. The Chinese UI uses the translations listed in the Chinese guide.
+
+| Term | Meaning |
+| --- | --- |
+| Scene | One exportable screen of a project (the UI container; not a hardware display) |
+| Screen | Hardware/display context only |
+| Pixel Studio | 1-bit editor workspace (brand name kept in English) |
+| Font Lab | Glyph-pack workspace (brand name kept in English) |
+| Diff Review | Compares the last opened/saved state with the current scene; no version history is implied |
+| Production Preview | Render output that matches export bit for bit |
+| Framebuffer | The 1-bit output buffer |
+| Overlay | Editor-only guides and selection marks that never reach the export |
+| Pixel Truth | The canonical renderer's 1-bit pixels |
+| Generate glyphs | Font-pack context |
+| Generate bitmap array | Generic bitmap output (not “font matrix”) |

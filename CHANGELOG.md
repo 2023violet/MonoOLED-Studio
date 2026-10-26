@@ -1,5 +1,63 @@
 # Changelog
 
+## 2.2.0 - 2026-10-26
+
+### Added
+
+- New Project opens a wizard instead of a bare folder picker: project name (defaults to the folder name), canvas width and height (default 128×32), and inline validation. Height must be a multiple of 8; invalid input never creates a half-written project.
+- Help menu now offers Keyboard Shortcuts, the User Manual (local `docs/USER_GUIDE_CN.md`/`USER_GUIDE_EN.md` when present, otherwise the GitHub copy) and Report an Issue.
+- Icon buttons, ordinary buttons and Pixel tool buttons show hover tooltips; Pixel tool buttons also carry visible short labels, and the pixel selection outline has a contrasting outer stroke.
+
+### Changed
+
+- The Chinese UI uses one term per concept (场景 for Scene/screen containers, 像素工作室, 字库实验室, 差异评审, 实际输出预览, 帧缓冲, 叠加层, 像素基准, 生成位图数组). A glossary is appended to both user guides.
+- `DESIGN_SYSTEM.md` is rewritten around `theme.slint`/`widgets.slint` as the current truth; `AI_HANDOFF.md` documents the background-job, save-point, asset write-back, output-profile, recent-project and command-registry contracts.
+- A version-consistency test keeps `Cargo.toml`, `ui/main.slint`, `.ai/CURRENT_STATE.md` and `CHANGELOG.md` on the same version.
+
+## 2.1.0 - 2026-10-25
+
+### Added
+
+- One command registry (`apps/mono-desktop/src/commands.rs`) now drives the menus, the command palette, configurable shortcuts and fixed chords. The palette covers 25+ actions, shows each command's current shortcut, and filters out commands whose context is unavailable. Adding a command touches one list plus its dispatch branch.
+- Diff Review is a real workspace: the last opened/saved frame and the current frame are shown side by side, the changed-pixel bounds are outlined, and added/removed/modified elements are listed. The Designer diff drawer keeps its numbers. No version history is implied.
+- Code AI Bridge is a non-modal panel. It shows the endpoint and permission (Observe / Edit / Full), keeps the token masked until revealed, and copies either the token or the full endpoint. Changing the permission restarts the bridge with a new token and invalidates connected clients. No dialog blocks the window, and the token never appears in logs.
+- Pixel Studio colours follow the active theme (Light / Dark / High contrast) by default. High contrast is selectable in Preferences, “Follow theme” is a switch in the display settings, and editing any colour switches to custom without losing the stored values. Older preference files with custom colours migrate to `custom`.
+- Font Lab shows a true 1-bit preview strip (white lit on black, 4×/8×/12×) next to the editing canvas, with a Real preview switch; the glyph/pack save state remains visible.
+- Validation findings start with a localized label (e.g. “缺少必需元素 — …”) while keeping the original English detail and the finding code. All 23 codes are covered in both languages.
+
+### Fixed
+
+- Switching to the Review workspace no longer mutates the Designer drawer tab.
+- The Agent Bridge no longer opens a modal dialog and no longer depends on a one-shot token popup.
+
+## 2.0.5 - 2026-10-24
+
+### Added
+
+- The welcome page lists recent projects (newest first, at most eight, no duplicates). Missing projects disappear from the list, and clicking an entry opens it with the usual unsaved-changes check. `startup.last_project` and its reopen setting are unchanged.
+- A static PNG `image` element can be opened from the Designer inspector in Pixel Studio (“Edit in Pixel Studio”). The canvas uses the same decoder as the renderer, so the pixels match the scene. Template assets, BMP files, sequence assets and paths outside the project are refused with a specific reason.
+- Asset edits can be saved back to the project PNG with an atomic write. The document is marked clean and the canvas is refreshed with the new asset. The asset's source polarity is preserved when it round-trips.
+- If the PNG changed on disk after it was opened, saving asks before overwriting; choosing No leaves the file and the document untouched. Bitmaps whose polarity cannot be written back unambiguously are refused instead of being silently inverted.
+
+### Fixed
+
+- Asset-origin documents lock their size: canvas resize, 90°/270° rotation and cropping are disabled, while 180° rotation, flips and inverts still work. The top button reads “Save Asset”.
+
+## 2.0.4 - 2026-10-24
+
+### Fixed
+
+- Preferences → Keyboard no longer shows blank shortcut fields. `shortcuts.*` preferences are read as flat keys, so the eight commands show their real bindings. A binding can be cleared, and clearing it no longer reports a conflict with other empty fields.
+- Each shortcut row has a "restore default" button.
+- Window-level shortcuts work again after closing a dialog or overlay. Esc closes every overlay and returns focus to the canvas.
+- Undoing back to the last saved state now clears the unsaved marker for Pixel documents and scenes instead of staying dirty forever. External file changes and Automation edits still mark the document dirty.
+
+### Added
+
+- A first-run welcome screen with the next steps. Actions that need a project, an export target or a handoff target are disabled and explain what is missing, and the save button names the object it saves.
+- Font Lab shows whether the current glyph or the whole pack is unsaved, and the unsaved-changes prompt now names the affected objects (scene, pixel document, font pack).
+- Output profiles have explicit states: editing and browsing stay in memory, "Save to project" writes them, and "Set as project default" marks the default. A builtin can be the default without being copied into the project. Opening a project loads its active profile, and the profile row shows builtin/project/draft state plus the default marker.
+
 ## 2.0.3 - 2026-10-23
 
 ### Performance

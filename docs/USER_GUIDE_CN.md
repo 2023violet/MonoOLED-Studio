@@ -75,3 +75,21 @@ mono handoff --project project.oled.json
 
 - 偏好设置（`Ctrl+,`）包括语言、外观、界面缩放、输入方式、自动保存、性能和快捷键。偏好文件与 1.2.3 相同：Windows 在 `%LOCALAPPDATA%\MonoOLEDStudio\preferences.json`，macOS 和 Linux 在 `~/.config/monooled-studio/preferences.json`（遵循 `XDG_CONFIG_HOME`）。
 - 日志、自动保存、预览和资产缓存等运行时数据位于项目的 `.oled/` 目录。
+
+## 术语表
+
+中文界面统一使用以下术语；英文界面保留产品名与 OLED 行业惯用词。
+
+| 英文 | 中文 | 说明 |
+| --- | --- | --- |
+| Scene | 场景 | 一个可导出的画面；不再称为“页面” |
+| Screen | 屏幕 | 仅用于硬件/显示语境；界面容器一律称为“场景” |
+| Pixel Studio | 像素工作室 | 英文界面保留品牌名 |
+| Font Lab | 字库实验室 | 英文界面保留品牌名 |
+| Diff Review | 差异评审 | 比较“上次打开/保存”与当前状态，不承诺版本历史 |
+| Production Preview | 实际输出预览 | 与导出逐位一致的渲染结果 |
+| Framebuffer | 帧缓冲 | 位图缓冲区 |
+| Overlay | 叠加层 | 只属于编辑器、不进入导出的辅助图形 |
+| Pixel Truth | 像素基准 | 规范渲染器输出的 1-bit 像素 |
+| Generate glyphs | 生成字形 | 字库语境 |
+| Generate bitmap array | 生成位图数组 | 通用位图输出，不再使用“字模” |

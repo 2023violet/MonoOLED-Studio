@@ -20,8 +20,9 @@ use slint::Global;
 
 use crate::app::{App, Prompt, model, ss};
 use crate::bgjob::Outcome;
+use crate::commands;
 use crate::i18n::trf;
-use crate::{AppModel, Shell};
+use crate::{AppModel, PickerItem, Shell};
 
 /// What the shared picker dialog is choosing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,31 +30,6 @@ pub enum Picker {
     Command,
     Template,
 }
-
-/// V1 command palette entries: (command key, i18n label key, action id).
-pub const PALETTE: [(&str, &str, &str); 16] = [
-    ("save", "action.save", "save"),
-    ("validate", "action.batch_validate", "batch-validate"),
-    ("handoff", "action.handoff", "handoff"),
-    ("undo", "action.undo", "undo"),
-    ("redo", "action.redo", "redo"),
-    ("assets", "action.asset_health", "asset-health"),
-    ("template_save", "action.save_template", "save-template"),
-    (
-        "template_insert",
-        "action.insert_template",
-        "insert-template",
-    ),
-    ("convert", "action.convert_asset", "convert-asset"),
-    ("c_header", "action.export_c_header", "export-c-header"),
-    ("overview", "action.thumbnail_wall", "thumbnail-wall"),
-    ("diagnostics", "action.diagnostics", "diagnostics"),
-    ("design_mode", "workspace.design", "workspace:0"),
-    ("review_mode", "workspace.review", "workspace:3"),
-    ("performance", "performance.title", "performance"),
-    // 2.x: delivery jobs run in the background and can be cancelled.
-    ("cancel_job", "action.cancel_job", "cancel-job"),
-];
 
 /// Rolling timing samples (V1 `PerformanceProfiler(max_samples=180)`).
 #[derive(Default)]
@@ -135,6 +111,10 @@ impl App {
             }
             "performance" => {
                 self.show_performance();
+                Ok(())
+            }
+            "shortcuts" => {
+                self.show_shortcuts();
                 Ok(())
             }
             "diagnostics" | "toggle-navigator" | "toggle-inspector" | "reset-workspace" => {
@@ -531,6 +511,8 @@ impl App {
         };
         self.bind_scene(doc)?;
         if let Some(session) = self.session.as_mut() {
+            // Recovered autosave is newer than the scene on disk: force dirty
+            // even though the session's baseline is the recovered content.
             session.dirty = true;
         }
         self.log_event(format!("AUTOSAVE_RESTORE {}", posix(candidate)));
@@ -592,21 +574,31 @@ impl App {
         self.refresh_picker("");
     }
 
-    fn picker_entries(&self) -> Vec<(String, String)> {
+    fn picker_entries(&self) -> Vec<(String, String, String, String)> {
         match self.picker {
             Some(Picker::Template) => self
                 .scene_root()
                 .map(|r| TemplateLibrary::for_root(&r).names())
                 .unwrap_or_default()
                 .into_iter()
-                .map(|n| (n.clone(), n))
+                .map(|n| (n.clone(), n.clone(), n, String::new()))
                 .collect(),
-            _ => PALETTE
-                .iter()
-                .map(|(key, label, action)| {
-                    (format!("{key} {}", self.t(label)), (*action).to_string())
-                })
-                .collect(),
+            _ => {
+                let shortcuts = self.prefs.get("shortcuts");
+                commands::palette_commands(self.command_context())
+                    .into_iter()
+                    .map(|spec| {
+                        let label = self.t(spec.label_key);
+                        let detail = commands::chord_for(spec, &shortcuts).unwrap_or_default();
+                        (
+                            format!("{} {label}", spec.id),
+                            spec.action.to_string(),
+                            label,
+                            detail,
+                        )
+                    })
+                    .collect()
+            }
         }
     }
 
@@ -615,24 +607,20 @@ impl App {
         self.picker_matches = self
             .picker_entries()
             .into_iter()
-            .filter(|(search, _)| needle.is_empty() || search.to_lowercase().contains(&needle))
+            .filter(|(search, _, _, _)| {
+                needle.is_empty() || search.to_lowercase().contains(&needle)
+            })
             .collect();
-        let labels: Vec<_> = self
+        let items: Vec<PickerItem> = self
             .picker_matches
             .iter()
-            .map(|(search, value)| {
-                let label = match self.picker {
-                    Some(Picker::Command) => PALETTE
-                        .iter()
-                        .find(|(_, _, a)| a == value)
-                        .map_or_else(|| search.clone(), |(_, l, _)| self.t(l)),
-                    _ => value.clone(),
-                };
-                ss(label)
+            .map(|(_, _, label, detail)| PickerItem {
+                label: ss(label),
+                detail: ss(detail),
             })
             .collect();
         if let Some(ui) = self.ui.upgrade() {
-            AppModel::get(&ui).set_picker_items(model(labels));
+            AppModel::get(&ui).set_picker_items(model(items));
         }
     }
 
@@ -641,7 +629,7 @@ impl App {
         let chosen = usize::try_from(index)
             .ok()
             .and_then(|i| self.picker_matches.get(i))
-            .map(|(_, v)| v.clone());
+            .map(|(_, action, _, _)| action.clone());
         if let Some(ui) = self.ui.upgrade() {
             AppModel::get(&ui).set_picker_visible(false);
         }
@@ -656,6 +644,18 @@ impl App {
             (Some(Picker::Command), action) => action,
             _ => None,
         }
+    }
+
+    fn show_shortcuts(&mut self) {
+        let shortcuts = self.prefs.get("shortcuts");
+        let lines: Vec<String> = commands::COMMANDS
+            .iter()
+            .filter_map(|spec| {
+                let chord = commands::chord_for(spec, &shortcuts)?;
+                Some(format!("{chord:<18} {}", self.t(spec.label_key)))
+            })
+            .collect();
+        message(&self.t("shortcut.title"), &lines.join("\n"));
     }
 
     // ---------------------------------------------------------- performance
@@ -694,8 +694,13 @@ mod tests {
 
     #[test]
     fn palette_labels_are_translated() {
-        for (_, label, _) in PALETTE {
-            assert_ne!(crate::i18n::tr("en_US", label), label, "{label}");
+        for spec in commands::COMMANDS.iter().filter(|spec| spec.palette) {
+            assert_ne!(
+                crate::i18n::tr("en_US", spec.label_key),
+                spec.label_key,
+                "{}",
+                spec.label_key
+            );
         }
     }
 }

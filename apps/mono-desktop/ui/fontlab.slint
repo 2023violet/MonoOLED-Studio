@@ -1,6 +1,6 @@
 // Font Lab workspace: glyph list | glyph canvas (shared PixelCanvas) | generator form
 // (V1 `font_lab_qt.FontLabEditor`).
-import { ScrollView, LineEdit, SpinBox, ComboBox, ListView } from "std-widgets.slint";
+import { ScrollView, LineEdit, SpinBox, ComboBox, CheckBox, ListView } from "std-widgets.slint";
 import { Theme, Metrics } from "theme.slint";
 import { I18n, Button, ButtonRole, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, ListRow } from "widgets.slint";
 import { PixelModel, PixelCanvas, ToolRail } from "pixel.slint";
@@ -10,6 +10,8 @@ export struct GlyphItem { text: string, code: string }
 export global FontModel {
     in property <bool> has-pack;
     in property <string> pack-title;
+    in property <string> pack-state;
+    in property <PillTone> pack-tone: PillTone.neutral;
     in property <[GlyphItem]> glyphs;
     in property <int> current: -1;
     in property <string> characters;
@@ -26,6 +28,8 @@ export global FontModel {
     in property <string> status;
     in property <string> error;
     in property <[string]> packs;
+    in property <image> preview;
+    in-out property <bool> real-preview: true;
     callback glyph-chosen(int);
     callback edit(string /* field */, string /* value */);
     callback font-action(string);
@@ -40,6 +44,7 @@ component FormRow inherits HorizontalLayout {
 
 export component FontLabView inherits HorizontalLayout {
     spacing: 8px;
+    property <int> preview-scale: 8;
     Panel {
         width: 200px;
         VerticalLayout {
@@ -78,8 +83,40 @@ export component FontLabView inherits HorizontalLayout {
                 spacing: 10px;
                 SectionTitle { text: FontModel.has-pack ? FontModel.pack-title : I18n.tr(I18n.lang, "font.title"); vertical-alignment: center; }
                 if FontModel.has-pack: StatusPill { text: FontModel.cell-w + " × " + FontModel.cell-h; }
+                if FontModel.has-pack: StatusPill { text: FontModel.pack-state; tone: FontModel.pack-tone; }
                 Rectangle { horizontal-stretch: 1; }
                 Button { text: I18n.tr(I18n.lang, "font.save_glyph"); role: ButtonRole.primary; enabled: FontModel.has-pack && !FontModel.busy; clicked => { FontModel.font-action("save"); } }
+            }
+            if FontModel.has-pack: Caption { text: I18n.tr(I18n.lang, "font.save_scope_hint"); }
+            if FontModel.has-pack: HorizontalLayout {
+                spacing: 8px;
+                Caption { text: I18n.tr(I18n.lang, "font.preview.label"); vertical-alignment: center; }
+                Rectangle {
+                    width: (FontModel.cell-w * root.preview-scale) * 1px;
+                    height: (FontModel.cell-h * root.preview-scale) * 1px;
+                    background: #000000;
+                    border-width: 1px;
+                    border-color: Theme.border-subtle;
+                    Image {
+                        source: FontModel.preview;
+                        width: parent.width;
+                        height: parent.height;
+                        image-fit: fill;
+                        image-rendering: pixelated;
+                    }
+                }
+                preview-combo := ComboBox {
+                    model: ["4×", "8×", "12×"];
+                    current-index: 1;
+                    width: 74px;
+                    selected(_value) => { root.preview-scale = preview-combo.current-index == 0 ? 4 : preview-combo.current-index == 1 ? 8 : 12; }
+                }
+                CheckBox {
+                    text: I18n.tr(I18n.lang, "font.preview.real");
+                    checked: FontModel.real-preview;
+                    toggled => { FontModel.real-preview = self.checked; }
+                }
+                Caption { text: I18n.tr(I18n.lang, "font.preview.hint"); }
             }
             if FontModel.has-pack: PixelCanvas { vertical-stretch: 1; }
             if !FontModel.has-pack: Rectangle {

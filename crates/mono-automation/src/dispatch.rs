@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use mono_core::bitmap::MonoBitmap;
+use mono_core::diff::{changed_bbox, changed_count};
 use mono_core::encoding::encode_bitmap;
 use mono_core::font::{FontPack, GlyphMetrics};
 use mono_core::formatter::{DEFAULT_PREVIEW_LIMIT, FormattedOutput, OutputItem, format_output};
@@ -152,15 +153,13 @@ pub fn pixel_from_image(path: &Path) -> RpcResult<PixelDocument> {
             u8::from(l >= 128)
         })
         .collect();
-    let mut doc = PixelDocument::from_pixels(w, h, pixels)?;
-    doc.dirty = false;
-    Ok(doc)
+    Ok(PixelDocument::from_pixels(w, h, pixels)?)
 }
 
 fn save_pixel_png(doc: &mut PixelDocument, path: &Path) -> RpcResult<()> {
     let png = encode_bitmap_png(doc.width(), doc.height(), &doc.rows())?;
     atomic_write(path, &png)?;
-    doc.dirty = false;
+    doc.mark_saved();
     Ok(())
 }
 
@@ -719,7 +718,7 @@ fn state(
                 apply_state_schema(service.scene_mut(), &normalized);
                 if service.editor_attached {
                     service.session.state = init_state(service.scene());
-                    service.session.dirty = true;
+                    service.session.sync_dirty();
                 }
                 if tx.is_none() {
                     if service.editor_attached {
@@ -913,20 +912,8 @@ fn render_validate(service: &mut Service, method: &str, params: &Params) -> RpcR
             if (a.width(), a.height()) != (b.width(), b.height()) {
                 return Err(RpcError::invalid("framebuffers must have the same size"));
             }
-            let (mut changed, mut bbox): (usize, Option<(usize, usize, usize, usize)>) = (0, None);
-            let width = a.width();
-            for (i, (pa, pb)) in a.pixels().iter().zip(b.pixels()).enumerate() {
-                if pa != pb {
-                    changed += 1;
-                    let (x, y) = (i % width, i / width);
-                    bbox = Some(match bbox {
-                        None => (x, y, x + 1, y + 1),
-                        Some((x0, y0, x1, y1)) => {
-                            (x0.min(x), y0.min(y), x1.max(x + 1), y1.max(y + 1))
-                        }
-                    });
-                }
-            }
+            let changed = changed_count(a.pixels(), b.pixels());
+            let bbox = changed_bbox(a.pixels(), b.pixels(), a.width(), a.height());
             let total = a.pixels().len();
             let percent = if total == 0 {
                 0.0
@@ -938,7 +925,7 @@ fn render_validate(service: &mut Service, method: &str, params: &Params) -> RpcR
                 "after_state": after_state,
                 "changed_pixels": changed,
                 "percent": percent,
-                "bbox": bbox.map(|(x0, y0, x1, y1)| json!([x0, y0, x1, y1])),
+                "bbox": bbox.map(|b| json!([b.x, b.y, b.x + b.w, b.y + b.h])),
             })))
         }
         "render.all_states" => {
@@ -1433,8 +1420,7 @@ fn resources(
             if w <= 0 || h <= 0 {
                 return Err(RpcError::invalid("width and height must be positive"));
             }
-            let mut doc = PixelDocument::new(w as usize, h as usize)?;
-            doc.dirty = false;
+            let doc = PixelDocument::new(w as usize, h as usize)?;
             let id = format!("pixel:{}", service.rel(&path));
             service.register_pixel(&id, doc, path)?;
             service.pixel_result(&id)
