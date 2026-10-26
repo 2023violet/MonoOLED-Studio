@@ -2,6 +2,12 @@
 
 ## 2.2.0 - 2026-10-26
 
+This release bundles the 2.0.4 trust fixes, the 2.0.5 project loop and the 2.1.0 professional workflow, which shipped from one branch; their detailed entries follow in the 2.1.0/2.0.5/2.0.4 sections below. Headlines:
+
+- Shortcuts can be cleared, reset and read correctly, overlay Esc and focus behave, and the no-project state is guarded by a welcome view with a dynamic save label.
+- `PixelDocument` and `EditorSession` have real save points, Font Lab reports dirty state, the output profile has apply/commit/default states, canvas assets remember their origin, verify SHA-256 before an atomic write-back, and recent projects are remembered.
+- One command registry drives menus, the palette and shortcuts; Diff Review is a side-by-side workspace; the Code AI Bridge is a non-modal panel with permissions; Pixel colours follow the theme; Font Lab has a true 1-bit preview; validation findings are localised.
+
 ### Added
 
 - New Project opens a wizard instead of a bare folder picker: project name (defaults to the folder name), canvas width and height (default 128×32), and inline validation. Height must be a multiple of 8; invalid input never creates a half-written project.
