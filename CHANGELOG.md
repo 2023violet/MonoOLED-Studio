@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.1 - 2026-10-26
+
+No application behaviour changes. The `v2.2.0` tag was cut one commit before a test-only fix, so the source snapshot attached to that release fails three tests on Windows and macOS (`image_element_asset_opens_canonical_rows`, `opening_a_project_remembers_it_once`, `asset_save_preserves_canonical_rows`): CI temporary directories can be symlinks, and those tests compared the raw temp path with the canonical path the project layer resolves. 2.2.1 re-cuts the same application from a source tree whose tests are green on every platform. The `v2.2.0` tag and its assets stay as published.
+
+### Fixed
+
+- Test fixtures resolve their temporary project root with `mono_project::project::py_resolve`, matching the canonical path the application stores, instead of canonicalising by hand.
+
 ## 2.2.0 - 2026-10-26
 
 This release bundles the 2.0.4 trust fixes, the 2.0.5 project loop and the 2.1.0 professional workflow, which shipped from one branch; their detailed entries follow in the 2.1.0/2.0.5/2.0.4 sections below. Headlines:
