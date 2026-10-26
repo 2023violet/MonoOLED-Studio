@@ -1743,6 +1743,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         copy_dir(&repo.join("test_assets/projects/curing_lite"), &root);
+        // `py_resolve` canonicalises the project root, and some CI temp dirs are
+        // symlinks (`/var` → `/private/var`, Windows short names); compare like
+        // with like so the assertion is about the project, not the temp prefix.
+        let root = mono_project::project::py_resolve(&root);
         let prefs = Preferences::load_from(root.join("prefs.json"));
         let mut app = App::new(slint::Weak::default(), prefs);
         app.open_project(&root.join("project.oled.json")).unwrap();
@@ -1908,6 +1912,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         copy_dir(&repo.join("test_assets/projects/curing_lite"), &root);
+        let root = mono_project::project::py_resolve(&root);
         let path = root.join("project.oled.json");
         let prefs = Preferences::load_from(root.join("prefs.json"));
         let mut app = App::new(slint::Weak::default(), prefs);

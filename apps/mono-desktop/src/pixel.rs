@@ -682,6 +682,9 @@ mod tests {
             std::env::temp_dir().join(format!("mono-asset-save-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("assets")).unwrap();
+        // Asset paths come back through `py_resolve`, which canonicalises the
+        // root; CI temp dirs can be symlinks, so resolve the root up front.
+        let root = mono_project::project::py_resolve(&root);
         let path = root.join("assets/icon.png");
         let height = rows.len();
         let width = rows.first().map_or(0, Vec::len);
