@@ -140,3 +140,13 @@ Implemented T12–T17 as described; stopped at `VERIFY` (independent review owns
 - The Help menu was verified through `slint_menu_actions_are_known` and the palette, not by opening the native menu (the UIA `Invoke` pattern for menu items is not exposed).
 - The layout matrix (1100×700 / 1440×900) was exercised only at the default window size.
 - The GUI profile copy gained an in-session `Clinical_5x7` font library and an unsaved `每行字节 = 15`; the isolated copy is disposable and no tracked asset changed.
+
+### Review status
+
+Independent review was requested twice through the subagent dispatcher and both attempts failed to queue (model unavailable), so **no independent review has been performed**; `DONE`/`PASS` stay with an independent reviewer. An inline self-review against the acceptance criteria was run instead:
+
+- Every `COMMANDS` action has a literal handling site outside `commands.rs` (`main.rs`/`app.rs`/`extras.rs`/`*_ui.rs`), and the dynamic families are covered by `is_known` plus `pixel-tool:`/`workspace:`/`align:` branches.
+- `changed_count`/`changed_bbox` reproduce the previous `pixel_diff` behaviour for equal-size frames (the size check runs first) and keep the `[x0, y0, x1, y1]` JSON shape; the new core tests cover equal, length-mismatch and multi-pixel cases.
+- `legacy_custom_palette` only fires when `pixel_studio.palette_mode` is absent *and* a stored colour differs from the default, so it cannot rewrite an unrelated preference.
+- `start_agent_with` logs only port + permission (`AGENT_BRIDGE on 127.0.0.1:<port> permission=…`), `Bridge::start(0)` binds `127.0.0.1`, and `token_never_appears_in_log` asserts the token is absent after a permission restart.
+- Every `selected(` handler in `apps/mono-desktop/ui/*.slint` now treats the parameter as a label or reads `current-index`; the custom `Segmented`/`TabStrip` callbacks are `int` by declaration.

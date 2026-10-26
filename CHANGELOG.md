@@ -14,6 +14,11 @@
 - `DESIGN_SYSTEM.md` is rewritten around `theme.slint`/`widgets.slint` as the current truth; `AI_HANDOFF.md` documents the background-job, save-point, asset write-back, output-profile, recent-project and command-registry contracts.
 - A version-consistency test keeps `Cargo.toml`, `ui/main.slint`, `.ai/CURRENT_STATE.md` and `CHANGELOG.md` on the same version.
 
+### Fixed
+
+- The Agent Bridge panel's Start/Stop/copy buttons did nothing: the panel fired the `AgentModel` callback while the app listened on `AppModel`'s.
+- The bridge permission combo could disagree with the running bridge, and the Font Lab preview scale was pinned to 12×: Slint's `ComboBox.selected` carries the row label, not its index.
+
 ## 2.1.0 - 2026-10-25
 
 ### Added

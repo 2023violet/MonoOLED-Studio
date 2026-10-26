@@ -22,9 +22,9 @@
 - TASK-005 status: DONE (2.0.5; T9 recent projects, T10 asset-to-Pixel, T11 atomic write-back; review PASS WITH MINOR NOTES)
 - TASK-006 status: VERIFY (2.1.0; T12–T17 professional workflow; Result recorded, two GUI-found defects fixed)
 - TASK-007 status: VERIFY (2.2.0; T18–T21 terminology, help/tooltips, new-project wizard, docs and version truth)
-- Independent Review: PASS (TASK-003, TASK-004, TASK-005); PENDING for TASK-006/TASK-007
+- Independent Review: PASS (TASK-003, TASK-004, TASK-005); PENDING for TASK-006/TASK-007 (subagent dispatch failed twice with a model-queue error, so only an inline self-review is recorded; DONE/PASS remain open)
 - Active tasks: `.ai/tasks/TASK-006.md`, `.ai/tasks/TASK-007.md`
-- Next workflow action: independent review of TASK-006/TASK-007 (owns DONE/PASS); then the 2.2.0 release close-out (commit, merge to main, tag) which the user explicitly authorized
+- Next workflow action: an independent reviewer confirms TASK-006/TASK-007 (then `DONE`/`PASS`); the 2.2.0 release close-out was explicitly authorized by the user and proceeds with a draft GitHub Release created from the `v2.2.0` tag
 
 ## Current workstream
 
