@@ -44,6 +44,9 @@ SOURCE OPTIONS (all commands):
     --scene <file.json>       scene file
     --project <project.oled.json>  project; takes precedence over --scene
 
+OUTPUT OPTIONS (validate, export, asset-audit):
+    --json                    print one JSON object instead of text; exit codes are unchanged
+
 STATE OPTIONS (validate, simulate, c-header):
     --mode <v> --phase <v> --seconds <n> --battery <n>
 
@@ -54,6 +57,9 @@ MATRIX OPTIONS (export, handoff):
     --states <all|i,j|name>   --integer-policy <representative|boundaries|full>
     --max-cases <n>           --allow-large-matrix
 ";
+
+/// Options written without a value; every other `--name` expects one.
+const VALUELESS: [&str; 2] = ["allow-large-matrix", "json"];
 
 struct Args {
     values: BTreeMap<String, String>,
@@ -72,7 +78,7 @@ impl Args {
             };
             if let Some((key, value)) = name.split_once('=') {
                 values.insert(key.to_string(), value.to_string());
-            } else if name == "allow-large-matrix" {
+            } else if VALUELESS.contains(&name) {
                 flags.push(name.to_string());
             } else {
                 let value = raw
@@ -171,6 +177,16 @@ fn print_findings(findings: &[mono_project::export::Finding]) {
     }
 }
 
+fn finding_json(finding: &mono_project::export::Finding) -> Value {
+    json!({
+        "severity": finding.severity,
+        "code": finding.code,
+        "message": finding.message,
+        "element_id": finding.element_id,
+        "blocking": finding.is_blocking(),
+    })
+}
+
 fn cmd_validate(args: &Args) -> CoreResult<u8> {
     let (_, scene) = load(args)?;
     let state = state_from_args(&scene, args)?;
@@ -185,13 +201,28 @@ fn cmd_validate(args: &Args) -> CoreResult<u8> {
         scene.data.get("_design_rules").unwrap_or(&json!({})),
     ));
     let blocking = findings.iter().filter(|f| f.is_blocking()).count();
-    print_findings(&findings);
-    println!(
-        "{}: {blocking} blocking finding(s), {} total",
-        if blocking == 0 { "PASS" } else { "FAIL" },
-        findings.len()
-    );
-    Ok(u8::from(blocking > 0))
+    let exit = u8::from(blocking > 0);
+    if args.flag("json") {
+        println!(
+            "{}",
+            json!({
+                "command": "validate",
+                "ok": exit == 0,
+                "exit_code": exit,
+                "blocking": blocking,
+                "total": findings.len(),
+                "findings": findings.iter().map(finding_json).collect::<Vec<_>>(),
+            })
+        );
+    } else {
+        print_findings(&findings);
+        println!(
+            "{}: {blocking} blocking finding(s), {} total",
+            if blocking == 0 { "PASS" } else { "FAIL" },
+            findings.len()
+        );
+    }
+    Ok(exit)
 }
 
 fn cmd_export(args: &Args) -> CoreResult<u8> {
@@ -205,13 +236,30 @@ fn cmd_export(args: &Args) -> CoreResult<u8> {
         &states,
         &mut |_, _, _| true,
     )?;
-    println!(
-        "PASS: exported {} frame(s) to {}",
-        summary.frame_count,
-        summary.output_dir.display()
-    );
-    for (name, digest) in &summary.frame_hashes {
-        println!("  {name}: {digest}");
+    if args.flag("json") {
+        println!(
+            "{}",
+            json!({
+                "command": "export",
+                "ok": true,
+                "exit_code": 0,
+                "output_dir": summary.output_dir.display().to_string(),
+                "frame_count": summary.frame_count,
+                "frames": summary.frame_hashes.iter().map(|(name, digest)| json!({
+                    "name": name,
+                    "sha256": digest,
+                })).collect::<Vec<_>>(),
+            })
+        );
+    } else {
+        println!(
+            "PASS: exported {} frame(s) to {}",
+            summary.frame_count,
+            summary.output_dir.display()
+        );
+        for (name, digest) in &summary.frame_hashes {
+            println!("  {name}: {digest}");
+        }
     }
     Ok(0)
 }
@@ -345,16 +393,34 @@ fn cmd_asset_audit(args: &Args) -> CoreResult<u8> {
             .unwrap_or_else(|| vec!["assets".into()]),
     };
     let health = asset_health(&scene.root, &dirs, &Default::default())?;
-    println!("Duplicate groups: {}", health.duplicates.len());
-    println!(
-        "Unused (without state usage input): {}",
-        health.unused.len()
-    );
-    println!("Invalid: {}", health.invalid.len());
-    for (path, error) in &health.invalid {
-        println!("INVALID {path}: {error}");
+    let exit = u8::from(!health.invalid.is_empty());
+    if args.flag("json") {
+        println!(
+            "{}",
+            json!({
+                "command": "asset-audit",
+                "ok": exit == 0,
+                "exit_code": exit,
+                "duplicates": health.duplicates,
+                "unused": health.unused,
+                "invalid": health.invalid.iter().map(|(path, error)| json!({
+                    "path": path,
+                    "error": error,
+                })).collect::<Vec<_>>(),
+            })
+        );
+    } else {
+        println!("Duplicate groups: {}", health.duplicates.len());
+        println!(
+            "Unused (without state usage input): {}",
+            health.unused.len()
+        );
+        println!("Invalid: {}", health.invalid.len());
+        for (path, error) in &health.invalid {
+            println!("INVALID {path}: {error}");
+        }
     }
-    Ok(u8::from(!health.invalid.is_empty()))
+    Ok(exit)
 }
 
 fn cmd_c_header(args: &Args) -> CoreResult<u8> {
@@ -537,6 +603,17 @@ fn main() -> ExitCode {
     match run(&raw) {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
+            if raw.iter().any(|arg| arg == "--json") {
+                println!(
+                    "{}",
+                    json!({
+                        "command": raw.first().cloned().unwrap_or_default(),
+                        "ok": false,
+                        "exit_code": 2,
+                        "error": {"code": error.code, "message": error.message},
+                    })
+                );
+            }
             if error.code == mono_project::export::EXPORT_BLOCKED {
                 eprintln!("FAIL: {}", error.message);
             } else {

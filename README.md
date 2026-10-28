@@ -97,6 +97,16 @@ mono handoff --project path/to/project.oled.json --output handoff.zip
 mono bridge --project path/to/project.oled.json --permission edit
 ```
 
+命令行工具随每个发布包一起提供：Windows 的 zip 内是 `mono.exe`，macOS 在 `MonoOLED Studio.app/Contents/MacOS/mono`，Linux 安装后为 `monooled-cli`（`/usr/bin/mono` 属于 Mono 运行时，因此改名）。
+
+`--json` 让 `validate`、`export`、`asset-audit` 输出单个 JSON 对象，脚本和 CI 不需要解析人类可读文本：
+
+```bash
+mono validate --project path/to/project.oled.json --json
+```
+
+退出码保持不变：`0` 通过，`1` 有阻断项，`2` 参数或运行错误。带 `--json` 时错误也会以 JSON 打印到标准输出，同时保留标准错误上的 `ERROR:`/`FAIL:` 行。
+
 ## 输出的确定性
 
 - 同一份已保存的 1-bit 素材，配合同一份输出配置，在任何平台上都生成相同的字节和 SHA-256。
