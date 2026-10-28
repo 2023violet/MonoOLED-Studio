@@ -1,0 +1,131 @@
+// Review annotations: triage notes anchored to a screen, state and element.
+import { LineEdit, TextEdit, ComboBox } from "std-widgets.slint";
+import { Theme, Metrics } from "theme.slint";
+import { I18n, Button, ButtonRole, Scrim, Dialog, Caption, SectionTitle } from "widgets.slint";
+
+export struct NoteItem {
+    id: string,
+    kind: string,
+    kind-label: string,
+    title: string,
+    anchor: string,
+    stale: bool,
+    updated: string,
+}
+
+export global NoteModel {
+    in property <[NoteItem]> items;
+    in-out property <bool> visible;
+    in property <string> dialog-title;
+    in property <string> anchor;
+    in property <string> evidence;
+    in-out property <string> draft-title;
+    in-out property <string> draft-body;
+    in-out property <int> kind-index;
+    in property <[string]> kind-labels;
+    in property <string> error;
+    in property <bool> can-add;
+    callback add();
+    callback edit(string);
+    callback delete(string);
+    callback save();
+    callback cancel();
+}
+
+component NoteRow inherits Rectangle {
+    in property <NoteItem> item;
+    callback edit();
+    callback remove();
+    height: 96px;
+    border-radius: Metrics.radius-control;
+    background: item.stale ? Theme.status-warning-background : Theme.surface-panel;
+    VerticalLayout {
+        padding: 8px;
+        spacing: 4px;
+        HorizontalLayout {
+            spacing: 6px;
+            Text { text: item.kind-label; font-size: Metrics.font-small; color: Theme.status-warning-foreground; }
+            if item.stale: Text { text: I18n.tr(I18n.lang, "notes.stale"); font-size: Metrics.font-small; color: Theme.status-warning-foreground; }
+            Rectangle { }
+            Text { text: item.updated; font-size: Metrics.font-small; color: Theme.text-muted; }
+        }
+        Text { text: item.title; font-size: Metrics.font-body; color: Theme.text-primary; overflow: elide; }
+        HorizontalLayout {
+            spacing: 6px;
+            Text { text: item.anchor; font-size: Metrics.font-small; color: Theme.text-muted; overflow: elide; vertical-alignment: center; }
+            Button { text: I18n.tr(I18n.lang, "notes.edit"); width: 52px; clicked => { root.edit(); } }
+            Button { text: I18n.tr(I18n.lang, "notes.delete"); width: 52px; role: ButtonRole.secondary; clicked => { root.remove(); } }
+        }
+    }
+}
+
+export component NoteList inherits VerticalLayout {
+    spacing: 6px;
+    HorizontalLayout {
+        SectionTitle { text: I18n.tr(I18n.lang, "notes.title"); }
+        Button { text: I18n.tr(I18n.lang, "notes.add"); shrink: true; enabled: NoteModel.can-add; clicked => { NoteModel.add(); } }
+    }
+    if NoteModel.items.length == 0: Caption { text: I18n.tr(I18n.lang, "notes.empty"); }
+    for item in NoteModel.items: NoteRow {
+        item: item;
+        edit => { NoteModel.edit(item.id); }
+        remove => { NoteModel.delete(item.id); }
+    }
+}
+
+export component NoteDialog inherits Scrim {
+    callback refocus();
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                NoteModel.cancel();
+                return accept;
+            }
+            return reject;
+        }
+        Dialog {
+            width: 520px;
+            height: 400px;
+            VerticalLayout {
+                padding: 18px;
+                spacing: 10px;
+                Text { text: NoteModel.dialog-title; font-size: 16px; font-weight: 700; color: Theme.text-primary; }
+                HorizontalLayout {
+                    vertical-stretch: 0;
+                    spacing: 8px;
+                    Text { text: I18n.tr(I18n.lang, "notes.kind"); width: 64px; color: Theme.text-secondary; vertical-alignment: center; }
+                    // `selected` carries the label, not the index (Slint ComboBoxBase).
+                    ComboBox {
+                        model: NoteModel.kind-labels;
+                        current-index: NoteModel.kind-index;
+                        selected(value) => {
+                            NoteModel.kind-index = value == NoteModel.kind-labels[0] ? 0 : value == NoteModel.kind-labels[2] ? 2 : 1;
+                        }
+                    }
+                }
+                title-field := LineEdit {
+                    vertical-stretch: 0;
+                    text <=> NoteModel.draft-title;
+                    placeholder-text: I18n.tr(I18n.lang, "notes.title_placeholder");
+                }
+                TextEdit {
+                    vertical-stretch: 1;
+                    min-height: 120px;
+                    text <=> NoteModel.draft-body;
+                    font-size: Metrics.font-body;
+                }
+                Caption { text: NoteModel.anchor; }
+                Caption { text: NoteModel.evidence; }
+                if NoteModel.error != "": Text { text: NoteModel.error; color: Theme.status-error; wrap: word-wrap; }
+                HorizontalLayout {
+                    vertical-stretch: 0;
+                    alignment: end;
+                    spacing: 8px;
+                    Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { NoteModel.cancel(); } }
+                    Button { text: I18n.tr(I18n.lang, "dialog.ok"); role: ButtonRole.primary; clicked => { NoteModel.save(); } }
+                }
+            }
+        }
+    }
+    init => { title-field.focus(); }
+}

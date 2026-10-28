@@ -7,6 +7,8 @@ Current documentation for MonoOLED Studio:
 - `SCENE_SCHEMA.md` — scene format.
 - `OUTPUT_WORKBENCH.md` — raster, encoding, formatting, and portable profile contract.
 - `AUTOMATION_API_V1.md` — local Automation API contract.
+- `REVIEW_PACK.md` — offline review pack: contents, determinism, contract comparison, scope.
+
 - `DESIGN_SYSTEM.md` — UI design system.
 - `BUILD.md` — toolchain, CI checks, performance measurements, packaging and the release process.
 - `ENGINEERING_HISTORY.md` — consolidated pre-1.0 hardening history (Python 1.x line).

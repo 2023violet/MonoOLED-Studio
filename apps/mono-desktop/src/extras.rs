@@ -105,6 +105,11 @@ impl App {
             "bitmap-text" => self.begin_bitmap_text(),
             "autosave" => self.autosave_tick(true).map(|_| ()),
             "restore-autosave" => self.restore_autosave(),
+            "review-pack" => self.review_pack_dialog(),
+            "gallery" => {
+                self.toggle_gallery();
+                Ok(())
+            }
             "command-palette" => {
                 self.open_picker(Picker::Command);
                 Ok(())

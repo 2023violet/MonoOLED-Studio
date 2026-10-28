@@ -11,6 +11,38 @@ pub trait RuntimeLog {
     fn log(&mut self, event: &str, payload: Map<String, Value>);
 }
 
+/// One captured record, for surfaces that show what the timeline did.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeRecord {
+    pub event: String,
+    pub payload: Map<String, Value>,
+}
+
+/// Collects records in memory (`SessionLogger` writes JSONL to disk instead).
+#[derive(Debug, Default)]
+pub struct VecRuntimeLog {
+    records: Vec<RuntimeRecord>,
+}
+
+impl VecRuntimeLog {
+    pub fn records(&self) -> &[RuntimeRecord] {
+        &self.records
+    }
+
+    pub fn take(&mut self) -> Vec<RuntimeRecord> {
+        std::mem::take(&mut self.records)
+    }
+}
+
+impl RuntimeLog for VecRuntimeLog {
+    fn log(&mut self, event: &str, payload: Map<String, Value>) {
+        self.records.push(RuntimeRecord {
+            event: event.to_string(),
+            payload,
+        });
+    }
+}
+
 pub struct SceneRuntime<'a> {
     scene: &'a Map<String, Value>,
     pub state: State,
@@ -51,6 +83,26 @@ impl<'a> SceneRuntime<'a> {
             logger,
         };
         runtime.reset()?;
+        Ok(runtime)
+    }
+
+    /// Rebuild a runtime at a saved state without replaying `reset()`.
+    ///
+    /// `new()` always logs a RESET; an editor resuming from its current state
+    /// must not record one that never happened.
+    pub fn attach(
+        scene: &'a Map<String, Value>,
+        logger: Option<&'a mut dyn RuntimeLog>,
+        state: State,
+        elapsed: i64,
+    ) -> CoreResult<Self> {
+        let mut runtime = Self {
+            scene,
+            state,
+            elapsed,
+            logger,
+        };
+        clamp_state(scene, &mut runtime.state)?;
         Ok(runtime)
     }
 
@@ -191,5 +243,50 @@ impl<'a> SceneRuntime<'a> {
             self.elapsed = now;
         }
         Ok(self.state.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    fn scene() -> Map<String, Value> {
+        json!({
+            "canvas": {"w": 8, "h": 8, "preview_scale": 1},
+            "storage": {"layout": "vlsb", "bytes_per_frame": 8, "polarity": "lit"},
+            "states": {"mode": {"type": "enum", "values": ["idle", "run"], "init": "idle"}},
+            "elements": [],
+            "timeline": [{"at": 1, "set": {"mode": "run"}}]
+        })
+        .as_object()
+        .cloned()
+        .unwrap()
+    }
+
+    #[test]
+    fn recording_log_captures_reset_and_state_changes() {
+        let scene = scene();
+        let mut log = VecRuntimeLog::default();
+        let mut runtime = SceneRuntime::new(&scene, Some(&mut log)).unwrap();
+        runtime.step(&json!(1)).unwrap();
+        let events: Vec<&str> = log.records().iter().map(|r| r.event.as_str()).collect();
+        assert_eq!(events, ["RESET", "STATE"]);
+        assert_eq!(log.records()[1].payload["name"], "mode");
+        assert_eq!(log.records()[1].payload["after"], "run");
+    }
+
+    #[test]
+    fn attach_does_not_emit_a_spurious_reset() {
+        let scene = scene();
+        let start = SceneRuntime::new(&scene, None).unwrap();
+        let mut log = VecRuntimeLog::default();
+        let mut runtime =
+            SceneRuntime::attach(&scene, Some(&mut log), start.state.clone(), start.elapsed)
+                .unwrap();
+        runtime.step(&json!(1)).unwrap();
+        let events: Vec<&str> = log.records().iter().map(|r| r.event.as_str()).collect();
+        assert_eq!(events, ["STATE"]);
     }
 }

@@ -1,5 +1,23 @@
 # OLED Scene Schema v1 — MonoOLED Studio 5.0 usage
 
+## Review sidecar (2.3.0)
+
+Annotations and named scenarios live in `<project>/review/review.json`, not in
+`project.oled.json` and not in this schema. The file is committable and has its
+own `schema_version`; it never changes the scene format or the export contract:
+
+```json
+{"schema_version": 1,
+ "annotations": [{"id", "kind": "defect|decision|explanation", "screen",
+   "state": {}, "element": null, "title", "body",
+   "evidence": {"sha256", "lit_pixels", "frame", "source"},
+   "created_utc", "updated_utc"}],
+ "scenarios": [{"id", "label", "set": {}, "created_utc"}]}
+```
+
+There is still no key or input-event model in the scene format: runtime states
+come from explicit state maps and the timeline, as described below.
+
 ## Coordinate and framebuffer contract
 
 - `(0,0)` is top-left; X increases right, Y increases down.

@@ -2680,7 +2680,7 @@ dependencies = [
 
 [[package]]
 name = "mono-automation"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "getrandom 0.3.4",
  "mono-core",
@@ -2693,7 +2693,7 @@ dependencies = [
 
 [[package]]
 name = "mono-cli"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "mono-automation",
  "mono-core",
@@ -2703,7 +2703,7 @@ dependencies = [
 
 [[package]]
 name = "mono-core"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "indexmap",
  "serde",
@@ -2713,7 +2713,7 @@ dependencies = [
 
 [[package]]
 name = "mono-desktop"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "arboard",
  "mono-automation",
@@ -2729,7 +2729,7 @@ dependencies = [
 
 [[package]]
 name = "mono-font"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "ab_glyph",
  "mono-core",
@@ -2738,7 +2738,7 @@ dependencies = [
 
 [[package]]
 name = "mono-project"
-version = "2.2.1"
+version = "2.3.0"
 dependencies = [
  "mono-core",
  "mono-font",
@@ -3609,9 +3609,9 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.13.4"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
+checksum = "278e9268c93b9e498a2da46c34d90ba93a3255eb99009646398f34bc73ab36eb"
 dependencies = [
  "bitflags 2.13.2",
  "memchr",

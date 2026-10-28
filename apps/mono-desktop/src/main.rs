@@ -11,12 +11,14 @@ mod display;
 mod extras;
 mod fontlab;
 mod fontlab_ui;
+mod gallery;
 mod guard;
 mod i18n;
 mod pixel;
 mod pixel_ui;
 mod prefs;
 mod prefs_ui;
+mod preview;
 mod watchdog;
 mod workbench;
 
@@ -72,6 +74,8 @@ struct Args {
     window_size: Option<(f32, f32)>,
     /// `--screen <id>`: open this project screen after loading.
     screen: Option<String>,
+    /// `--inspector <n>`: select a Designer inspector tab (scripted screenshots).
+    inspector: Option<i32>,
     /// `--bench <out.json>`: measure the spec §5 interactive budgets and exit.
     bench: Option<PathBuf>,
     /// Actions run after startup, in order (`--action preferences`); used for
@@ -89,6 +93,7 @@ fn parse_args() -> Args {
         select: None,
         window_size: None,
         screen: None,
+        inspector: None,
         bench: None,
         actions: Vec::new(),
     };
@@ -103,6 +108,7 @@ fn parse_args() -> Args {
             "--lang" => args.lang = value,
             "--select" => args.select = value,
             "--screen" => args.screen = value,
+            "--inspector" => args.inspector = value.and_then(|v| v.parse().ok()),
             "--window-size" => {
                 args.window_size = value.and_then(|v| {
                     let (w, h) = v.split_once('x')?;
@@ -384,6 +390,18 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             a.studio_mut().tool = pixel::Tool::from_index(index);
             a.refresh_pixel();
         }
+        // Scripted runs (screenshots): open the annotation dialog on this frame.
+        "note-open" => {
+            let mut a = app.borrow_mut();
+            if let Err(e) = a.begin_note() {
+                a.error(&e);
+            }
+        }
+        "gallery" => app.borrow_mut().open_gallery(),
+        other if other.starts_with("review-mode:") => {
+            let mode = other["review-mode:".len()..].parse().unwrap_or(0);
+            app.borrow_mut().set_review_mode(mode);
+        }
         other if other.starts_with("workspace:") => {
             let index: i32 = other[10..].parse().unwrap_or(0);
             switch_workspace(app, ui, index);
@@ -456,6 +474,11 @@ fn apply_prompt(app: &mut App, text: &str) {
         }
         Prompt::TemplateName => {
             let result = app.save_template(&text);
+            finish_prompt(app, result);
+            return;
+        }
+        Prompt::ScenarioName => {
+            let result = app.save_scenario(&text);
             finish_prompt(app, result);
             return;
         }
@@ -608,6 +631,127 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
         let Some(ui) = w.upgrade() else { return };
         DesignerModel::get(&ui).set_zoom(zoom_for(index));
         let _ = &a;
+    });
+    let a = app.clone();
+    DesignerModel::get(ui).on_preset_chosen(move |index| {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            if let Err(e) = app.apply_preset(index.max(0) as usize) {
+                app.error(&e);
+            }
+        }
+    });
+    let a = app.clone();
+    DesignerModel::get(ui).on_preset_save(move || {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.prompt_scenario();
+        }
+    });
+
+    let a = app.clone();
+    NoteModel::get(ui).on_add(move || {
+        if let Ok(mut app) = a.try_borrow_mut()
+            && let Err(e) = app.begin_note()
+        {
+            app.error(&e);
+        }
+    });
+    let a = app.clone();
+    NoteModel::get(ui).on_edit(move |id| {
+        if let Ok(mut app) = a.try_borrow_mut()
+            && let Err(e) = app.edit_note(&id)
+        {
+            app.error(&e);
+        }
+    });
+    let a = app.clone();
+    NoteModel::get(ui).on_delete(move |id| {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.delete_note(&id);
+        }
+    });
+    let (a, w) = (app.clone(), ui.as_weak());
+    NoteModel::get(ui).on_save(move || {
+        let Some(ui) = w.upgrade() else { return };
+        let (title, body, kind) = {
+            let model_handle = NoteModel::get(&ui);
+            (
+                model_handle.get_draft_title().to_string(),
+                model_handle.get_draft_body().to_string(),
+                model_handle.get_kind_index(),
+            )
+        };
+        let Ok(mut app) = a.try_borrow_mut() else {
+            return;
+        };
+        let result = app.save_note(&title, &body, kind);
+        drop(app);
+        let model_handle = NoteModel::get(&ui);
+        match result {
+            Ok(()) => {
+                model_handle.set_error(SharedString::default());
+                focus_if_idle(&ui);
+            }
+            Err(error) => model_handle.set_error(error.message.into()),
+        }
+    });
+    let (a, w) = (app.clone(), ui.as_weak());
+    NoteModel::get(ui).on_cancel(move || {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.cancel_note();
+        }
+        if let Some(ui) = w.upgrade() {
+            focus_if_idle(&ui);
+        }
+    });
+    let a = app.clone();
+    GalleryModel::get(ui).on_search(move |query| {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.gallery_search(&query);
+        }
+    });
+    let a = app.clone();
+    GalleryModel::get(ui).on_filter_changed(move |filter| {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.gallery_set_filter(filter);
+        }
+    });
+    let (a, u) = (app.clone(), ui.as_weak());
+    GalleryModel::get(ui).on_open_screen(move |screen, review| {
+        let Some(ui) = u.upgrade() else { return };
+        if let Ok(mut app) = a.try_borrow_mut()
+            && let Err(e) = app.gallery_open_screen(&screen)
+        {
+            app.error(&e);
+            return;
+        }
+        switch_workspace(&a, &ui, if review { 3 } else { 0 });
+    });
+    let (a, w) = (app.clone(), ui.as_weak());
+    GalleryModel::get(ui).on_close(move || {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.close_gallery();
+        }
+        if let Some(ui) = w.upgrade() {
+            focus_if_idle(&ui);
+        }
+    });
+    let a = app.clone();
+    ReviewModel::get(ui).on_mode_changed(move |mode| {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.set_review_mode(mode);
+        }
+    });
+    let a = app.clone();
+    ReviewModel::get(ui).on_load_contract(move || {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.load_contract_dialog();
+        }
+    });
+    let a = app.clone();
+    ReviewModel::get(ui).on_copy_hash(move || {
+        if let Ok(mut app) = a.try_borrow_mut() {
+            app.copy_frame_hash();
+        }
     });
     wire_pixel(ui, app);
     wire_prefs(ui, app);
@@ -930,6 +1074,8 @@ fn main() {
                 app.poll_font();
                 app.poll_agent();
                 app.poll_background();
+                app.gallery_tick();
+                app.preview_tick(std::time::Instant::now());
             }
         },
     );
@@ -950,6 +1096,9 @@ fn main() {
     }
     if let Some(index) = args.workspace {
         switch_workspace(&app, &ui, index);
+    }
+    if let Some(tab) = args.inspector {
+        DesignerModel::get(&ui).set_inspector_tab(tab);
     }
     for action in &args.actions {
         match action.strip_prefix("font:") {

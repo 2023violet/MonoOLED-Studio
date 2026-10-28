@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use mono_core::pyvalue::{is_py_int, py_int, py_str};
 use mono_core::render::{RenderResult, Resources, normalize_path, posix, render_scene, resolve};
-use mono_core::runtime::SceneRuntime;
+use mono_core::runtime::{RuntimeLog, SceneRuntime};
 use mono_core::state::{State, init_state, subst, when_match};
 use mono_core::{CoreError, CoreResult};
 use serde_json::{Map, Value, json};
@@ -108,6 +108,12 @@ pub fn py_round(value: f64) -> i64 {
 }
 
 impl EditorSession {
+    /// Hash of the persisted scene shape; derived caches (the screen gallery)
+    /// compare it before rebuilding.
+    pub fn fingerprint(&self) -> u64 {
+        scene_fingerprint(&self.doc.data)
+    }
+
     pub fn new(doc: SceneDoc) -> CoreResult<Self> {
         let state = SceneRuntime::new(&doc.data, None)?.state;
         let disk_fingerprint = std::fs::read(&doc.path).ok().map(|b| hex_digest(&b));
@@ -936,6 +942,46 @@ impl EditorSession {
 
     pub fn reset_runtime(&mut self) -> CoreResult<()> {
         let runtime = SceneRuntime::new(&self.doc.data, None)?;
+        self.state = runtime.state;
+        self.elapsed = 0;
+        Ok(())
+    }
+
+    /// `set_state` with the runtime records (STATE) captured into `logger`.
+    pub fn set_state_logged(
+        &mut self,
+        name: &str,
+        value: Value,
+        logger: &mut dyn RuntimeLog,
+    ) -> CoreResult<()> {
+        let mut runtime = SceneRuntime::attach(
+            &self.doc.data,
+            Some(logger),
+            self.state.clone(),
+            self.elapsed,
+        )?;
+        runtime.set_state(name, value)?;
+        self.state = runtime.state;
+        Ok(())
+    }
+
+    /// `step` with the runtime records (STATE) captured into `logger`.
+    pub fn step_logged(&mut self, amount: i64, logger: &mut dyn RuntimeLog) -> CoreResult<()> {
+        let mut runtime = SceneRuntime::attach(
+            &self.doc.data,
+            Some(logger),
+            self.state.clone(),
+            self.elapsed,
+        )?;
+        runtime.step(&json!(amount))?;
+        self.state = runtime.state;
+        self.elapsed = runtime.elapsed;
+        Ok(())
+    }
+
+    /// `reset_runtime` with the RESET record captured into `logger`.
+    pub fn reset_runtime_logged(&mut self, logger: &mut dyn RuntimeLog) -> CoreResult<()> {
+        let runtime = SceneRuntime::new(&self.doc.data, Some(logger))?;
         self.state = runtime.state;
         self.elapsed = 0;
         Ok(())

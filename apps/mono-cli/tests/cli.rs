@@ -123,3 +123,70 @@ fn text_mode_keeps_the_human_summary() {
     assert!(stdout.contains("PASS:"));
     assert!(!stdout.trim_start().starts_with('{'));
 }
+
+#[test]
+fn review_pack_writes_html_and_json() {
+    let root = std::env::temp_dir().join(format!("mono-cli-pack-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp dir");
+    let project = fixture();
+    let output = root.join("review.html");
+    let (code, stdout, stderr) = run(&[
+        "review-pack",
+        "--project",
+        &project,
+        "--output",
+        &output.to_string_lossy(),
+        "--json",
+    ]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let value = json_of(&stdout);
+    assert_eq!(value["command"], "review-pack");
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["exit_code"], 0);
+    assert!(value["screens"].as_u64().unwrap() >= 1);
+    assert!(value["frames"].as_u64().unwrap() >= value["screens"].as_u64().unwrap());
+    assert_eq!(value["sha256"].as_str().unwrap().len(), 64);
+    assert!(value["bytes"].as_u64().unwrap() > 0);
+    assert!(output.is_file());
+    let html = std::fs::read_to_string(&output).unwrap();
+    assert!(html.starts_with("<!DOCTYPE html>"));
+    assert!(html.contains("id=\"pack-data\""));
+    assert!(html.contains("\"renderer\""));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn review_pack_is_deterministic() {
+    let root = std::env::temp_dir().join(format!("mono-cli-pack-det-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp dir");
+    let project = fixture();
+    let first = root.join("a.html");
+    let second = root.join("b.html");
+    let (code, stdout, _) = run(&[
+        "review-pack",
+        "--project",
+        &project,
+        "--output",
+        &first.to_string_lossy(),
+        "--json",
+    ]);
+    assert_eq!(code, 0);
+    let first_hash = json_of(&stdout)["sha256"].as_str().unwrap().to_string();
+    let (code, stdout, _) = run(&[
+        "review-pack",
+        "--project",
+        &project,
+        "--output",
+        &second.to_string_lossy(),
+        "--json",
+    ]);
+    assert_eq!(code, 0);
+    assert_eq!(first_hash, json_of(&stdout)["sha256"].as_str().unwrap());
+    assert_eq!(
+        std::fs::read(&first).unwrap(),
+        std::fs::read(&second).unwrap()
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

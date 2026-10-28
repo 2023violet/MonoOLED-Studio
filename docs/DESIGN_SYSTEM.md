@@ -47,11 +47,14 @@ Density changes control height and padding without changing information architec
 - **StatusPill**: severity/tone; never the only carrier of meaning (text is always present).
 - **Dialog / Scrim**: modal overlays trap Escape and restore focus on close. Non-modal panels (Agent Bridge) never use a scrim.
 - **ListView / ListRow**: `text` plus optional right-aligned `detail` (shortcut chords, codes).
+- **NoteRow** (批注): kind chip, title, anchor and explicit Edit/Delete buttons on their own line; sticky notes use the warning background plus a text badge, never colour alone.
+- **EvidenceRow** (Review): fixed 96px label, monospace value; a hash is only shown with a Copy button and the source contract name, so a badge always points at a real artifact.
+- **GalleryOverlay**: full-window scrim panel (not a workspace tab), category headers inside one list, thumbnails at 2× with pixelated rendering; cards carry a text badge (`valid` / `N blockers`) plus explicit Open/Review buttons.
 
 ## Layout
 
 - Designer: Navigator | Canvas | Context Inspector, with a collapsible Problems/Diff/Logs drawer.
-- Diff Review: side-by-side baseline/current with the changed-pixel bounds and element change lists.
+- Diff Review: side-by-side baseline/current with the changed-pixel bounds and element change lists; Device/Code switch in the header, evidence panel under the canvas.
 - Pixel Studio: Tool Rail | Pixel Canvas | Flat Context Inspector, plus status/input hints.
 - Font Lab: Glyph list | Canvas + on-screen preview | Generator form.
 - Preferences: a separate flat dialog; global preferences never occupy the authoring header.

@@ -7,12 +7,17 @@ import { PreferencesDialog, PrefsModel, PrefRow } from "preferences.slint";
 import { DesignerView, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar } from "designer.slint";
 import { PixelView, PixelDialogs, PixelModel, OutputModel, ProfileItem } from "pixel.slint";
 import { FontLabView, FontModel, GlyphItem } from "fontlab.slint";
-import { ReviewView, ReviewModel } from "review.slint";
+import { ReviewView, ReviewModel, ReviewElement } from "review.slint";
+import { GalleryOverlay, GalleryModel, GalleryItem } from "gallery.slint";
 import { AgentPanel, AgentModel } from "agent.slint";
 import { NewProjectDialog, NewProjectModel } from "new_project.slint";
+import { NoteDialog, NoteList, NoteModel, NoteItem } from "notes.slint";
+// `notes.slint` is also imported by designer.slint; re-export the model so the
+// generated Rust API is public.
+export { NoteItem, NoteModel }
 import { WelcomeView } from "welcome.slint";
 
-export { Theme, Metrics, I18n, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar, PillTone, PixelModel, OutputModel, ProfileItem, FontModel, GlyphItem, PrefsModel, PrefRow, Shell, ReviewModel, AgentModel, NewProjectModel }
+export { Theme, Metrics, I18n, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar, PillTone, PixelModel, OutputModel, ProfileItem, FontModel, GlyphItem, PrefsModel, PrefRow, Shell, ReviewModel, ReviewElement, GalleryModel, GalleryItem, AgentModel, NewProjectModel }
 
 export struct DocTab { title: string, kind: string, dirty: bool }
 export struct PickerItem { label: string, detail: string }
@@ -46,7 +51,7 @@ export global AppModel {
     in-out property <bool> about-visible;
     in-out property <bool> preferences-visible;
     in-out property <bool> agent-panel-visible;
-    in property <string> version: "2.2.1";
+    in property <string> version: "2.3.0";
     in-out property <bool> picker-visible;
     in property <string> picker-title;
     in property <[PickerItem]> picker-items;
@@ -271,7 +276,7 @@ export component MainWindow inherits Window {
     property <bool> overlay-open:
         AppModel.preferences-visible || AppModel.picker-visible
         || AppModel.prompt-visible || AppModel.about-visible
-        || NewProjectModel.visible
+        || NewProjectModel.visible || NoteModel.visible || GalleryModel.visible
         || (AppModel.workspace == 1 && PixelModel.dialog != 0);
     public function focus-shortcuts() { shortcuts.focus(); }
     // std-widgets follow the app theme, not the OS colour scheme.
@@ -297,6 +302,7 @@ export component MainWindow inherits Window {
             MenuItem { title: I18n.tr(I18n.lang, "action.handoff"); enabled: AppModel.can-handoff; activated => { AppModel.action("handoff"); } }
             MenuItem { title: I18n.tr(I18n.lang, "action.export_c_header"); enabled: AppModel.can-export; activated => { AppModel.action("export-c-header"); } }
             MenuItem { title: I18n.tr(I18n.lang, "action.thumbnail_wall"); enabled: AppModel.can-export; activated => { AppModel.action("thumbnail-wall"); } }
+            MenuItem { title: I18n.tr(I18n.lang, "action.review_pack"); enabled: AppModel.has-project; activated => { AppModel.action("review-pack"); } }
             MenuSeparator { }
             MenuItem { title: I18n.tr(I18n.lang, "action.exit"); activated => { AppModel.action("exit"); } }
         }
@@ -334,6 +340,8 @@ export component MainWindow inherits Window {
             MenuItem { title: I18n.tr(I18n.lang, "view.inspector"); activated => { AppModel.action("toggle-inspector"); } }
             MenuItem { title: I18n.tr(I18n.lang, "view.canvas_only"); activated => { AppModel.action("canvas-only"); } }
             MenuItem { title: I18n.tr(I18n.lang, "view.reset_workspace"); activated => { AppModel.action("reset-workspace"); } }
+            MenuSeparator { }
+            MenuItem { title: I18n.tr(I18n.lang, "view.gallery"); enabled: AppModel.has-project; activated => { AppModel.action("gallery"); } }
         }
         Menu {
             title: I18n.tr(I18n.lang, "menu.tools");
@@ -401,5 +409,7 @@ export component MainWindow inherits Window {
     if AppModel.picker-visible: PickerDialog { width: root.width; height: root.height; refocus => { root.focus-shortcuts(); } }
     if AppModel.prompt-visible: PromptDialog { width: root.width; height: root.height; }
     if NewProjectModel.visible: NewProjectDialog { width: root.width; height: root.height; refocus => { root.focus-shortcuts(); } }
+    if NoteModel.visible: NoteDialog { width: root.width; height: root.height; refocus => { root.focus-shortcuts(); } }
+    if GalleryModel.visible: GalleryOverlay { width: root.width; height: root.height; refocus => { root.focus-shortcuts(); } }
     if AppModel.about-visible: AboutDialog { width: root.width; height: root.height; refocus => { root.focus-shortcuts(); } }
 }

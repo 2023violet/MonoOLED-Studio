@@ -1,5 +1,66 @@
 # Changelog
 
+## 2.3.0 - 2026-10-28
+
+This release turns the static preview into a device-level verification and review
+loop, and shows the evidence the exporter already produced (golden hashes, the
+contract, per-frame code) inside the app.
+
+### Added
+
+- **Device preview and playback.** The State tab draws the framebuffer in a 2×
+  device bezel and the Play button actually plays: a 60 ms timer advances the
+  scene timeline one step per tick, Step pauses and advances once, Reset returns
+  to the init state. A runtime event feed lists `RESET` and `STATE` records.
+  Playback and preset changes are runtime-only and never mark the scene dirty.
+- **Annotations.** Defect / decision / explanation notes anchored to the current
+  screen, state and selected element, with the frame's SHA-256 and lit-pixel
+  count as evidence. Notes can be added, edited and deleted from the Designer's
+  批注 tab or the Review workspace; a note whose recorded frame no longer matches
+  the live frame in the same state shows a stale badge.
+- **Named scenarios and derived presets.** The State tab offers the init state,
+  every non-initial enum value and both bounds of every int state, derived from
+  the scene schema (no guessed semantics). The current state can be saved as a
+  named scenario.
+- **Review evidence panel.** `Review` gains a Device/Code switch (pixel diff vs
+  C header and VLSB hex), a frame hash, the exported golden hash, a
+  `golden match` / `frame changed` / `state not exported` / `no contract` badge,
+  lit-pixel counts and the contract's visible elements. `ui_contract.json` is
+  discovered at `exports/latest/`, adopted after an export, or loaded by hand.
+- **Screen gallery.** A full-window overlay with one init-frame card per screen,
+  grouped by category (explicit `screens[].category`, otherwise the id prefix),
+  with search, All/Blocking/Annotated filters, blocker and note counts, and
+  buttons to open the screen in Designer (resetting the runtime) or in Review.
+  Cards cache on the scene fingerprint; at most 200 screens are rendered.
+- **Review pack HTML.** One deterministic, self-contained page (inline CSS and
+  JavaScript, no new dependency) with raw VLSB frames, SHA-256, lit pixels,
+  findings, visible elements, C headers, hex, annotations and a contract page.
+  `mono review-pack --project … --output review/review.html [--json]` and the
+  File → Review pack command write it. Two runs over the same inputs are
+  byte-identical, and annotation text cannot break out of the data script. The
+  pack states that MonoOLED Studio has a single renderer and makes no L2 claim.
+- **CLI `--json`.** `validate`, `export` and `asset-audit` accept `--json`
+  (same exit codes as the text mode); README documents that `mono` ships inside
+  every release package and what exit codes 0/1/2 mean.
+
+### Changed
+
+- The View menu and command palette gain Screen gallery (`Ctrl+Shift+L`); the
+  File menu gains Review pack.
+- `review/review.json` is a committable sidecar: atomic writes, a fingerprint
+  check that refuses to overwrite external edits, quarantine for malformed
+  files, and a hard error for an unknown schema version. It is outside
+  `project.oled.json` and outside the export contract.
+- Documentation: new `docs/REVIEW_PACK.md`; the user guides, `AI_HANDOFF.md`,
+  `SCENE_SCHEMA.md` and the docs index describe the review loop.
+
+### Not in this release
+
+- No key or hardware event model (states are explicit presets; the UI says so),
+  no motor/buzzer/BLE/power simulation, no second renderer (so no L2 badge), no
+  fifth workspace tab (the gallery is an overlay), and no Automation JSON or
+  scene-schema changes.
+
 ## 2.2.1 - 2026-10-26
 
 No application behaviour changes. The `v2.2.0` tag was cut one commit before a test-only fix, so the source snapshot attached to that release fails three tests on Windows and macOS (`image_element_asset_opens_canonical_rows`, `opening_a_project_remembers_it_once`, `asset_save_preserves_canonical_rows`): CI temporary directories can be symlinks, and those tests compared the raw temp path with the canonical path the project layer resolves. 2.2.1 re-cuts the same application from a source tree whose tests are green on every platform. The `v2.2.0` tag and its assets stay as published.

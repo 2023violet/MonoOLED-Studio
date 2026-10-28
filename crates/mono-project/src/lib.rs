@@ -12,5 +12,7 @@ pub mod fontpack_io;
 pub mod image_io;
 pub mod project;
 pub mod resources;
+pub mod review;
+pub mod review_pack;
 pub mod scene_io;
 pub mod templates;

@@ -24,6 +24,16 @@ pub const CANCELLED: &str = "E-CANCELLED";
 /// Progress callback: `(stage, completed, total)`; return `false` to cancel.
 pub type Progress<'a> = &'a mut dyn FnMut(&str, usize, usize) -> bool;
 
+/// The exported frame recorded for `state`. Key order is irrelevant: states are
+/// compared as maps, exactly as `ui_contract.json` stores them.
+pub fn frame_for_state<'a>(contract: &'a Value, state: &Map<String, Value>) -> Option<&'a Value> {
+    contract
+        .get("frames")?
+        .as_object()?
+        .values()
+        .find(|frame| frame.get("state").and_then(Value::as_object) == Some(state))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
     pub severity: String,
@@ -1693,4 +1703,45 @@ pub fn build_handoff_package(
     })();
     let _ = std::fs::remove_dir_all(&work);
     result
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn contract() -> Value {
+        json!({
+            "frames": {
+                "idle": {
+                    "state": {"battery": 4, "mode": "NORMAL"},
+                    "golden_sha256": "aa",
+                },
+                "low": {
+                    "state": {"battery": 0, "mode": "NORMAL"},
+                    "golden_sha256": "bb",
+                },
+            }
+        })
+    }
+
+    #[test]
+    fn frame_for_state_is_key_order_independent() {
+        let mut state = Map::new();
+        state.insert("mode".into(), Value::from("NORMAL"));
+        state.insert("battery".into(), Value::from(4));
+        let contract = contract();
+        let frame = frame_for_state(&contract, &state).expect("frame");
+        assert_eq!(frame["golden_sha256"], "aa");
+    }
+
+    #[test]
+    fn frame_for_state_misses_unknown_states() {
+        let mut state = Map::new();
+        state.insert("mode".into(), Value::from("NORMAL"));
+        state.insert("battery".into(), Value::from(3));
+        let contract = contract();
+        assert!(frame_for_state(&contract, &state).is_none());
+        assert!(frame_for_state(&json!({}), &state).is_none());
+    }
 }

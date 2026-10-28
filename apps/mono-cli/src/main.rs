@@ -35,6 +35,7 @@ COMMANDS:
     batch-validate   validate a state combination matrix
     handoff          build the deterministic Code AI handoff ZIP
     asset-audit      scan project asset health
+    review-pack      write the offline review pack (screens, frames, annotations)
     c-header         export the current framebuffer as a C header
     bench            measure the spec §5 core budgets (encode+format, 50-screen export)
     bridge           serve the Automation API 1.3.0 on 127.0.0.1 (JSON-RPC, one line per call)
@@ -44,7 +45,11 @@ SOURCE OPTIONS (all commands):
     --scene <file.json>       scene file
     --project <project.oled.json>  project; takes precedence over --scene
 
-OUTPUT OPTIONS (validate, export, asset-audit):
+REVIEW OPTIONS (review-pack):
+    --output <file.html>      destination (required)
+    --annotations <file>      review JSON (default: <project>/review/review.json)
+
+OUTPUT OPTIONS (validate, export, asset-audit, review-pack):
     --json                    print one JSON object instead of text; exit codes are unchanged
 
 STATE OPTIONS (validate, simulate, c-header):
@@ -423,6 +428,66 @@ fn cmd_asset_audit(args: &Args) -> CoreResult<u8> {
     Ok(exit)
 }
 
+fn cmd_review_pack(args: &Args) -> CoreResult<u8> {
+    let (Some(project), _) = load(args)? else {
+        return Err(CoreError::invalid("review-pack requires --project"));
+    };
+    let output = PathBuf::from(
+        args.get("output")
+            .ok_or_else(|| CoreError::invalid("--output is required"))?,
+    );
+    let annotations_path = args
+        .get("annotations")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| project.root.join(mono_project::review::REVIEW_FILE));
+    let annotations = mono_project::review::ReviewStore::read_annotations(&annotations_path)?;
+    let summary = mono_project::review_pack::build_review_pack(
+        &project,
+        &annotations,
+        &output,
+        &mut |stage, done, total| {
+            if !args.flag("json") && stage == "review.screens" && total > 0 {
+                eprint!(
+                    "
+review-pack {done}/{total}"
+                );
+            }
+            true
+        },
+    )?;
+    if args.flag("json") {
+        println!(
+            "{}",
+            json!({
+                "command": "review-pack",
+                "ok": true,
+                "exit_code": 0,
+                "output": summary.output.display().to_string(),
+                "screens": summary.screens,
+                "frames": summary.frames,
+                "annotations": summary.annotations,
+                "blocking": summary.blocking,
+                "bytes": summary.bytes,
+                "sha256": summary.sha256,
+            })
+        );
+    } else {
+        eprintln!();
+        println!(
+            "wrote {} ({} screens, {} frames, {} annotations, {} blocking, {} bytes)",
+            summary.output.display(),
+            summary.screens,
+            summary.frames,
+            summary.annotations,
+            summary.blocking,
+            summary.bytes
+        );
+        println!("sha256 {}", summary.sha256);
+    }
+    Ok(0)
+}
+
 fn cmd_c_header(args: &Args) -> CoreResult<u8> {
     let (_, scene) = load(args)?;
     let state = state_from_args(&scene, args)?;
@@ -589,6 +654,7 @@ fn run(raw: &[String]) -> CoreResult<u8> {
         "batch-validate" => cmd_batch_validate(&args),
         "handoff" => cmd_handoff(&args),
         "asset-audit" => cmd_asset_audit(&args),
+        "review-pack" => cmd_review_pack(&args),
         "c-header" => cmd_c_header(&args),
         "bridge" => cmd_bridge(&args),
         "bench" => cmd_bench(&args),

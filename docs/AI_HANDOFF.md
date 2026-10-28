@@ -152,6 +152,16 @@ API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.al
 - **校验文案**：`FindingItem.label` 是本地化摘要，`message` 保留英文原始 detail；`FINDING_CODES` 是 code 清单。
 - **Slint `ComboBox`**：1.18 起 `selected(value)` 传的是当前项的**文本**（`ComboBoxBase.selected(current-value: string)`），不是索引。需要索引时用同名元素的 `self.current-index` / `<id>.current-index`（`select()` 会先写好 `current-index` 再发回调），或把标签映射回索引；不要对参数做算术或 `+` 拼接成 `"key:" + index`。`current-index`/`current-value` 的声明式绑定会被用户选择打断，不要依赖它回灌。
 
+### 6.1.2 2.3.0 评审闭环契约
+
+- **评审旁路**：批注与命名场景只存 `<project>/review/review.json`（`schema_version = 1`），不写 `project.oled.json`，不改导出契约与 Automation JSON；文件可提交、可合并。
+- **外部修改**：保存前比较磁盘指纹，外部改动则返回 `E-REVIEW-EXTERNAL` 并拒绝覆盖；坏 JSON 隔离到 `review/quarantine/`，未知 `schema_version` 直接报错且不改写文件。CLI（`mono review-pack`）只读。
+- **证据**：批注证据是当帧 `to_vlsb()` 的 SHA-256 与点亮像素数；Review 的 `golden match` 要求与 `ui_contract.json` 中同 `state` 帧的 `golden_sha256` 完全相等。不得伪造 firmware `file:line` 锚点。
+- **运行态 vs 持久化**：播放、Step、Reset、预设切换只改变 `SceneRuntime` 状态与事件流，不得置 dirty、不得进入导出。
+- **画廊缓存**：卡片以场景内容指纹（`EditorSession::fingerprint`）为键；编辑、保存、换屏后必须重建。最多渲染 200 屏，超出只列文本。
+- **评审包确定性**：屏幕按 `(category,label,id)`、帧按 state、批注按 `(screen,state,element,kind,id)` 排序；不含时间戳与绝对路径；内嵌 JSON 转义 `<`、`>`、`&`、U+2028/U+2029。两次生成必须字节相同。
+- **不做 L2 声明**：产品只有一个渲染器，评审包与 Review 只比对 SHA-256 与导出契约，不得出现"第二实现逐字节对拍"的徽章。
+
 ### 6.2 字节确定性
 
 - 已经是 1-bit 的 Pixel 文档、帧缓冲和 Font Pack 字形不得再次阈值化。
@@ -177,6 +187,7 @@ API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.al
 | Automation API | `docs/AUTOMATION_API_V1.md`、`crates/mono-automation/src/method_specs.json` |
 | 窗口与命令路由 | `apps/mono-desktop/src/main.rs`、`app.rs` |
 | 场景渲染 | `crates/mono-core/src/render.rs`、`framebuffer.rs` |
+| 评审闭环 | `crates/mono-project/src/{review,review_pack}.rs`、`apps/mono-desktop/src/{preview,gallery}.rs`、`docs/REVIEW_PACK.md` |
 | Pixel 性能 | `apps/mono-desktop/src/pixel_ui.rs`、`canvas.rs`、`bench.rs` |
 | 字库生成 | `crates/mono-font`、`apps/mono-desktop/src/fontlab.rs` |
 | 构建与发布 | `docs/BUILD.md`、`tools/PACKAGE_RUST_RELEASE.py`、`.github/workflows/` |

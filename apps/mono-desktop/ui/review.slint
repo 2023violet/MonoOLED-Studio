@@ -1,8 +1,17 @@
-// Review workspace: side-by-side render of the baseline (last open/save) and the
-// current scene, with the changed-pixel bounds and the element change lists.
+// Review workspace: device diff (baseline vs current), the code view of the
+// same frame, and the evidence panel tying it to an exported contract.
 import { Theme, Metrics } from "theme.slint";
-import { I18n, Panel, Caption } from "widgets.slint";
-import { ListView } from "std-widgets.slint";
+import {
+    I18n, Panel, Caption, SectionTitle, Segmented, StatusPill, PillTone, Button,
+} from "widgets.slint";
+import { ListView, TextEdit } from "std-widgets.slint";
+
+export struct ReviewElement {
+    id: string,
+    kind: string,
+    geometry: string,
+    visible: bool,
+}
 
 export global ReviewModel {
     in property <image> baseline;
@@ -23,6 +32,32 @@ export global ReviewModel {
     in property <[string]> added;
     in property <[string]> removed;
     in property <[string]> modified;
+    // 0 device, 1 code
+    in-out property <int> mode: 0;
+    in property <bool> has-contract;
+    in property <string> contract-name;
+    // golden-match | frame-changed | not-exported | no-contract
+    in property <string> contract-status: "no-contract";
+    in property <string> state-label;
+    in property <string> frame-sha;
+    in property <string> golden-sha;
+    in property <bool> hash-match;
+    in property <int> lit-pixels;
+    in property <int> golden-lit;
+    in property <[ReviewElement]> elements;
+    in property <string> code-c;
+    in property <string> code-hex;
+    callback mode-changed(int);
+    callback load-contract();
+    callback copy-hash();
+}
+
+component EvidenceRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 8px;
+    Text { text: root.label; width: 96px; font-size: Metrics.font-small; color: Theme.text-secondary; }
+    Text { text: root.value; horizontal-stretch: 1; font-size: Metrics.font-small; color: Theme.text-primary; overflow: elide; font-family: "Consolas"; }
 }
 
 component DiffPane inherits Rectangle {
@@ -39,6 +74,9 @@ component DiffPane inherits Rectangle {
     border-radius: Metrics.radius-panel;
     border-width: 1px;
     border-color: Theme.border-subtle;
+    // Equal panes so both frames share one zoom factor.
+    min-width: 0px;
+    preferred-width: 0px;
     VerticalLayout {
         padding: 8px;
         spacing: 6px;
@@ -78,6 +116,29 @@ component DiffPane inherits Rectangle {
     }
 }
 
+component CodePane inherits Rectangle {
+    in property <string> title;
+    in property <string> body;
+    horizontal-stretch: 1;
+    background: Theme.surface-panel;
+    border-radius: Metrics.radius-panel;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+        Caption { text: root.title; }
+        TextEdit {
+            vertical-stretch: 1;
+            text: root.body;
+            read-only: true;
+            font-family: "Consolas";
+            font-size: Metrics.font-small;
+            wrap: no-wrap;
+        }
+    }
+}
+
 component ChangeColumn inherits VerticalLayout {
     in property <string> title;
     in property <[string]> items;
@@ -113,10 +174,15 @@ export component ReviewView inherits VerticalLayout {
             }
             Caption { text: ReviewModel.summary; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
+            Segmented {
+                items: [I18n.tr(I18n.lang, "review.device"), I18n.tr(I18n.lang, "review.code")];
+                current: ReviewModel.mode;
+                selected(index) => { ReviewModel.mode-changed(index); }
+            }
             Caption { text: ReviewModel.detail; vertical-alignment: center; }
         }
     }
-    if ReviewModel.has-baseline: HorizontalLayout {
+    if ReviewModel.mode == 0 && ReviewModel.has-baseline: HorizontalLayout {
         spacing: 8px;
         vertical-stretch: 1;
         DiffPane {
@@ -138,8 +204,8 @@ export component ReviewView inherits VerticalLayout {
             box-w: ReviewModel.bbox-w;
             box-h: ReviewModel.bbox-h;
         }
-    } 
-    if !ReviewModel.has-baseline: Rectangle {
+    }
+    if ReviewModel.mode == 0 && !ReviewModel.has-baseline: Rectangle {
         vertical-stretch: 1;
         background: Theme.surface-panel;
         border-radius: Metrics.radius-panel;
@@ -148,6 +214,90 @@ export component ReviewView inherits VerticalLayout {
             color: Theme.text-muted;
             horizontal-alignment: center;
             vertical-alignment: center;
+        }
+    }
+    if ReviewModel.mode == 1: HorizontalLayout {
+        spacing: 8px;
+        vertical-stretch: 1;
+        CodePane {
+            title: I18n.tr(I18n.lang, "review.code_c");
+            body: ReviewModel.code-c;
+        }
+        CodePane {
+            title: I18n.tr(I18n.lang, "review.code_hex");
+            body: ReviewModel.code-hex;
+        }
+    }
+    Panel {
+        height: 186px;
+        HorizontalLayout {
+            padding: 10px;
+            spacing: 14px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 4px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    SectionTitle { text: I18n.tr(I18n.lang, "review.evidence"); }
+                    StatusPill {
+                        text: ReviewModel.contract-status == "golden-match" ? I18n.tr(I18n.lang, "review.contract.golden-match")
+                            : ReviewModel.contract-status == "frame-changed" ? I18n.tr(I18n.lang, "review.contract.frame-changed")
+                            : ReviewModel.contract-status == "not-exported" ? I18n.tr(I18n.lang, "review.contract.not-exported")
+                            : I18n.tr(I18n.lang, "review.contract.no-contract");
+                        tone: ReviewModel.contract-status == "golden-match" ? PillTone.success
+                            : ReviewModel.contract-status == "frame-changed" ? PillTone.error
+                            : ReviewModel.contract-status == "not-exported" ? PillTone.warning
+                            : PillTone.neutral;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button {
+                        text: I18n.tr(I18n.lang, "review.copy");
+                        enabled: ReviewModel.frame-sha != "";
+                        clicked => { ReviewModel.copy-hash(); }
+                    }
+                    Button {
+                        text: I18n.tr(I18n.lang, "review.load_contract");
+                        clicked => { ReviewModel.load-contract(); }
+                    }
+                }
+                EvidenceRow {
+                    label: I18n.tr(I18n.lang, "review.contract");
+                    value: ReviewModel.has-contract ? ReviewModel.contract-name : I18n.tr(I18n.lang, "review.contract.none");
+                }
+                EvidenceRow {
+                    label: I18n.tr(I18n.lang, "review.state");
+                    value: ReviewModel.state-label;
+                }
+                EvidenceRow {
+                    label: I18n.tr(I18n.lang, "review.frame_hash");
+                    value: ReviewModel.frame-sha;
+                }
+                EvidenceRow {
+                    label: I18n.tr(I18n.lang, "review.golden_hash");
+                    value: ReviewModel.golden-sha;
+                }
+                EvidenceRow {
+                    label: I18n.tr(I18n.lang, "review.lit_pixels");
+                    value: ReviewModel.has-contract
+                        ? "\{ReviewModel.lit-pixels} / \{ReviewModel.golden-lit}"
+                        : "\{ReviewModel.lit-pixels}";
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 4px;
+                SectionTitle { text: I18n.tr(I18n.lang, "review.elements"); }
+                if ReviewModel.elements.length == 0: Caption { text: I18n.tr(I18n.lang, "review.elements_empty"); }
+                ListView {
+                    vertical-stretch: 1;
+                    for element in ReviewModel.elements: HorizontalLayout {
+                        spacing: 6px;
+                        Text { text: element.id; width: 108px; font-size: Metrics.font-small; color: Theme.text-primary; overflow: elide; }
+                        Text { text: element.kind; width: 76px; font-size: Metrics.font-small; color: Theme.text-secondary; overflow: elide; }
+                        Text { text: element.geometry; horizontal-stretch: 1; font-size: Metrics.font-small; color: Theme.text-muted; font-family: "Consolas"; }
+                    }
+                }
+            }
         }
     }
     Panel {

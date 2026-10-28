@@ -380,6 +380,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         Always,
     ),
     cmd(
+        "view.gallery",
+        "view.gallery",
+        "gallery",
+        Some("Ctrl+Shift+L"),
+        true,
+        true,
+        Project,
+    ),
+    cmd(
         "reset-workspace",
         "view.reset_workspace",
         "reset-workspace",
@@ -387,6 +396,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         false,
         true,
         Always,
+    ),
+    cmd(
+        "file.review_pack",
+        "action.review_pack",
+        "review-pack",
+        None,
+        false,
+        true,
+        Project,
     ),
     // Tools
     cmd(
@@ -548,7 +566,7 @@ pub const COMMANDS: &[CommandSpec] = &[
 ];
 
 /// Configurable shortcut ids, in Preferences display order.
-pub const CONFIGURABLE: [&str; 8] = [
+pub const CONFIGURABLE: [&str; 9] = [
     "preferences.open",
     "workspace.canvas_only",
     "project.save",
@@ -557,6 +575,7 @@ pub const CONFIGURABLE: [&str; 8] = [
     "pixel.pencil",
     "pixel.select",
     "pixel.fill",
+    "view.gallery",
 ];
 
 /// Normalised shortcut text for comparisons (`ctrl+s` == `Ctrl+S`).

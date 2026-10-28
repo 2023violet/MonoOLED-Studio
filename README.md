@@ -41,6 +41,10 @@ Windows PowerShell 中可以用 `Get-FileHash <文件> -Algorithm SHA256` 计算
 - 选择、多选、框选、对齐、分布、复制、锁定、撤销/重做。
 - 管理多个 Screen，切换、删除或关闭前保护未保存的修改。
 - 预览、校验和导出使用同一个渲染器。
+- 设备预览：2× 设备外框、真实播放（60 ms 步进）、Play/Pause/Step/Reset 和逐帧事件流。播放、预设切换只改变运行态，不会把场景标记为已修改，也不会进入导出。
+- 状态预设与命名场景：初始状态、每个枚举的非初值、每个整数的上下界都由 schema 派生；当前状态可以保存为命名场景。
+- 批注：缺陷 / 待确认 / 说明三类，锚定到界面、状态和选中元素，并记录该帧的 SHA-256 与点亮像素数；帧变化后显示"已过期"。
+- 界面画廊（`Ctrl+Shift+L`）：一屏一张初始帧卡片，按类别分组，可搜索并按全部/有阻断/有批注过滤，直接打开到 Designer 或差异评审。
 
 ### Pixel Studio：像素级编辑
 
@@ -85,6 +89,7 @@ Windows PowerShell 中可以用 `Get-FileHash <文件> -Algorithm SHA256` 计算
 - 只监听本机回环地址，每次会话使用随机令牌，素材不会上传到任何服务器。
 - 支持 revision 校验、事务、异步任务，写入的文件限制在项目目录内。
 - 桌面程序中通过"工具 → Code AI Bridge"开启，并与正在编辑的 Designer 会话共享状态。也可以用命令行单独运行。
+- 差异评审工作区可以在"设备"和"代码"之间切换：像素差异、C 数组、VLSB 十六进制，以及帧哈希与 `ui_contract.json` 黄金哈希的比对结果。
 
 完整契约见 [Automation API 文档](docs/AUTOMATION_API_V1.md)。
 
@@ -94,8 +99,11 @@ Windows PowerShell 中可以用 `Get-FileHash <文件> -Algorithm SHA256` 计算
 mono validate --project path/to/project.oled.json
 mono export --project path/to/project.oled.json --output out/
 mono handoff --project path/to/project.oled.json --output handoff.zip
+mono review-pack --project path/to/project.oled.json --output review/review.html
 mono bridge --project path/to/project.oled.json --permission edit
 ```
+
+`mono review-pack` 生成一个可离线打开的单文件评审包：每屏初始帧与带批注的状态、原始 VLSB、SHA-256、校验结果、可见元素、C 数组和注释。相同输入两次生成的字节完全相同；格式与边界见 [评审包文档](docs/REVIEW_PACK.md)。桌面程序里对应"文件 → 评审包（HTML）"。
 
 命令行工具随每个发布包一起提供：Windows 的 zip 内是 `mono.exe`，macOS 在 `MonoOLED Studio.app/Contents/MacOS/mono`，Linux 安装后为 `monooled-cli`（`/usr/bin/mono` 属于 Mono 运行时，因此改名）。
 
@@ -117,6 +125,8 @@ mono validate --project path/to/project.oled.json --json
 
 - 输出目标是单色 1-bit 位图，不是通用的彩色图片编辑器。不支持 GIF。
 - 内置取模模板是确定性的编码预设。它们是否匹配你的硬件，仍需要用已知正确的数组和实际屏幕来验证。
+- 2.3.0 不模拟按键或硬件事件、电机/蜂鸣/BLE/电源指示灯：状态来自显式预设与时间线，界面中写明了这一"模拟器边界"。
+- 本产品只有一个渲染器，评审包与评审工作区都不声称"第二实现逐字节对拍"（L2）；它们比对的是同一渲染器的 SHA-256 与导出契约。
 - 2.0 的已知限制（未达标的性能预算、未签名的 macOS 应用等）见 [CHANGELOG](CHANGELOG.md)。
 
 ## 文档

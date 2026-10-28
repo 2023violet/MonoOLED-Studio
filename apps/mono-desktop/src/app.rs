@@ -2,24 +2,29 @@
 //! sync. Every UI callback goes through `App`; Slint models are rebuilt from
 //! the session after each change (the scene JSON stays the single truth).
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use mono_core::CoreError;
+use mono_core::c_header::framebuffer_to_c_header;
 use mono_core::pixel::PixelDocument;
-use mono_core::pyvalue::py_str;
+use mono_core::pyvalue::{py_int, py_str};
 use mono_core::render::posix;
+use mono_core::runtime::VecRuntimeLog;
 use mono_core::state::{IntegerPolicy, build_export_states};
 use mono_project::editor::{
     EditorSession, Selection, align_to, distribute, selection_metrics, smart_guides, snap_positions,
 };
 use mono_project::export::{
-    Finding, build_handoff_package, check_design_rules, export_scene, matrix_report,
-    validate_matrix,
+    Finding, build_handoff_package, check_design_rules, export_scene, frame_for_state,
+    matrix_report, validate_matrix,
 };
 use mono_project::project::{ProjectWorkspace, create_project};
-use mono_project::resources::DiskResources;
+use mono_project::resources::{DiskResources, hex_digest};
+use mono_project::review::{Annotation, AnnotationKind, Evidence, ReviewStore, Scenario};
+use mono_project::review_pack::build_review_pack;
 use mono_project::scene_io::{SceneDoc, load_project_scene, load_scene};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use slint::{Global, ModelRc, SharedString, VecModel};
 
 use crate::agent::{Agent, BridgePermission};
@@ -27,14 +32,17 @@ use crate::bgjob::{BackgroundJob, Outcome, Poll};
 use crate::canvas::image_from_pixels;
 use crate::extras::{Picker, Profiler};
 use crate::fontlab::FontLab;
+use crate::gallery::{GalleryCard, GalleryJob};
 use crate::i18n::{tr, trf};
 use crate::pixel::{PixelOrigin, PixelStudio};
 use crate::pixel_ui::ImportState;
 use crate::prefs::Preferences;
+use crate::preview::{Preview, timeline_continues};
 use crate::workbench::Workbench;
 use crate::{
-    AppModel, AssetItem, DesignerModel, DocTab, ElementItem, FindingItem, MainWindow, OverlayBox,
-    PillTone, ScreenItem, StateVar,
+    AppModel, AssetItem, DesignerModel, DocTab, ElementItem, EventItem, FindingItem, GalleryItem,
+    GalleryModel, MainWindow, NoteItem, NoteModel, OverlayBox, PillTone, PresetItem, ReviewElement,
+    ReviewModel, ScreenItem, StateVar,
 };
 
 const ZOOM_STEPS: [f32; 8] = [0.0, 1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0];
@@ -51,6 +59,7 @@ pub enum Prompt {
     GlyphCharacters,
     ProfileId,
     ProfileName(String),
+    ScenarioName,
 }
 
 struct Drag {
@@ -58,6 +67,49 @@ struct Drag {
     applied: (i64, i64),
     ids: Vec<String>,
     moved: bool,
+}
+
+/// A one-click jump in the State tab: reset, then apply `set`.
+#[derive(Debug, Clone)]
+pub struct Preset {
+    pub label: String,
+    pub set: Map<String, Value>,
+    pub reset_first: bool,
+}
+
+/// The annotation being written; the anchor and evidence are fixed when the
+/// dialog opens so editing the canvas later cannot silently re-point it.
+#[derive(Debug, Clone)]
+pub struct NoteDraft {
+    pub id: Option<String>,
+    pub screen: String,
+    pub state: Map<String, Value>,
+    pub element: Option<String>,
+    pub evidence: Evidence,
+}
+
+/// One render used by both the pixel diff and the code/evidence panel.
+struct ReviewRender {
+    pixels: Vec<u8>,
+    width: usize,
+    height: usize,
+    elements: Vec<Value>,
+    vlsb: Option<Vec<u8>>,
+    c_header: Option<String>,
+}
+
+/// Evidence for the Review panel; pure so it can be asserted without a UI.
+#[derive(Debug, Clone)]
+struct EvidenceView {
+    state_label: String,
+    status: &'static str,
+    frame_sha: String,
+    golden_sha: String,
+    lit: usize,
+    golden_lit: u64,
+    elements: Vec<ReviewElement>,
+    code_c: String,
+    code_hex: String,
 }
 
 pub struct App {
@@ -90,6 +142,33 @@ pub struct App {
     pub last_autosave: std::time::Instant,
     pub agent: Option<Agent>,
     pub pending_permission: BridgePermission,
+    /// Playback clock and the runtime event feed shown in Designer.
+    pub preview: Preview,
+    /// Annotations and named scenarios for the open project (`review/review.json`).
+    pub review: Option<ReviewStore>,
+    /// Presets shown in the State tab, matching the Slint model order.
+    pub presets: Vec<Preset>,
+    /// The annotation being written, if the dialog is open.
+    pub note_draft: Option<NoteDraft>,
+    /// Evidence for the frame currently on the canvas (annotation staleness).
+    pub frame_evidence: Option<Evidence>,
+    /// Exported contract backing the Review evidence panel.
+    pub contract: Option<Value>,
+    pub contract_path: Option<PathBuf>,
+    /// Contract written by the running export; adopted when that job finishes.
+    pub pending_contract: Option<PathBuf>,
+    /// Review view: 0 device diff, 1 code/hex.
+    pub review_mode: i32,
+    /// SHA-256 of the frame shown in Review (copy target).
+    pub review_sha: String,
+    /// Screen gallery cards, the worker building them, and the scene stamp
+    /// they were built from.
+    pub gallery_cards: Vec<GalleryCard>,
+    pub gallery_job: Option<GalleryJob>,
+    pub gallery_stamp: Option<u64>,
+    pub gallery_query: String,
+    pub gallery_filter: i32,
+    pub gallery_visible: bool,
     /// False for screenshots, benches and tests: never block on a dialog.
     pub interactive: bool,
     /// Answer used for unsaved-changes questions when not interactive.
@@ -162,6 +241,22 @@ impl App {
             last_autosave: std::time::Instant::now(),
             agent: None,
             pending_permission: BridgePermission::default(),
+            preview: Preview::default(),
+            review: None,
+            presets: Vec::new(),
+            note_draft: None,
+            frame_evidence: None,
+            contract: None,
+            contract_path: None,
+            pending_contract: None,
+            review_mode: 0,
+            review_sha: String::new(),
+            gallery_cards: Vec::new(),
+            gallery_job: None,
+            gallery_stamp: None,
+            gallery_query: String::new(),
+            gallery_filter: 0,
+            gallery_visible: false,
             interactive: false,
             scripted_choice: None,
             display_draft: Default::default(),
@@ -214,6 +309,10 @@ impl App {
         self.font = None;
         self.project = Some(project);
         self.bind_scene(scene)?;
+        self.review = self.load_review();
+        self.contract = None;
+        self.contract_path = None;
+        self.discover_contract();
         self.scan_project_files();
         self.bench_load_active();
         let blockers = self.findings.iter().filter(|f| f.is_blocking()).count();
@@ -233,6 +332,9 @@ impl App {
         let scene = load_scene(path, None)?;
         self.font = None;
         self.project = None;
+        self.review = None;
+        self.contract = None;
+        self.contract_path = None;
         self.bind_scene(scene)?;
         self.scan_project_files();
         self.bench_load_active();
@@ -521,6 +623,8 @@ impl App {
         self.refresh_canvas();
         self.refresh_review();
         self.refresh_inspector();
+        self.refresh_presets();
+        self.refresh_notes();
         self.refresh_validation();
         self.refresh_app();
     }
@@ -718,6 +822,14 @@ impl App {
                 let fb = &result.framebuffer;
                 let lit = fb.pixels().iter().filter(|v| **v != 0).count();
                 let bytes = fb.width() * fb.height().div_ceil(8);
+                if let Ok(vlsb) = fb.to_vlsb() {
+                    self.frame_evidence = Some(Evidence {
+                        sha256: hex_digest(&vlsb),
+                        lit_pixels: lit,
+                        frame: None,
+                        source: "designer".into(),
+                    });
+                }
                 dm.set_canvas(image_from_pixels(fb.width(), fb.height(), fb.pixels()));
                 dm.set_doc_w(fb.width() as i32);
                 dm.set_doc_h(fb.height() as i32);
@@ -810,22 +922,27 @@ impl App {
     pub fn refresh_review(&mut self) {
         let lang = self.lang.clone();
         let Some(ui) = self.ui.upgrade() else { return };
-        let rm = crate::ReviewModel::get(&ui);
+        let rm = ReviewModel::get(&ui);
         let blank = image_from_pixels(1, 1, &[0]);
+        rm.set_mode(self.review_mode);
         let rendered = self.session.as_mut().map(|session| match session.render() {
             Ok(result) => {
                 let fb = result.framebuffer;
-                Ok((
-                    fb.pixels().to_vec(),
-                    fb.width().max(1),
-                    fb.height().max(1),
-                    session
+                let vlsb = fb.to_vlsb().ok();
+                let c_header = framebuffer_to_c_header(&fb, "ui_frame").ok();
+                Ok(ReviewRender {
+                    pixels: fb.pixels().to_vec(),
+                    width: fb.width().max(1),
+                    height: fb.height().max(1),
+                    elements: session
                         .scene()
                         .get("elements")
                         .and_then(Value::as_array)
                         .cloned()
                         .unwrap_or_default(),
-                ))
+                    vlsb,
+                    c_header,
+                })
             }
             Err(error) => Err(error.message),
         });
@@ -848,10 +965,11 @@ impl App {
             rm.set_added(model(Vec::new()));
             rm.set_removed(model(Vec::new()));
             rm.set_modified(model(Vec::new()));
+            self.refresh_evidence(&rm, None);
             return;
         };
-        let (pixels, width, height, current_elements) = match rendered {
-            Ok(data) => data,
+        let render = match rendered {
+            Ok(render) => render,
             Err(message) => {
                 rm.set_has_baseline(false);
                 rm.set_summary(ss(format!(
@@ -859,9 +977,16 @@ impl App {
                     tr(&lang, "status.render_failed"),
                     message
                 )));
+                self.refresh_evidence(&rm, None);
                 return;
             }
         };
+        let (pixels, width, height, current_elements) = (
+            render.pixels.as_slice(),
+            render.width,
+            render.height,
+            render.elements.as_slice(),
+        );
         let (bw, bh) = self.baseline_size;
         let has_baseline = !self.baseline_pixels.is_empty();
         rm.set_baseline(if has_baseline {
@@ -869,14 +994,14 @@ impl App {
         } else {
             blank.clone()
         });
-        rm.set_current(image_from_pixels(width, height, &pixels));
+        rm.set_current(image_from_pixels(width, height, pixels));
         rm.set_baseline_w(bw as i32);
         rm.set_baseline_h(bh as i32);
         rm.set_current_w(width as i32);
         rm.set_current_h(height as i32);
         rm.set_has_baseline(has_baseline);
-        let changed = mono_core::diff::changed_count(&pixels, &self.baseline_pixels);
-        let bbox = mono_core::diff::changed_bbox(&pixels, &self.baseline_pixels, width, height);
+        let changed = mono_core::diff::changed_count(pixels, &self.baseline_pixels);
+        let bbox = mono_core::diff::changed_bbox(pixels, &self.baseline_pixels, width, height);
         let total = pixels.len().max(1);
         let percent = changed as f64 * 100.0 / total as f64;
         rm.set_changed(changed as i32);
@@ -957,6 +1082,423 @@ impl App {
         rm.set_added(model(added.into_iter().map(ss).collect()));
         rm.set_removed(model(removed.into_iter().map(ss).collect()));
         rm.set_modified(model(modified.into_iter().map(ss).collect()));
+        self.refresh_evidence(&rm, Some(&render));
+    }
+
+    /// Device/code evidence: the live frame hash against the exported contract
+    /// for the same state. Nothing here is inferred; every badge points at a
+    /// hash recorded by the renderer or by `ui_contract.json`.
+    fn refresh_evidence(&mut self, rm: &ReviewModel, render: Option<&ReviewRender>) {
+        let view = self.evidence_view(render);
+        rm.set_state_label(ss(&view.state_label));
+        rm.set_has_contract(self.contract.is_some());
+        rm.set_contract_name(ss(self.contract_name()));
+        rm.set_contract_status(ss(view.status));
+        rm.set_frame_sha(ss(&view.frame_sha));
+        rm.set_golden_sha(ss(&view.golden_sha));
+        rm.set_hash_match(view.status == "golden-match");
+        rm.set_lit_pixels(view.lit as i32);
+        rm.set_golden_lit(view.golden_lit as i32);
+        rm.set_elements(model(view.elements));
+        rm.set_code_c(ss(&view.code_c));
+        rm.set_code_hex(ss(&view.code_hex));
+        self.review_sha = view.frame_sha;
+    }
+
+    fn evidence_view(&self, render: Option<&ReviewRender>) -> EvidenceView {
+        let state = self.current_state_map();
+        let (frame_sha, lit, code_hex) = match render.and_then(|render| render.vlsb.as_ref()) {
+            Some(vlsb) => (
+                hex_digest(vlsb),
+                vlsb.iter().map(|byte| byte.count_ones() as usize).sum(),
+                crate::workbench::hex_spaced(vlsb),
+            ),
+            None => (String::new(), 0, String::new()),
+        };
+        let frame = self
+            .contract
+            .as_ref()
+            .and_then(|contract| frame_for_state(contract, &state));
+        let golden_sha = frame
+            .and_then(|frame| frame.get("golden_sha256"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let golden_lit = frame
+            .and_then(|frame| frame.get("lit_pixels"))
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let status = if self.contract.is_none() {
+            "no-contract"
+        } else if frame.is_none() {
+            "not-exported"
+        } else if golden_sha == frame_sha {
+            "golden-match"
+        } else {
+            "frame-changed"
+        };
+        EvidenceView {
+            state_label: Self::state_label(&state),
+            status,
+            frame_sha,
+            golden_sha,
+            lit,
+            golden_lit,
+            elements: frame.map(contract_elements).unwrap_or_default(),
+            code_c: render
+                .and_then(|render| render.c_header.clone())
+                .unwrap_or_default(),
+            code_hex,
+        }
+    }
+
+    fn contract_name(&self) -> String {
+        self.contract_path
+            .as_deref()
+            .map(|path| self.display_path(path))
+            .unwrap_or_default()
+    }
+
+    /// 0 = device diff, 1 = code/hex.
+    pub fn set_review_mode(&mut self, mode: i32) {
+        self.review_mode = mode.clamp(0, 1);
+        if let Some(ui) = self.ui.upgrade() {
+            ReviewModel::get(&ui).set_mode(self.review_mode);
+        }
+    }
+
+    /// Adopt a `ui_contract.json` from disk (Review evidence panel).
+    pub fn load_contract(&mut self, path: &Path) -> Result<(), CoreError> {
+        self.adopt_contract(path)?;
+        self.set_status(self.t("review.contract_loaded"));
+        self.refresh_review();
+        Ok(())
+    }
+
+    pub fn load_contract_dialog(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title(self.t("review.load_contract"))
+            .add_filter("ui_contract.json", &["json"])
+            .pick_file()
+        else {
+            return;
+        };
+        if let Err(error) = self.load_contract(&path) {
+            self.error(&error);
+        }
+    }
+
+    /// Pick up `<root>/exports/latest/ui_contract.json` when present.
+    pub fn discover_contract(&mut self) {
+        if self.contract.is_some() {
+            return;
+        }
+        let Some(root) = self.project_root() else {
+            return;
+        };
+        for candidate in [
+            root.join("exports/latest/ui_contract.json"),
+            root.join("exports/ui_contract.json"),
+        ] {
+            if candidate.is_file() && self.adopt_contract(&candidate).is_ok() {
+                return;
+            }
+        }
+    }
+
+    fn adopt_contract(&mut self, path: &Path) -> Result<(), CoreError> {
+        let text = std::fs::read_to_string(path).map_err(|error| {
+            CoreError::new("E-REVIEW-CONTRACT", format!("{}: {error}", posix(path)))
+        })?;
+        let value: Value = serde_json::from_str(&text).map_err(|error| {
+            CoreError::new("E-REVIEW-CONTRACT", format!("{}: {error}", posix(path)))
+        })?;
+        if value.get("frames").and_then(Value::as_object).is_none() {
+            return Err(CoreError::new(
+                "E-REVIEW-CONTRACT",
+                format!("{}: {}", posix(path), self.t("review.contract_invalid")),
+            ));
+        }
+        self.contract = Some(value);
+        self.contract_path = Some(path.to_path_buf());
+        Ok(())
+    }
+
+    pub fn copy_frame_hash(&mut self) {
+        if self.review_sha.is_empty() {
+            return;
+        }
+        match arboard::Clipboard::new()
+            .and_then(|mut clipboard| clipboard.set_text(self.review_sha.clone()))
+        {
+            Ok(()) => self.set_status(self.t("review.hash_copied")),
+            Err(error) => self.error(&CoreError::new("E-CLIPBOARD", error.to_string())),
+        }
+    }
+
+    // --------------------------------------------------------- review pack
+
+    pub fn review_pack_dialog(&mut self) -> Result<(), CoreError> {
+        let Some(root) = self.project_root() else {
+            return Ok(());
+        };
+        let directory = root.join("review");
+        let Some(path) = rfd::FileDialog::new()
+            .set_title(self.t("action.review_pack"))
+            .set_directory(directory)
+            .set_file_name("review.html")
+            .add_filter("HTML", &["html"])
+            .save_file()
+        else {
+            return Ok(());
+        };
+        self.start_review_pack(path)
+    }
+
+    pub fn start_review_pack(&mut self, output: PathBuf) -> Result<(), CoreError> {
+        let Some(project) = self.project.clone() else {
+            return Ok(());
+        };
+        let annotations = self
+            .review
+            .as_ref()
+            .map(ReviewStore::annotations)
+            .unwrap_or_default();
+        let lang = self.lang.clone();
+        self.start_background("action.review_pack", move |progress| {
+            let summary = build_review_pack(&project, &annotations, &output, progress)?;
+            Ok(Outcome {
+                status: trf(
+                    &lang,
+                    "status.review_pack",
+                    &[
+                        ("frames", summary.frames.to_string()),
+                        ("path", posix(&summary.output)),
+                    ],
+                ),
+                log: vec![format!(
+                    "REVIEW_PACK {} {}",
+                    posix(&summary.output),
+                    summary.sha256
+                )],
+                refresh: false,
+            })
+        })
+    }
+
+    // ------------------------------------------------------------- gallery
+
+    pub fn toggle_gallery(&mut self) {
+        if self.gallery_visible {
+            self.close_gallery();
+        } else {
+            self.open_gallery();
+        }
+    }
+
+    pub fn open_gallery(&mut self) {
+        self.gallery_visible = true;
+        self.gallery_query.clear();
+        self.gallery_filter = 0;
+        if let Some(ui) = self.ui.upgrade() {
+            let model_handle = GalleryModel::get(&ui);
+            model_handle.set_visible(true);
+            model_handle.set_query(ss(""));
+            model_handle.set_filter(0);
+        }
+        self.refresh_gallery();
+    }
+
+    pub fn close_gallery(&mut self) {
+        self.gallery_visible = false;
+        if let Some(ui) = self.ui.upgrade() {
+            GalleryModel::get(&ui).set_visible(false);
+        }
+    }
+
+    /// Rebuild rows from the cached cards, or start a build when the scene
+    /// changed since the cards were rendered.
+    pub fn refresh_gallery(&mut self) {
+        self.ensure_gallery();
+        self.fill_gallery();
+    }
+
+    fn ensure_gallery(&mut self) {
+        if self.gallery_job.is_some() {
+            return;
+        }
+        let Some(project) = self.project.clone() else {
+            self.gallery_cards.clear();
+            self.gallery_stamp = None;
+            return;
+        };
+        let stamp = self.gallery_stamp_value();
+        if self.gallery_stamp == Some(stamp) {
+            return;
+        }
+        self.gallery_cards.clear();
+        self.gallery_stamp = Some(stamp);
+        let annotations = self
+            .review
+            .as_ref()
+            .map(ReviewStore::counts_by_screen)
+            .unwrap_or_default();
+        self.gallery_job = Some(GalleryJob::spawn(project, annotations));
+    }
+
+    pub fn gallery_tick(&mut self) {
+        let Some(job) = &self.gallery_job else { return };
+        let Some(result) = job.poll() else { return };
+        self.gallery_job = None;
+        match result {
+            Ok(cards) => {
+                self.gallery_cards = cards;
+                if self.gallery_visible {
+                    self.fill_gallery();
+                }
+            }
+            Err(error) => self.error(&error),
+        }
+    }
+
+    pub fn gallery_search(&mut self, query: &str) {
+        self.gallery_query = query.to_string();
+        self.fill_gallery();
+    }
+
+    pub fn gallery_set_filter(&mut self, filter: i32) {
+        self.gallery_filter = filter.clamp(0, 2);
+        self.fill_gallery();
+    }
+
+    /// Open a card in Designer (unsaved guard first), then reset the runtime so
+    /// the canvas shows the init frame the card promised.
+    pub fn gallery_open_screen(&mut self, screen: &str) -> Result<(), CoreError> {
+        self.close_gallery();
+        self.open_screen(screen)?;
+        self.preview_reset()
+    }
+
+    fn gallery_stamp_value(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        if let Some(project) = &self.project {
+            project.path.hash(&mut hasher);
+            project.screens().len().hash(&mut hasher);
+        }
+        if let Some(session) = &self.session {
+            session.fingerprint().hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    fn fill_gallery(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let gm = GalleryModel::get(&ui);
+        if self.gallery_job.is_some() && self.gallery_cards.is_empty() {
+            gm.set_summary(ss(self.t("gallery.rendering")));
+            gm.set_truncated(false);
+            gm.set_items(model(Vec::new()));
+            return;
+        }
+        let lang = self.lang.clone();
+        let query = self.gallery_query.to_lowercase();
+        let filter = self.gallery_filter;
+        let visible: Vec<&GalleryCard> = self
+            .gallery_cards
+            .iter()
+            .filter(|card| {
+                let hit = query.is_empty()
+                    || card.label.to_lowercase().contains(&query)
+                    || card.id.to_lowercase().contains(&query)
+                    || card.category.to_lowercase().contains(&query);
+                let keep = match filter {
+                    1 => card.blockers > 0,
+                    2 => card.annotations > 0,
+                    _ => true,
+                };
+                hit && keep
+            })
+            .collect();
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for card in &visible {
+            *counts.entry(card.category.as_str()).or_default() += 1;
+        }
+        let mut rows = Vec::new();
+        let mut current: Option<&str> = None;
+        for card in visible {
+            if current != Some(card.category.as_str()) {
+                let count = counts.get(card.category.as_str()).copied().unwrap_or(0);
+                rows.push(GalleryItem {
+                    header: true,
+                    title: ss(&card.category),
+                    detail: ss(trf(
+                        &lang,
+                        "gallery.category",
+                        &[("count", count.to_string())],
+                    )),
+                    badge: ss(""),
+                    bad: false,
+                    screen: ss(""),
+                    image: Default::default(),
+                });
+                current = Some(card.category.as_str());
+            }
+            rows.push(GalleryItem {
+                header: false,
+                title: ss(&card.label),
+                detail: ss(trf(
+                    &lang,
+                    "gallery.card",
+                    &[
+                        ("id", card.id.clone()),
+                        ("blockers", card.blockers.to_string()),
+                        ("warnings", card.warnings.to_string()),
+                        ("notes", card.annotations.to_string()),
+                    ],
+                )),
+                badge: ss(if card.blockers > 0 {
+                    trf(
+                        &lang,
+                        "gallery.blockers",
+                        &[("count", card.blockers.to_string())],
+                    )
+                } else {
+                    tr(&lang, "gallery.valid")
+                }),
+                bad: card.blockers > 0,
+                screen: ss(&card.id),
+                image: card
+                    .image
+                    .as_ref()
+                    .map(|frame| image_from_pixels(frame.width, frame.height, &frame.pixels))
+                    .unwrap_or_default(),
+            });
+        }
+        let blockers: usize = self.gallery_cards.iter().map(|card| card.blockers).sum();
+        let notes: usize = self.gallery_cards.iter().map(|card| card.annotations).sum();
+        gm.set_summary(ss(trf(
+            &lang,
+            "gallery.summary",
+            &[
+                ("screens", self.gallery_cards.len().to_string()),
+                ("blocking", blockers.to_string()),
+                ("notes", notes.to_string()),
+            ],
+        )));
+        gm.set_truncated(self.gallery_cards.len() >= crate::gallery::MAX_SCREENS);
+        gm.set_items(model(rows));
+    }
+
+    fn display_path(&self, path: &Path) -> String {
+        if let Some(root) = self.project_root()
+            && let Ok(relative) = path.strip_prefix(&root)
+        {
+            return posix(relative);
+        }
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default()
     }
 
     pub fn refresh_inspector(&mut self) {
@@ -1071,6 +1613,26 @@ impl App {
                 ("unit", "step".into()),
             ],
         )));
+        dm.set_playing(self.preview.playing);
+        dm.set_preview_boundary(ss(tr(&self.lang, "preview.boundary")));
+        let reset_label = tr(&self.lang, "preview.event_reset");
+        let events: Vec<EventItem> = self
+            .preview
+            .events
+            .iter()
+            .rev()
+            .take(40)
+            .map(|event| EventItem {
+                at: ss(format!("t={}", event.at)),
+                kind: ss(event.kind.clone()),
+                detail: ss(if event.kind == "RESET" {
+                    reset_label.clone()
+                } else {
+                    format!("{}: {} → {}", event.name, event.before, event.after)
+                }),
+            })
+            .collect();
+        dm.set_events(model(events));
         let canvas = session.scene().get("canvas").cloned().unwrap_or(json!({}));
         dm.set_canvas_w_setting(canvas.get("w").and_then(Value::as_i64).unwrap_or(128) as i32);
         dm.set_canvas_h_setting(canvas.get("h").and_then(Value::as_i64).unwrap_or(32) as i32);
@@ -1144,6 +1706,404 @@ impl App {
         self.refresh_inspector();
         self.refresh_validation();
         self.refresh_app();
+    }
+
+    /// Advance the preview one timeline step and record what changed.
+    pub fn preview_step(&mut self) -> Result<(), CoreError> {
+        let mut log = VecRuntimeLog::default();
+        if let Some(session) = self.session.as_mut() {
+            session.step_logged(1, &mut log)?;
+        }
+        self.preview.absorb(log.take());
+        Ok(())
+    }
+
+    pub fn preview_reset(&mut self) -> Result<(), CoreError> {
+        let mut log = VecRuntimeLog::default();
+        if let Some(session) = self.session.as_mut() {
+            session.reset_runtime_logged(&mut log)?;
+        }
+        self.preview.clear();
+        self.preview.absorb(log.take());
+        Ok(())
+    }
+
+    /// Drive playback from the UI timer: at most one step per tick, and only
+    /// while the timeline still has work after the current position.
+    pub fn preview_tick(&mut self, now: std::time::Instant) -> bool {
+        if !self.preview.due(now) {
+            return false;
+        }
+        let continues = self
+            .session
+            .as_ref()
+            .is_some_and(|s| timeline_continues(s.scene(), s.elapsed));
+        if !continues {
+            self.preview.pause();
+            self.refresh_inspector();
+            return false;
+        }
+        self.preview.last_step = Some(now);
+        if self.preview_step().is_err() {
+            self.preview.pause();
+            return false;
+        }
+        self.refresh_canvas();
+        self.refresh_inspector();
+        true
+    }
+
+    fn load_review(&mut self) -> Option<ReviewStore> {
+        let root = self.project_root()?;
+        match ReviewStore::for_root(&root) {
+            Ok(store) => Some(store),
+            Err(error) => {
+                self.error(&error);
+                None
+            }
+        }
+    }
+
+    fn active_screen_id(&self) -> String {
+        self.project
+            .as_ref()
+            .map(|project| project.active_screen())
+            .unwrap_or_default()
+    }
+
+    fn current_state_map(&self) -> Map<String, Value> {
+        self.session
+            .as_ref()
+            .map(|session| session.state.clone())
+            .unwrap_or_default()
+    }
+
+    /// `battery=0, phase=running` with sorted keys; `init` when empty.
+    fn state_label(state: &Map<String, Value>) -> String {
+        let mut pairs: Vec<String> = state
+            .iter()
+            .map(|(name, value)| format!("{name}={}", py_str(value)))
+            .collect();
+        pairs.sort();
+        if pairs.is_empty() {
+            "init".into()
+        } else {
+            pairs.join(", ")
+        }
+    }
+
+    /// Rebuild the State-tab presets from the scene and the review sidecar.
+    pub fn refresh_presets(&mut self) {
+        let states = self
+            .session
+            .as_ref()
+            .and_then(|session| {
+                session
+                    .scene()
+                    .get("states")
+                    .and_then(Value::as_object)
+                    .cloned()
+            })
+            .unwrap_or_default();
+        let scenarios = self
+            .review
+            .as_ref()
+            .map(|store| store.scenarios())
+            .unwrap_or_default();
+        let presets = build_presets(&self.lang, &states, &scenarios);
+        if let Some(ui) = self.ui.upgrade() {
+            let items: Vec<PresetItem> = presets
+                .iter()
+                .enumerate()
+                .map(|(index, preset)| PresetItem {
+                    label: ss(preset.label.clone()),
+                    index: index as i32,
+                })
+                .collect();
+            DesignerModel::get(&ui).set_presets(model(items));
+        }
+        self.presets = presets;
+    }
+
+    fn note_rows(&mut self) -> Vec<NoteItem> {
+        if self.session.is_some()
+            && let Some(evidence) = self.compute_frame_evidence()
+        {
+            self.frame_evidence = Some(evidence);
+        }
+        let screen = self.active_screen_id();
+        let current = self.current_state_map();
+        let current_sha = self
+            .frame_evidence
+            .as_ref()
+            .map(|evidence| evidence.sha256.clone())
+            .unwrap_or_default();
+        match &self.review {
+            Some(store) => store
+                .annotations_for(&screen)
+                .into_iter()
+                .map(|note| {
+                    let same_state = note.state == current;
+                    NoteItem {
+                        id: ss(note.id),
+                        kind: ss(note.kind.as_str()),
+                        kind_label: ss(tr(
+                            &self.lang,
+                            &format!("notes.kind.{}", note.kind.as_str()),
+                        )),
+                        title: ss(note.title),
+                        anchor: ss(format!(
+                            "{} · {}",
+                            Self::state_label(&note.state),
+                            note.element.unwrap_or_else(|| "—".into())
+                        )),
+                        stale: same_state
+                            && !note.evidence.sha256.is_empty()
+                            && note.evidence.sha256 != current_sha,
+                        updated: ss(short_stamp(&note.updated_utc)),
+                    }
+                })
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+
+    pub fn refresh_notes(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let model_handle = NoteModel::get(&ui);
+        let screen = self.active_screen_id();
+        model_handle.set_can_add(self.review.is_some() && !screen.is_empty());
+        let labels: Vec<SharedString> = ["defect", "decision", "explanation"]
+            .iter()
+            .map(|kind| ss(tr(&self.lang, &format!("notes.kind.{kind}"))))
+            .collect();
+        model_handle.set_kind_labels(model(labels));
+        let rows = self.note_rows();
+        model_handle.set_items(model(rows));
+    }
+
+    /// Render the current frame when the canvas has not done it (headless tests,
+    /// or a note opened before the first paint).
+    fn compute_frame_evidence(&mut self) -> Option<Evidence> {
+        let result = self.session.as_mut()?.render().ok()?;
+        let vlsb = result.framebuffer.to_vlsb().ok()?;
+        Some(Evidence {
+            sha256: hex_digest(&vlsb),
+            lit_pixels: result
+                .framebuffer
+                .pixels()
+                .iter()
+                .filter(|v| **v != 0)
+                .count(),
+            frame: None,
+            source: "designer".into(),
+        })
+    }
+
+    pub fn begin_note(&mut self) -> Result<(), CoreError> {
+        if self.review.is_none() {
+            return Err(CoreError::new(
+                "E-REVIEW-NO-PROJECT",
+                self.t("notes.no_project"),
+            ));
+        }
+        let screen = self.active_screen_id();
+        if screen.is_empty() {
+            return Err(CoreError::new(
+                "E-REVIEW-NO-PROJECT",
+                self.t("notes.no_project"),
+            ));
+        }
+        let state = self.current_state_map();
+        let selection = self.selection.primary().map(str::to_string);
+        let evidence = match self.frame_evidence.clone() {
+            Some(evidence) => evidence,
+            None => self.compute_frame_evidence().unwrap_or_default(),
+        };
+        self.frame_evidence = Some(evidence.clone());
+        self.note_draft = Some(NoteDraft {
+            id: None,
+            screen: screen.clone(),
+            state: state.clone(),
+            element: selection.clone(),
+            evidence: evidence.clone(),
+        });
+        if let Some(ui) = self.ui.upgrade() {
+            let model_handle = NoteModel::get(&ui);
+            model_handle.set_dialog_title(ss(tr(&self.lang, "notes.dialog_add")));
+            model_handle.set_anchor(ss(note_anchor(&screen, &state, selection.as_deref())));
+            model_handle.set_evidence(ss(evidence_text(&self.lang, &evidence)));
+            model_handle.set_draft_title(ss(""));
+            model_handle.set_draft_body(ss(""));
+            model_handle.set_kind_index(0);
+            model_handle.set_error(ss(""));
+            model_handle.set_visible(true);
+        }
+        Ok(())
+    }
+
+    pub fn edit_note(&mut self, id: &str) -> Result<(), CoreError> {
+        let Some(note) = self
+            .review
+            .as_ref()
+            .and_then(|store| store.annotations().into_iter().find(|note| note.id == id))
+        else {
+            return Ok(());
+        };
+        self.note_draft = Some(NoteDraft {
+            id: Some(note.id.clone()),
+            screen: note.screen.clone(),
+            state: note.state.clone(),
+            element: note.element.clone(),
+            evidence: note.evidence.clone(),
+        });
+        if let Some(ui) = self.ui.upgrade() {
+            let model_handle = NoteModel::get(&ui);
+            model_handle.set_dialog_title(ss(tr(&self.lang, "notes.dialog_edit")));
+            model_handle.set_anchor(ss(note_anchor(
+                &note.screen,
+                &note.state,
+                note.element.as_deref(),
+            )));
+            model_handle.set_evidence(ss(evidence_text(&self.lang, &note.evidence)));
+            model_handle.set_draft_title(ss(note.title));
+            model_handle.set_draft_body(ss(note.body));
+            model_handle.set_kind_index(match note.kind {
+                AnnotationKind::Defect => 0,
+                AnnotationKind::Decision => 1,
+                AnnotationKind::Explanation => 2,
+            });
+            model_handle.set_error(ss(""));
+            model_handle.set_visible(true);
+        }
+        Ok(())
+    }
+
+    pub fn cancel_note(&mut self) {
+        self.note_draft = None;
+        if let Some(ui) = self.ui.upgrade() {
+            NoteModel::get(&ui).set_visible(false);
+        }
+    }
+
+    pub fn save_note(&mut self, title: &str, body: &str, kind_index: i32) -> Result<(), CoreError> {
+        let Some(draft) = self.note_draft.clone() else {
+            return Ok(());
+        };
+        let kind = match kind_index {
+            0 => AnnotationKind::Defect,
+            1 => AnnotationKind::Decision,
+            _ => AnnotationKind::Explanation,
+        };
+        let created = self
+            .review
+            .as_ref()
+            .and_then(|store| {
+                store
+                    .annotations()
+                    .into_iter()
+                    .find(|note| Some(&note.id) == draft.id.as_ref())
+            })
+            .map(|note| note.created_utc)
+            .unwrap_or_default();
+        let annotation = Annotation {
+            id: draft.id.clone().unwrap_or_default(),
+            kind,
+            screen: draft.screen.clone(),
+            state: draft.state.clone(),
+            element: draft.element.clone(),
+            title: title.to_string(),
+            body: body.to_string(),
+            evidence: draft.evidence.clone(),
+            created_utc: created,
+            updated_utc: String::new(),
+        };
+        match self.review.as_mut() {
+            Some(store) => store.upsert_annotation(annotation).map(|_| ())?,
+            None => {
+                return Err(CoreError::new(
+                    "E-REVIEW-NO-PROJECT",
+                    self.t("notes.no_project"),
+                ));
+            }
+        }
+        self.note_draft = None;
+        if let Some(ui) = self.ui.upgrade() {
+            NoteModel::get(&ui).set_visible(false);
+        }
+        self.set_status(self.t("notes.saved"));
+        self.refresh_notes();
+        Ok(())
+    }
+
+    pub fn delete_note(&mut self, id: &str) {
+        let result = match self.review.as_mut() {
+            Some(store) => store.remove_annotation(id),
+            None => Ok(false),
+        };
+        match result {
+            Ok(true) => {
+                self.set_status(self.t("notes.deleted"));
+                self.refresh_notes();
+            }
+            Ok(false) => {}
+            Err(error) => self.error(&error),
+        }
+    }
+
+    /// Apply a State-tab preset: optional reset, then every declared value.
+    pub fn apply_preset(&mut self, index: usize) -> Result<(), CoreError> {
+        let Some(preset) = self.presets.get(index).cloned() else {
+            return Ok(());
+        };
+        self.preview.pause();
+        let mut log = VecRuntimeLog::default();
+        if let Some(session) = self.session.as_mut() {
+            if preset.reset_first {
+                session.reset_runtime_logged(&mut log)?;
+            }
+            for (name, value) in &preset.set {
+                session.set_state_logged(name, value.clone(), &mut log)?;
+            }
+        }
+        if preset.reset_first {
+            self.preview.clear();
+        }
+        self.preview.absorb(log.take());
+        self.refresh_canvas();
+        self.refresh_inspector();
+        self.refresh_validation();
+        self.refresh_notes();
+        Ok(())
+    }
+
+    pub fn prompt_scenario(&mut self) {
+        let title = self.t("preview.save_scenario");
+        let label = self.t("preview.scenario_name");
+        self.show_prompt(Prompt::ScenarioName, &title, &label, "");
+    }
+
+    /// Save the current state as a named scenario in `review/review.json`.
+    pub fn save_scenario(&mut self, label: &str) -> Result<(), CoreError> {
+        if label.trim().is_empty() {
+            return Err(CoreError::invalid(self.t("preview.scenario_name_empty")));
+        }
+        let state = self.current_state_map();
+        let Some(store) = self.review.as_mut() else {
+            return Err(CoreError::new(
+                "E-REVIEW-NO-PROJECT",
+                self.t("notes.no_project"),
+            ));
+        };
+        store.upsert_scenario(Scenario {
+            id: String::new(),
+            label: label.trim().to_string(),
+            set: state,
+            created_utc: String::new(),
+        })?;
+        self.refresh_presets();
+        self.set_status(self.t("preview.scenario_saved"));
+        Ok(())
     }
 
     pub fn element_clicked(&mut self, id: &str, additive: bool) {
@@ -1421,15 +2381,17 @@ impl App {
                     let grid = self.prefs.int("canvas.snap").max(1);
                     self.session_ids(|s, ids| snap_positions(s, ids, grid))?;
                 }
-                "toggle-play" | "step" => {
-                    if let Some(s) = self.session.as_mut() {
-                        s.step(1)?;
-                    }
+                "toggle-play" => {
+                    self.preview.playing = !self.preview.playing;
+                    self.preview.last_step = self.preview.playing.then(std::time::Instant::now);
+                }
+                "step" => {
+                    self.preview.pause();
+                    self.preview_step()?;
                 }
                 "reset-runtime" => {
-                    if let Some(s) = self.session.as_mut() {
-                        s.reset_runtime()?;
-                    }
+                    self.preview.pause();
+                    self.preview_reset()?;
                 }
                 other if other.starts_with("align:") => {
                     let mode = &other[6..];
@@ -1541,6 +2503,7 @@ impl App {
                 .unwrap_or_default();
             vec![("current".to_string(), state)]
         };
+        self.pending_contract = Some(output.join("ui_contract.json"));
         let lang = self.lang.clone();
         self.start_background("action.export_all", move |progress| {
             let summary = export_scene(&scene, &root, &output, &states, progress)?;
@@ -1672,15 +2635,22 @@ impl App {
                         }
                         self.log_event(format!("JOB_DONE {label}"));
                         self.set_status(outcome.status);
+                        if let Some(path) = self.pending_contract.take() {
+                            let _ = self.adopt_contract(&path);
+                        }
                         if outcome.refresh {
                             self.refresh_app();
                         }
                     }
                     Err(e) if e.code == mono_project::export::CANCELLED => {
+                        self.pending_contract = None;
                         self.log_event(format!("JOB_CANCELLED {label}"));
                         self.set_status(trf(&self.lang, "job.cancelled", &[("label", label)]));
                     }
-                    Err(e) => self.error(&e),
+                    Err(e) => {
+                        self.pending_contract = None;
+                        self.error(&e);
+                    }
                 }
             }
         }
@@ -1708,6 +2678,100 @@ pub fn zoom_for(index: i32) -> f32 {
         .get(index.max(0) as usize)
         .copied()
         .unwrap_or(0.0)
+}
+
+/// Init, every non-init enum value and every int bound, then named scenarios.
+/// No semantic guessing: a "fault" preset only exists if the project declares
+/// that state.
+fn build_presets(lang: &str, states: &Map<String, Value>, scenarios: &[Scenario]) -> Vec<Preset> {
+    let mut presets: Vec<Preset> = vec![Preset {
+        label: tr(lang, "preview.preset_init"),
+        set: Map::new(),
+        reset_first: true,
+    }];
+    let mut state_names: Vec<&String> = states.keys().collect();
+    state_names.sort();
+    for name in state_names {
+        let spec = &states[name];
+        let init = spec.get("init").cloned().unwrap_or(Value::Null);
+        let mut values: Vec<&Value> = Vec::new();
+        if let Some(list) = spec.get("values").and_then(Value::as_array) {
+            values.extend(list.iter());
+        } else if spec.get("type").map(py_str).as_deref() == Some("int") {
+            values.extend([spec.get("min"), spec.get("max")].into_iter().flatten());
+        }
+        for value in values {
+            if *value == init || value.is_null() {
+                continue;
+            }
+            let mut set = Map::new();
+            set.insert(name.clone(), value.clone());
+            presets.push(Preset {
+                label: format!("{name} = {}", py_str(value)),
+                set,
+                reset_first: false,
+            });
+        }
+    }
+    for scenario in scenarios {
+        presets.push(Preset {
+            label: scenario.label.clone(),
+            set: scenario.set.clone(),
+            reset_first: true,
+        });
+    }
+    presets
+}
+
+/// Visible elements of an exported contract frame, as shown in Review.
+fn contract_elements(frame: &Value) -> Vec<ReviewElement> {
+    frame
+        .get("elements")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|element| element.get("visible") != Some(&Value::Bool(false)))
+        .map(|element| {
+            let number = |key: &str| element.get(key).and_then(py_int).unwrap_or(0);
+            ReviewElement {
+                id: ss(element.get("id").map(py_str).unwrap_or_default()),
+                kind: ss(element.get("type").map(py_str).unwrap_or_default()),
+                geometry: ss(format!(
+                    "{},{} · {}×{}",
+                    number("x"),
+                    number("y"),
+                    number("w"),
+                    number("h")
+                )),
+                visible: element.get("visible") == Some(&Value::Bool(true)),
+            }
+        })
+        .collect()
+}
+
+/// `screen · state · element`; no firmware file:line exists in this product.
+fn note_anchor(screen: &str, state: &Map<String, Value>, element: Option<&str>) -> String {
+    let base = format!("{screen} · {}", App::state_label(state));
+    match element {
+        Some(id) if !id.is_empty() => format!("{base} · {id}"),
+        _ => base,
+    }
+}
+
+fn short_stamp(iso: &str) -> String {
+    iso.chars()
+        .take(16)
+        .map(|c| if c == 'T' { ' ' } else { c })
+        .collect()
+}
+
+fn evidence_text(lang: &str, evidence: &Evidence) -> String {
+    let hash: String = evidence.sha256.chars().take(12).collect();
+    trf(
+        lang,
+        "notes.evidence",
+        &[("hash", hash), ("lit", evidence.lit_pixels.to_string())],
+    )
 }
 
 #[cfg(test)]
@@ -2061,6 +3125,321 @@ mod tests {
         assert_eq!(error.code, "E-ASSET-EXTERNAL-MODIFICATION");
         assert_eq!(std::fs::read(&path).unwrap(), b"changed outside the editor");
         assert!(app.pixel.doc.dirty);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn toggle_play_sets_playing() {
+        let (mut app, root) = project_app("preview-toggle");
+        assert!(!app.preview.playing);
+        app.action("toggle-play");
+        assert!(app.preview.playing);
+        app.action("toggle-play");
+        assert!(!app.preview.playing);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn step_pauses_playback_and_records_the_change() {
+        let (mut app, root) = project_app("preview-step");
+        app.action("toggle-play");
+        app.action("step");
+        assert!(!app.preview.playing);
+        for _ in 0..5 {
+            app.action("step");
+        }
+        assert!(
+            app.preview
+                .events
+                .iter()
+                .any(|e| e.kind == "STATE" && e.name == "phase" && e.after == "running")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn preview_tick_advances_one_step_per_interval() {
+        let (mut app, root) = project_app("preview-tick");
+        let interval = app.preview.interval;
+        let start = std::time::Instant::now();
+        app.preview.playing = true;
+        app.preview.last_step = Some(start);
+        assert!(!app.preview_tick(start));
+        assert!(app.preview_tick(start + interval));
+        assert_eq!(app.session.as_ref().unwrap().elapsed, 1);
+        assert!(!app.preview_tick(start + interval));
+        assert_eq!(app.session.as_ref().unwrap().elapsed, 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn playback_does_not_mark_the_scene_dirty() {
+        let (mut app, root) = project_app("preview-dirty");
+        let interval = app.preview.interval;
+        assert!(!app.session.as_ref().unwrap().dirty);
+        app.action("toggle-play");
+        let now = std::time::Instant::now();
+        app.preview.last_step = Some(now);
+        assert!(app.preview_tick(now + interval));
+        assert!(!app.session.as_ref().unwrap().dirty);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reset_clears_the_event_feed() {
+        let (mut app, root) = project_app("preview-reset");
+        // The fixture changes `phase` at t=5; earlier steps record nothing.
+        for _ in 0..5 {
+            app.action("step");
+        }
+        assert!(!app.preview.events.is_empty());
+        app.action("reset-runtime");
+        assert_eq!(app.preview.events.len(), 1);
+        assert_eq!(app.preview.events[0].kind, "RESET");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn note_uses_current_screen_state_and_frame_hash() {
+        let (mut app, root) = project_app("note-anchor");
+        select(&mut app, "running_icon");
+        app.begin_note().unwrap();
+        app.save_note("Battery clips", "at minimum", 0).unwrap();
+        let store = ReviewStore::for_root(&root).unwrap();
+        let notes = store.annotations_for("main");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].kind, AnnotationKind::Defect);
+        assert_eq!(notes[0].state["phase"], "standby");
+        assert_eq!(notes[0].element.as_deref(), Some("running_icon"));
+        assert_eq!(notes[0].evidence.sha256.len(), 64);
+        assert!(notes[0].evidence.lit_pixels > 0);
+        assert_eq!(notes[0].evidence.source, "designer");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn note_is_stale_when_the_frame_changes_in_the_same_state() {
+        let (mut app, root) = project_app("note-stale");
+        app.begin_note().unwrap();
+        app.save_note("first", "", 2).unwrap();
+        assert!(!app.note_rows()[0].stale);
+        select(&mut app, "battery");
+        app.geometry_edited("x", 20);
+        assert!(app.note_rows()[0].stale);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_note_removes_it_from_disk() {
+        let (mut app, root) = project_app("note-delete");
+        app.begin_note().unwrap();
+        app.save_note("gone", "", 1).unwrap();
+        let id = ReviewStore::for_root(&root).unwrap().annotations()[0]
+            .id
+            .clone();
+        app.delete_note(&id);
+        assert!(
+            ReviewStore::for_root(&root)
+                .unwrap()
+                .annotations()
+                .is_empty()
+        );
+        assert!(app.note_rows().is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn derived_presets_include_init_enum_values_and_int_bounds() {
+        let (app, root) = project_app("presets");
+        let states = app.session.as_ref().unwrap().scene()["states"]
+            .as_object()
+            .cloned()
+            .unwrap();
+        let presets = build_presets(&app.lang, &states, &[]);
+        assert_eq!(presets[0].label, "初始状态");
+        assert!(presets.iter().any(|p| p.label == "phase = running"));
+        assert!(presets.iter().any(|p| p.label == "battery = 0"));
+        assert!(presets.iter().any(|p| p.label == "seconds = 999"));
+        // The init value itself is not a preset.
+        assert!(!presets.iter().any(|p| p.label == "battery = 4"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn saved_scenario_applies_on_top_of_init() {
+        let (mut app, root) = project_app("scenario-apply");
+        app.state_edited("battery", "0");
+        app.save_scenario("Low battery").unwrap();
+        app.state_edited("battery", "4");
+        let index = app
+            .presets
+            .iter()
+            .position(|preset| preset.label == "Low battery")
+            .unwrap();
+        app.apply_preset(index).unwrap();
+        let state = &app.session.as_ref().unwrap().state;
+        assert_eq!(state["battery"], 0);
+        assert_eq!(state["phase"], "standby");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn preset_with_unknown_state_is_rejected() {
+        let (mut app, root) = project_app("preset-bad");
+        let mut set = Map::new();
+        set.insert("nope".into(), json!(1));
+        app.presets = vec![Preset {
+            label: "bad".into(),
+            set,
+            reset_first: true,
+        }];
+        let error = app.apply_preset(0).unwrap_err();
+        assert_eq!(error.code, "E-CORE-KEY");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn review_render(app: &mut App) -> ReviewRender {
+        let session = app.session.as_mut().unwrap();
+        let result = session.render().unwrap();
+        let fb = result.framebuffer;
+        let vlsb = fb.to_vlsb().ok();
+        let c_header = framebuffer_to_c_header(&fb, "ui_frame").ok();
+        ReviewRender {
+            pixels: fb.pixels().to_vec(),
+            width: fb.width().max(1),
+            height: fb.height().max(1),
+            elements: session
+                .scene()
+                .get("elements")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            vlsb,
+            c_header,
+        }
+    }
+
+    fn contract_for(app: &App, golden: &str) -> Value {
+        let mut state = app.current_state_map();
+        let frame = json!({
+            "state": Value::Object(std::mem::take(&mut state)),
+            "golden_sha256": golden,
+            "lit_pixels": 7,
+            "elements": [
+                {"id": "battery", "type": "image_seq", "visible": true, "x": 0, "y": 0, "w": 8, "h": 16},
+                {"id": "ghost", "type": "image", "visible": false, "x": 0, "y": 0, "w": 1, "h": 1},
+            ],
+        });
+        json!({"frames": {"current": frame}})
+    }
+
+    #[test]
+    fn review_evidence_reports_golden_match() {
+        let (mut app, root) = project_app("evidence-match");
+        let render = review_render(&mut app);
+        let sha = hex_digest(render.vlsb.as_ref().unwrap());
+        app.contract = Some(contract_for(&app, &sha));
+        let view = app.evidence_view(Some(&render));
+        assert_eq!(view.status, "golden-match");
+        assert_eq!(view.frame_sha, sha);
+        assert_eq!(view.golden_sha, sha);
+        assert_eq!(view.lit, 686);
+        assert_eq!(view.golden_lit, 7);
+        assert_eq!(view.elements.len(), 1);
+        assert_eq!(view.elements[0].id, "battery");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn review_evidence_reports_frame_changed() {
+        let (mut app, root) = project_app("evidence-changed");
+        let render = review_render(&mut app);
+        app.contract = Some(contract_for(&app, "00"));
+        let view = app.evidence_view(Some(&render));
+        assert_eq!(view.status, "frame-changed");
+        assert_ne!(view.golden_sha, view.frame_sha);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn review_evidence_handles_missing_contract() {
+        let (mut app, root) = project_app("evidence-none");
+        let render = review_render(&mut app);
+        let view = app.evidence_view(Some(&render));
+        assert_eq!(view.status, "no-contract");
+        assert_eq!(view.frame_sha.len(), 64);
+        let mut other = Map::new();
+        other.insert("nope".into(), json!(1));
+        let frame = json!({"state": other, "golden_sha256": "aa"});
+        app.contract = Some(json!({"frames": {"other": frame}}));
+        let view = app.evidence_view(Some(&render));
+        assert_eq!(view.status, "not-exported");
+        assert!(view.elements.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn review_code_and_hex_are_deterministic() {
+        let (mut app, root) = project_app("evidence-code");
+        let first = review_render(&mut app);
+        let second = review_render(&mut app);
+        let view = app.evidence_view(Some(&first));
+        assert_eq!(
+            view.code_hex,
+            crate::workbench::hex_spaced(first.vlsb.as_ref().unwrap())
+        );
+        assert_eq!(view.code_hex, app.evidence_view(Some(&second)).code_hex);
+        assert!(view.code_c.contains("ui_frame"));
+        assert_eq!(view.code_c, app.evidence_view(Some(&second)).code_c);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn discover_contract_adopts_the_latest_export() {
+        let (mut app, root) = project_app("evidence-discover");
+        let dir = root.join("exports/latest");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("ui_contract.json"),
+            json!({"frames": {"current": {"state": {}, "golden_sha256": "aa"}}}).to_string(),
+        )
+        .unwrap();
+        app.discover_contract();
+        assert!(app.contract.is_some());
+        assert_eq!(app.contract_name(), "exports/latest/ui_contract.json");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn gallery_open_screen_resets_runtime_state() {
+        let (mut app, root) = project_app("gallery-open");
+        app.preview_step().unwrap();
+        assert!(app.session.as_ref().unwrap().elapsed > 0);
+        app.gallery_open_screen("123").unwrap();
+        let session = app.session.as_ref().unwrap();
+        let init = mono_core::state::init_state(session.scene());
+        assert_eq!(session.state, init);
+        assert!(!app.preview.playing);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn gallery_cache_invalidates_after_edit() {
+        let (mut app, root) = project_app("gallery-cache");
+        app.gallery_stamp = Some(app.gallery_stamp_value());
+        app.gallery_cards = Vec::new();
+        let before = app.gallery_stamp;
+        // Scene edits change the stamp; runtime-only state changes do not.
+        if let Some(session) = app.session.as_mut() {
+            let elements = session.doc.data["elements"].as_array_mut().unwrap();
+            let element = elements[0].as_object_mut().unwrap();
+            let x = element.get("x").and_then(Value::as_i64).unwrap_or(0);
+            element.insert("x".into(), json!(x + 1));
+        }
+        app.refresh_gallery();
+        assert_ne!(app.gallery_stamp, before);
+        assert!(app.gallery_job.is_some());
+        app.gallery_job = None;
         let _ = std::fs::remove_dir_all(&root);
     }
 }

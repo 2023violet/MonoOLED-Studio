@@ -2,6 +2,7 @@
 import { ScrollView, LineEdit, SpinBox, ComboBox, CheckBox, ListView } from "std-widgets.slint";
 import { Theme, Metrics } from "theme.slint";
 import { Shell, I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, ListRow } from "widgets.slint";
+import { NoteList } from "notes.slint";
 
 export struct ScreenItem { id: string, label: string, active: bool }
 export struct ElementItem { id: string, kind: string, detail: string, selected: bool, hidden: bool, locked: bool }
@@ -9,6 +10,8 @@ export struct AssetItem { path: string, detail: string }
 export struct FindingItem { severity: string, code: string, label: string, message: string }
 export struct OverlayBox { id: string, x: int, y: int, w: int, h: int, selected: bool, primary: bool, hidden: bool }
 export struct StateVar { name: string, kind: string, value: string, options: [string], current: int, minimum: int, maximum: int }
+export struct EventItem { at: string, kind: string, detail: string }
+export struct PresetItem { label: string, index: int }
 
 export global DesignerModel {
     // Navigator
@@ -56,6 +59,9 @@ export global DesignerModel {
     in property <[StateVar]> states;
     in property <string> runtime-text;
     in property <bool> playing;
+    in property <string> preview-boundary;
+    in property <[EventItem]> events;
+    in property <[PresetItem]> presets;
     in property <int> canvas-w-setting: 128;
     in property <int> canvas-h-setting: 32;
     // Drawer
@@ -76,6 +82,8 @@ export global DesignerModel {
     callback canvas-key(string);
     callback canvas-size-edited(int, int);
     callback zoom-chosen(int);
+    callback preset-chosen(int);
+    callback preset-save();
 }
 
 component NumberField inherits HorizontalLayout {
@@ -369,7 +377,7 @@ component Inspector inherits Panel {
         padding: 10px;
         spacing: 8px;
         TabStrip {
-            items: [I18n.tr(I18n.lang, "panel.properties"), I18n.tr(I18n.lang, "preview.state"), I18n.tr(I18n.lang, "inspector.canvas")];
+            items: [I18n.tr(I18n.lang, "panel.properties"), I18n.tr(I18n.lang, "preview.state"), I18n.tr(I18n.lang, "inspector.canvas"), I18n.tr(I18n.lang, "notes.title")];
             current <=> DesignerModel.inspector-tab;
         }
         ScrollView {
@@ -443,6 +451,40 @@ component Inspector inherits Panel {
                 }
                 if DesignerModel.inspector-tab == 1: VerticalLayout {
                     spacing: 8px;
+                    SectionTitle { text: I18n.tr(I18n.lang, "preview.device"); }
+                    Rectangle {
+                        height: 84px;
+                        background: #000000;
+                        border-radius: 4px;
+                        border-width: 1px;
+                        border-color: Theme.border-normal;
+                        Image {
+                            source: DesignerModel.canvas;
+                            image-fit: contain;
+                            image-rendering: pixelated;
+                            width: parent.width - 16px;
+                            height: parent.height - 16px;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Button { text: DesignerModel.playing ? I18n.tr(I18n.lang, "action.pause") : I18n.tr(I18n.lang, "action.play"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("toggle-play"); } }
+                        Button { text: I18n.tr(I18n.lang, "action.step"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("step"); } }
+                        Button { text: I18n.tr(I18n.lang, "action.reset"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("reset-runtime"); } }
+                    }
+                    Caption { text: DesignerModel.runtime-text; }
+                    Caption { text: DesignerModel.preview-boundary; }
+                    Divider { }
+                    HorizontalLayout {
+                        SectionTitle { text: I18n.tr(I18n.lang, "preview.presets"); }
+                        Button { text: I18n.tr(I18n.lang, "preview.save_scenario"); shrink: true; clicked => { DesignerModel.preset-save(); } }
+                    }
+                    for preset in DesignerModel.presets: Button {
+                        text: preset.label;
+                        shrink: true;
+                        clicked => { DesignerModel.preset-chosen(preset.index); }
+                    }
+                    Divider { }
                     SectionTitle { text: I18n.tr(I18n.lang, "preview.state"); }
                     if DesignerModel.states.length == 0: Caption { text: I18n.tr(I18n.lang, "state.empty"); }
                     for state in DesignerModel.states: HorizontalLayout {
@@ -461,15 +503,15 @@ component Inspector inherits Panel {
                         }
                     }
                     Divider { }
-                    SectionTitle { text: I18n.tr(I18n.lang, "preview.timeline"); }
-                    Caption { text: DesignerModel.runtime-text; }
-                    HorizontalLayout {
+                    SectionTitle { text: I18n.tr(I18n.lang, "preview.events"); }
+                    if DesignerModel.events.length == 0: Caption { text: I18n.tr(I18n.lang, "preview.events_empty"); }
+                    for event in DesignerModel.events: HorizontalLayout {
                         spacing: 6px;
-                        Button { text: DesignerModel.playing ? I18n.tr(I18n.lang, "action.pause") : I18n.tr(I18n.lang, "action.play"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("toggle-play"); } }
-                        Button { text: I18n.tr(I18n.lang, "action.step"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("step"); } }
-                        Button { text: I18n.tr(I18n.lang, "action.reset"); horizontal-stretch: 1; clicked => { DesignerModel.inspector-action("reset-runtime"); } }
+                        Caption { text: event.at; width: 48px; }
+                        Caption { text: event.detail; }
                     }
                 }
+                if DesignerModel.inspector-tab == 3: NoteList { }
                 if DesignerModel.inspector-tab == 2: VerticalLayout {
                     spacing: 8px;
                     SectionTitle { text: I18n.tr(I18n.lang, "panel.canvas_settings"); }
