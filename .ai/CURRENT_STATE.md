@@ -26,7 +26,7 @@
 - TASK-009 status: DONE (2.3.0 T22–T28; independent re-review PASS after gallery invalidation, note refresh, sidecar protection and documentation corrections)
 - Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-009); PASS WITH MINOR NOTES (TASK-008); PENDING for TASK-006/TASK-007 (subagent dispatch failed three times — two model-queue errors and one daily usage limit — so only inline self-review and implementer-side evidence are recorded; DONE/PASS remain open)
 - Active tasks: `.ai/tasks/TASK-006.md`, `.ai/tasks/TASK-007.md`
-- Next workflow action: finish the explicitly authorized 2.3.0 release after final CI and package verification; independent review of TASK-006/TASK-007 remains separate historical follow-up. Published release status must be queried from GitHub.
+- Next workflow action: none for 2.3.0 — `v2.3.0` was published as Latest on 2026-10-29 and `origin/main` is the tagged commit; independent review of TASK-006/TASK-007 remains a separate historical follow-up. Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
 
 ## Current workstream
 

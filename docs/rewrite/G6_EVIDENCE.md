@@ -117,3 +117,10 @@ B3 执行记录（MEASURED）：
   - tag `v2.0.3` 指向 `3817e6a`。
   - `Release (Rust V2)` run `39969677244` 在五个平台上全部通过。
   - 匿名从 `releases/latest` 下载 Windows zip 后，`sha256sum -c` 通过。
+- **v2.3.0**（用户授权后于 2026-10-29 16:19 UTC 发布，设为 Latest）：
+  - 设备级验证与评审闭环：真实播放与运行事件、`review/review.json` 旁路（原子写、指纹保护、损坏隔离）、批注与场景预设、Review 设备/代码双视角与契约证据、界面画廊、确定性评审包 HTML（GUI 与 `mono review-pack`），以及 CLI `validate`/`export`/`asset-audit` 的 `--json`（TASK-008）。
+  - 独立评审先返回 PASS WITH MINOR NOTES；按意见修正画廊失效、批注刷新、旁路隔离保护与文档口径后，定向复评 PASS。桌面回归另行发现并修复已配置快捷键的 `RefCell` 重复借用崩溃。
+  - tag `v2.3.0` 指向 `5cb0b29`；`origin/main` 同为 `5cb0b29`。
+  - `Release (Rust V2)` run `40907992918`：版本校验、五个平台打包与安装测试、草稿创建全部通过。
+  - 五个平台包与 `SHA256SUMS` 发布后下载复算全部一致；Windows zip 解压后 `monooled-studio --version` 输出 `monooled-studio 2.3.0`，`mono version` 输出 `mono 2.3.0`。
+  - 匿名访问 `releases/latest` 重定向到 `v2.3.0`，API 显示 draft=false、prerelease=false、6 个附件。
