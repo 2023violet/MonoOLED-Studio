@@ -49,7 +49,7 @@ Density changes control height and padding without changing information architec
 - **ListView / ListRow**: `text` plus optional right-aligned `detail` (shortcut chords, codes).
 - **NoteRow** (批注): kind chip, title, anchor and explicit Edit/Delete buttons on their own line; sticky notes use the warning background plus a text badge, never colour alone.
 - **EvidenceRow** (Review): fixed 96px label, monospace value; a hash is only shown with a Copy button and the source contract name, so a badge always points at a real artifact.
-- **GalleryOverlay**: full-window scrim panel (not a workspace tab), category headers inside one list, thumbnails at 2× with pixelated rendering; cards carry a text badge (`valid` / `N blockers`) plus explicit Open/Review buttons.
+- **GalleryOverlay**: full-window scrim panel (not a workspace tab), category headers inside one list, pixelated thumbnails in a fixed card size; cards carry a text badge (`valid` / `N blockers`) plus explicit Open/Review buttons.
 
 ## Layout
 

@@ -307,6 +307,7 @@ impl App {
         self.log_event(format!("OPEN_PROJECT {}", posix(&project.path)));
         // Font packs belong to a project; never carry one into another.
         self.font = None;
+        self.reset_gallery_cache();
         self.project = Some(project);
         self.bind_scene(scene)?;
         self.review = self.load_review();
@@ -331,6 +332,7 @@ impl App {
     pub fn open_scene_file(&mut self, path: &Path) -> Result<(), CoreError> {
         let scene = load_scene(path, None)?;
         self.font = None;
+        self.reset_gallery_cache();
         self.project = None;
         self.review = None;
         self.contract = None;
@@ -1297,6 +1299,7 @@ impl App {
     }
 
     pub fn open_gallery(&mut self) {
+        self.reset_gallery_cache();
         self.gallery_visible = true;
         self.gallery_query.clear();
         self.gallery_filter = 0;
@@ -1323,13 +1326,15 @@ impl App {
         self.fill_gallery();
     }
 
+    fn reset_gallery_cache(&mut self) {
+        self.gallery_cards.clear();
+        self.gallery_job = None;
+        self.gallery_stamp = None;
+    }
+
     fn ensure_gallery(&mut self) {
-        if self.gallery_job.is_some() {
-            return;
-        }
         let Some(project) = self.project.clone() else {
-            self.gallery_cards.clear();
-            self.gallery_stamp = None;
+            self.reset_gallery_cache();
             return;
         };
         let stamp = self.gallery_stamp_value();
@@ -1338,18 +1343,21 @@ impl App {
         }
         self.gallery_cards.clear();
         self.gallery_stamp = Some(stamp);
-        let annotations = self
-            .review
-            .as_ref()
-            .map(ReviewStore::counts_by_screen)
-            .unwrap_or_default();
-        self.gallery_job = Some(GalleryJob::spawn(project, annotations));
+        self.gallery_job = Some(GalleryJob::spawn(project, stamp));
     }
 
     pub fn gallery_tick(&mut self) {
         let Some(job) = &self.gallery_job else { return };
         let Some(result) = job.poll() else { return };
+        let stamp = job.stamp();
         self.gallery_job = None;
+        if Some(stamp) != self.gallery_stamp || stamp != self.gallery_stamp_value() {
+            self.gallery_stamp = None;
+            if self.gallery_visible {
+                self.refresh_gallery();
+            }
+            return;
+        }
         match result {
             Ok(cards) => {
                 self.gallery_cards = cards;
@@ -1379,15 +1387,20 @@ impl App {
         self.preview_reset()
     }
 
+    /// Identity of the saved gallery input: the project, its screen ids and each
+    /// scene file's length and mtime. Unsaved editor edits do not change it,
+    /// because the cards render the files on disk.
     fn gallery_stamp_value(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         if let Some(project) = &self.project {
             project.path.hash(&mut hasher);
-            project.screens().len().hash(&mut hasher);
-        }
-        if let Some(session) = &self.session {
-            session.fingerprint().hash(&mut hasher);
+            for screen in project.screens() {
+                screen.id.hash(&mut hasher);
+                if let Ok(path) = project.screen_path(&screen.id) {
+                    file_stamp(&path).hash(&mut hasher);
+                }
+            }
         }
         hasher.finish()
     }
@@ -1401,6 +1414,12 @@ impl App {
             gm.set_items(model(Vec::new()));
             return;
         }
+        let counts = self
+            .review
+            .as_ref()
+            .map(ReviewStore::counts_by_screen)
+            .unwrap_or_default();
+        crate::gallery::merge_note_counts(&mut self.gallery_cards, &counts);
         let lang = self.lang.clone();
         let query = self.gallery_query.to_lowercase();
         let filter = self.gallery_filter;
@@ -1502,6 +1521,7 @@ impl App {
     }
 
     pub fn refresh_inspector(&mut self) {
+        self.refresh_notes();
         let Some(ui) = self.ui.upgrade() else { return };
         let dm = DesignerModel::get(&ui);
         let can_edit_asset = self.can_edit_asset();
@@ -2635,8 +2655,11 @@ impl App {
                         }
                         self.log_event(format!("JOB_DONE {label}"));
                         self.set_status(outcome.status);
-                        if let Some(path) = self.pending_contract.take() {
-                            let _ = self.adopt_contract(&path);
+                        if let Some(path) = self.pending_contract.take()
+                            && self.adopt_contract(&path).is_ok()
+                        {
+                            // Review may already be open; re-evaluate its badge.
+                            self.refresh_review();
                         }
                         if outcome.refresh {
                             self.refresh_app();
@@ -2763,6 +2786,20 @@ fn short_stamp(iso: &str) -> String {
         .take(16)
         .map(|c| if c == 'T' { ' ' } else { c })
         .collect()
+}
+
+/// Cheap file identity: length plus modification time, zero when unreadable.
+fn file_stamp(path: &Path) -> (u64, u128) {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return (0, 0);
+    };
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|delta| delta.as_nanos())
+        .unwrap_or(0);
+    (meta.len(), modified)
 }
 
 fn evidence_text(lang: &str, evidence: &Evidence) -> String {
@@ -3424,12 +3461,11 @@ mod tests {
     }
 
     #[test]
-    fn gallery_cache_invalidates_after_edit() {
+    fn gallery_stamp_follows_the_scene_files_not_unsaved_edits() {
         let (mut app, root) = project_app("gallery-cache");
         app.gallery_stamp = Some(app.gallery_stamp_value());
-        app.gallery_cards = Vec::new();
         let before = app.gallery_stamp;
-        // Scene edits change the stamp; runtime-only state changes do not.
+        // Cards render the files on disk, so unsaved edits keep the cache.
         if let Some(session) = app.session.as_mut() {
             let elements = session.doc.data["elements"].as_array_mut().unwrap();
             let element = elements[0].as_object_mut().unwrap();
@@ -3437,9 +3473,86 @@ mod tests {
             element.insert("x".into(), json!(x + 1));
         }
         app.refresh_gallery();
+        assert_eq!(app.gallery_stamp, before);
+        assert!(app.gallery_job.is_none());
+        // A scene file change invalidates the cache.
+        let scene_path = root.join("scenes/main_scene.json");
+        let text = std::fs::read_to_string(&scene_path).unwrap();
+        std::fs::write(&scene_path, format!("{text}\n")).unwrap();
+        app.refresh_gallery();
         assert_ne!(app.gallery_stamp, before);
         assert!(app.gallery_job.is_some());
         app.gallery_job = None;
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn opening_a_project_drops_cached_gallery_state() {
+        let (mut app, root) = project_app("gallery-switch");
+        app.gallery_stamp = Some(7);
+        app.gallery_cards = vec![crate::gallery::GalleryCard {
+            id: "stale".into(),
+            label: "Stale".into(),
+            category: "Screens".into(),
+            blockers: 0,
+            warnings: 0,
+            annotations: 0,
+            image: None,
+        }];
+        let other = root
+            .parent()
+            .unwrap()
+            .join(format!("mono-gallery-switch-other-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&other);
+        app.new_project(&other, "Other", (128, 64)).unwrap();
+        assert!(app.gallery_cards.is_empty());
+        assert!(app.gallery_job.is_none());
+        assert_eq!(app.gallery_stamp, None);
+        let _ = std::fs::remove_dir_all(&other);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reopening_gallery_rebuilds_saved_resources() {
+        let (mut app, root) = project_app("gallery-resource-refresh");
+        app.gallery_stamp = Some(app.gallery_stamp_value());
+        app.open_gallery();
+        assert!(app.gallery_job.is_some());
+        app.gallery_job = None;
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn inflight_gallery_refresh_uses_current_disk_stamp() {
+        let (mut app, root) = project_app("gallery-inflight-refresh");
+        app.ensure_gallery();
+        let path = root.join("scenes/main_scene.json");
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(path, format!("{text}\n")).unwrap();
+        app.ensure_gallery();
+        assert_eq!(
+            app.gallery_job.as_ref().unwrap().stamp(),
+            app.gallery_stamp_value()
+        );
+        app.gallery_job = None;
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn results_from_a_stale_gallery_job_are_dropped() {
+        let (mut app, root) = project_app("gallery-stale");
+        let project = app.project.clone().unwrap();
+        app.gallery_stamp = Some(1);
+        app.gallery_job = Some(crate::gallery::GalleryJob::spawn(project, 2));
+        for _ in 0..300 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            app.gallery_tick();
+            if app.gallery_job.is_none() {
+                break;
+            }
+        }
+        assert!(app.gallery_job.is_none(), "worker did not finish");
+        assert!(app.gallery_cards.is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

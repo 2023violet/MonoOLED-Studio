@@ -845,7 +845,8 @@ fn focus_if_idle(ui: &MainWindow) {
 
 /// Configured shortcut → command (V1 command registry). Returns true if handled.
 fn run_shortcut(app: &Rc<RefCell<App>>, ui: &MainWindow, chord: &str) -> bool {
-    if let Some(id) = app.borrow_mut().shortcut(chord) {
+    let command = app.borrow_mut().shortcut(chord);
+    if let Some(id) = command {
         let Some(spec) = commands::spec(id) else {
             return false;
         };

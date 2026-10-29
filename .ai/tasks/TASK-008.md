@@ -1,7 +1,7 @@
 # TASK-008 — CLI machine-readable output and release discoverability
 
-Status: VERIFY
-Review Status: PENDING
+Status: DONE
+Review Status: PASS WITH MINOR NOTES
 
 ## Goal
 
@@ -101,7 +101,9 @@ Code, tests, and a Result section with actual commands/results.
 
 ## Result
 
-Implemented; stopped at `VERIFY` (independent review owns `DONE`/`PASS`).
+Implemented and independently reviewed in the 2.3.0 release range
+`d50c646...d15a168`: PASS WITH MINOR NOTES, with no blocking findings for the
+CLI JSON contract. Ships together with TASK-009 rather than as a separate release.
 
 ### What changed
 

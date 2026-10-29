@@ -1,5 +1,6 @@
 //! Screen gallery: one init-state card per screen, rendered off the UI thread
-//! and cached until the active scene changes.
+//! from the scene files on disk and cached until those files change. Cards show
+//! the saved frames; unsaved editor changes appear only in the Designer.
 
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -12,8 +13,8 @@ use mono_project::project::ProjectWorkspace;
 use mono_project::resources::DiskResources;
 use mono_project::scene_io::load_project_scene;
 
-/// Beyond this the gallery lists text only; rendering every screen would take
-/// seconds and the wall stops being usable long before.
+/// Screens beyond this cap are not rendered or listed; rendering every screen
+/// would take seconds and the wall stops being usable long before.
 pub const MAX_SCREENS: usize = 200;
 
 /// 0/1 pixels kept as bytes: `slint::Image` is not `Send`, so the worker ships
@@ -38,15 +39,22 @@ pub struct GalleryCard {
 
 pub struct GalleryJob {
     rx: Receiver<Result<Vec<GalleryCard>, CoreError>>,
+    stamp: u64,
 }
 
 impl GalleryJob {
-    pub fn spawn(project: ProjectWorkspace, annotations: BTreeMap<String, usize>) -> Self {
+    pub fn spawn(project: ProjectWorkspace, stamp: u64) -> Self {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(build_cards(&project, &annotations));
+            let _ = tx.send(build_cards(&project));
         });
-        Self { rx }
+        Self { rx, stamp }
+    }
+
+    /// The gallery stamp the cards were built for; a result from another
+    /// project or scene must be dropped.
+    pub fn stamp(&self) -> u64 {
+        self.stamp
     }
 
     /// `Some(result)` once the worker finished; `None` while it runs.
@@ -62,10 +70,7 @@ impl GalleryJob {
     }
 }
 
-pub fn build_cards(
-    project: &ProjectWorkspace,
-    annotations: &BTreeMap<String, usize>,
-) -> Result<Vec<GalleryCard>, CoreError> {
+pub fn build_cards(project: &ProjectWorkspace) -> Result<Vec<GalleryCard>, CoreError> {
     let screens = project.screens();
     let categories = categories(project);
     let mut resources = DiskResources::frozen();
@@ -92,12 +97,20 @@ pub fn build_cards(
             category: category_for(&screen.id, categories.get(&screen.id).map(String::as_str)),
             blockers,
             warnings,
-            annotations: annotations.get(&screen.id).copied().unwrap_or(0),
+            annotations: 0,
             image,
         });
     }
     sort_cards(&mut cards);
     Ok(cards)
+}
+
+/// Note counts live in the review sidecar, which changes without touching the
+/// scene files the cards are cached on; merge them on every fill.
+pub fn merge_note_counts(cards: &mut [GalleryCard], counts: &BTreeMap<String, usize>) {
+    for card in cards {
+        card.annotations = counts.get(&card.id).copied().unwrap_or(0);
+    }
 }
 
 /// Explicit `screens[].category` when present; read-only, never written back.
@@ -169,7 +182,7 @@ mod tests {
     #[test]
     fn renders_one_card_per_screen() {
         let (project, root) = project("cards");
-        let cards = build_cards(&project, &BTreeMap::new()).unwrap();
+        let cards = build_cards(&project).unwrap();
         assert_eq!(cards.len(), project.screens().len());
         assert!(cards.iter().all(|card| card.image.is_some()));
         let _ = std::fs::remove_dir_all(&root);
@@ -178,7 +191,7 @@ mod tests {
     #[test]
     fn reports_blockers_per_screen() {
         let (project, root) = project("blockers");
-        let mut cards = build_cards(&project, &BTreeMap::new()).unwrap();
+        let mut cards = build_cards(&project).unwrap();
         assert!(cards.iter().all(|card| card.blockers == 0));
         // A placeholder without an asset file is a BLOCKER for that screen only.
         let scene_path = root.join("scenes/main_scene.json");
@@ -197,7 +210,7 @@ mod tests {
                 "assets": ["assets/missing.png"],
             }));
         std::fs::write(&scene_path, scene.to_string()).unwrap();
-        cards = build_cards(&project, &BTreeMap::new()).unwrap();
+        cards = build_cards(&project).unwrap();
         let card = cards.iter().find(|card| card.id == "main").unwrap();
         assert!(card.blockers > 0);
         let _ = std::fs::remove_dir_all(&root);
@@ -216,6 +229,24 @@ mod tests {
         assert_eq!(category_for("boot_logo", None), "boot");
         assert_eq!(category_for("main", None), "Screens");
         assert_eq!(category_for("main", Some("System")), "System");
+    }
+
+    #[test]
+    fn merges_live_note_counts_into_cached_cards() {
+        let mut cards = vec![
+            card("a", "Alpha", "Ui"),
+            card("b", "Beta", "Ui"),
+            card("c", "Gamma", "Ui"),
+        ];
+        let counts = BTreeMap::from([
+            ("a".to_string(), 3),
+            ("c".to_string(), 1),
+            ("gone".to_string(), 9),
+        ]);
+        merge_note_counts(&mut cards, &counts);
+        assert_eq!(cards[0].annotations, 3);
+        assert_eq!(cards[1].annotations, 0);
+        assert_eq!(cards[2].annotations, 1);
     }
 
     fn card(id: &str, label: &str, category: &str) -> GalleryCard {

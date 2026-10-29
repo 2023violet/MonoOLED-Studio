@@ -108,12 +108,6 @@ pub fn py_round(value: f64) -> i64 {
 }
 
 impl EditorSession {
-    /// Hash of the persisted scene shape; derived caches (the screen gallery)
-    /// compare it before rebuilding.
-    pub fn fingerprint(&self) -> u64 {
-        scene_fingerprint(&self.doc.data)
-    }
-
     pub fn new(doc: SceneDoc) -> CoreResult<Self> {
         let state = SceneRuntime::new(&doc.data, None)?.state;
         let disk_fingerprint = std::fs::read(&doc.path).ok().map(|b| hex_digest(&b));

@@ -38,6 +38,9 @@ MonoOLED-Studio.zip
 .zcode/
 src/reports/
 
+# Review sidecar quarantine (review/review.json itself is committable)
+review/quarantine/
+
 # Disposable AI navigation packet
 .ai/GENERATED_CONTEXT.md
 

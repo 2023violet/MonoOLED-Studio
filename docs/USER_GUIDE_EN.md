@@ -21,7 +21,7 @@ The segmented control at the top switches between four workspaces: Design (Scene
 
 ## Device preview, annotations and review
 
-- The State tab in the Inspector starts with a 2× device preview. Play advances the timeline every 60 ms, Step pauses and advances once, and Reset returns to the init state; the event list below records `RESET` and `STATE`. Playback only changes runtime state and never marks the scene as modified.
+- The State tab in the Inspector starts with a device bezel. Play advances the timeline with a minimum 500 ms step interval (approximately two steps per second, not a real-time clock), Step pauses and advances once, and Reset returns to the init state; the event list below records `RESET` and `STATE`. Playback only changes runtime state and never marks the scene as modified.
 - The preset section lists the init state, every non-initial enum value and both bounds of every integer. Save the current state as a named scenario; scenarios live in the project's `review/review.json`.
 - The 批注 (annotations) tab records a defect, decision or explanation against the current screen and state. With an element selected the note is anchored to it and stores the frame's SHA-256 and lit-pixel count; when the frame changes in the same state the note shows a stale badge.
 - The Review workspace switches between Device and Code: the device view compares the last opened/saved frame with the current one, the code view shows the C array and the VLSB hex. The Evidence panel shows the frame hash, the golden hash from `exports/latest/ui_contract.json`, lit pixels and visible elements. A fresh export is adopted automatically; Load contract… accepts another file.

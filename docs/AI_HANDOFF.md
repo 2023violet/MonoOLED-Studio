@@ -158,8 +158,8 @@ API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.al
 - **外部修改**：保存前比较磁盘指纹，外部改动则返回 `E-REVIEW-EXTERNAL` 并拒绝覆盖；坏 JSON 隔离到 `review/quarantine/`，未知 `schema_version` 直接报错且不改写文件。CLI（`mono review-pack`）只读。
 - **证据**：批注证据是当帧 `to_vlsb()` 的 SHA-256 与点亮像素数；Review 的 `golden match` 要求与 `ui_contract.json` 中同 `state` 帧的 `golden_sha256` 完全相等。不得伪造 firmware `file:line` 锚点。
 - **运行态 vs 持久化**：播放、Step、Reset、预设切换只改变 `SceneRuntime` 状态与事件流，不得置 dirty、不得进入导出。
-- **画廊缓存**：卡片以场景内容指纹（`EditorSession::fingerprint`）为键；编辑、保存、换屏后必须重建。最多渲染 200 屏，超出只列文本。
-- **评审包确定性**：屏幕按 `(category,label,id)`、帧按 state、批注按 `(screen,state,element,kind,id)` 排序；不含时间戳与绝对路径；内嵌 JSON 转义 `<`、`>`、`&`、U+2028/U+2029。两次生成必须字节相同。
+- **画廊缓存**：每次打开画廊都重新读取已保存场景与资源，浮层内搜索和筛选复用卡片；工作线程返回时以项目路径、屏幕 id、场景文件长度和修改时间复检结果，过期则重建。未保存编辑只影响 Designer，不进画廊。批注数量每次填充时从内存中的旁路实时合并。最多渲染并列出 200 屏，超出的不列出。
+- **评审包确定性**：屏幕按 `(category,label,id)` 排序；每屏先输出 init 帧，再按评审文件顺序输出带批注的状态（按 state 去重）；批注按 `(screen,state,element,kind,id)` 排序；不含时间戳与绝对路径；内嵌 JSON 转义 `<`、`>`、`&`、U+2028/U+2029。两次生成必须字节相同。
 - **不做 L2 声明**：产品只有一个渲染器，评审包与 Review 只比对 SHA-256 与导出契约，不得出现"第二实现逐字节对拍"的徽章。
 
 ### 6.2 字节确定性

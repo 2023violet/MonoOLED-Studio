@@ -190,3 +190,83 @@ fn review_pack_is_deterministic() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn review_pack_uses_the_given_annotations_file() {
+    let root = std::env::temp_dir().join(format!("mono-cli-pack-notes-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp dir");
+    let annotations = root.join("notes.json");
+    std::fs::write(
+        &annotations,
+        r#"{
+  "schema_version": 1,
+  "annotations": [
+    {
+      "id": "n_1",
+      "kind": "defect",
+      "screen": "main",
+      "state": {},
+      "title": "Check the header baseline",
+      "body": "",
+      "evidence": {"sha256": "", "lit_pixels": 0, "source": "designer"},
+      "created_utc": "2026-10-28T00:00:00Z",
+      "updated_utc": "2026-10-28T00:00:00Z"
+    }
+  ],
+  "scenarios": []
+}"#,
+    )
+    .expect("write annotations");
+    let output = root.join("review.html");
+    let (code, stdout, stderr) = run(&[
+        "review-pack",
+        "--project",
+        &fixture(),
+        "--output",
+        &output.to_string_lossy(),
+        "--annotations",
+        &annotations.to_string_lossy(),
+        "--json",
+    ]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(json_of(&stdout)["annotations"], 1);
+    let html = std::fs::read_to_string(&output).unwrap();
+    assert!(html.contains("Check the header baseline"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn review_pack_rejects_an_unknown_schema_version() {
+    let root = std::env::temp_dir().join(format!("mono-cli-pack-schema-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp dir");
+    let annotations = root.join("notes.json");
+    std::fs::write(
+        &annotations,
+        r#"{"schema_version": 99, "annotations": [], "scenarios": []}"#,
+    )
+    .expect("write annotations");
+    let output = root.join("review.html");
+    let (code, stdout, stderr) = run(&[
+        "review-pack",
+        "--project",
+        &fixture(),
+        "--output",
+        &output.to_string_lossy(),
+        "--annotations",
+        &annotations.to_string_lossy(),
+        "--json",
+    ]);
+    assert_eq!(code, 2, "stderr: {stderr}");
+    let value = json_of(&stdout);
+    assert_eq!(value["ok"], false);
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("schema_version")
+    );
+    assert!(!output.exists());
+    let _ = std::fs::remove_dir_all(&root);
+}

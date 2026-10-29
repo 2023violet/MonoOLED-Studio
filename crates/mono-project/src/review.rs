@@ -285,18 +285,22 @@ impl ReviewStore {
 
     fn quarantine(path: &Path, raw: &[u8]) -> Self {
         let (stamp, _) = now();
-        if let Some(parent) = path.parent() {
-            let target = parent
-                .join("quarantine")
-                .join(format!("review.corrupt.{stamp}.json"));
-            let _ = atomic_write(&target, raw);
-        }
+        let preserved = match path.parent() {
+            Some(parent) => {
+                let target = parent
+                    .join("quarantine")
+                    .join(format!("review.corrupt.{stamp}.json"));
+                atomic_write(&target, raw).is_ok()
+            }
+            None => false,
+        };
         // The corrupt bytes are preserved in quarantine, so the next save may
         // replace the original instead of tripping the external-change guard.
+        // If the copy failed, keep no fingerprint: the guard must protect it.
         Self {
             path: path.to_path_buf(),
             data: empty(),
-            fingerprint: Some(hex_digest(raw)),
+            fingerprint: preserved.then(|| hex_digest(raw)),
         }
     }
 
@@ -453,7 +457,14 @@ impl ReviewStore {
     pub fn upsert_scenario(&mut self, mut scenario: Scenario) -> CoreResult<String> {
         let (compact, iso) = now();
         if scenario.id.is_empty() {
-            scenario.id = format!("s_{compact}");
+            let existing: Vec<String> = self.scenarios().into_iter().map(|s| s.id).collect();
+            let mut id = format!("s_{compact}");
+            let mut suffix = 1;
+            while existing.contains(&id) {
+                id = format!("s_{compact}_{suffix}");
+                suffix += 1;
+            }
+            scenario.id = id;
         }
         if scenario.created_utc.is_empty() {
             scenario.created_utc = iso;
@@ -484,6 +495,11 @@ impl ReviewStore {
     }
 
     fn save(&mut self) -> CoreResult<()> {
+        let mut text = python_json(&Value::Object(self.data.clone()))?;
+        text.push('\n');
+        // Serialize first, then re-read, so the external-change window is only
+        // the atomic write itself. The check stays best-effort: a writer that
+        // lands between this read and the rename is not detected.
         let current = std::fs::read(&self.path).ok().map(|b| hex_digest(&b));
         let unchanged = match (&self.fingerprint, &current) {
             (None, None) => true,
@@ -496,8 +512,6 @@ impl ReviewStore {
                 "review.json changed outside the editor; reopen the project",
             ));
         }
-        let mut text = python_json(&Value::Object(self.data.clone()))?;
-        text.push('\n');
         atomic_write(&self.path, text.as_bytes())?;
         self.fingerprint = Some(hex_digest(text.as_bytes()));
         Ok(())
@@ -628,6 +642,24 @@ mod tests {
             .upsert_annotation(annotation("main", AnnotationKind::Explanation, "x"))
             .unwrap();
         assert_eq!(ReviewStore::load(&path).unwrap().annotations().len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_failed_quarantine_leaves_the_corrupt_file_guarded() {
+        let root = root("quarantine-fail");
+        let path = root.join(REVIEW_FILE);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // A file where the quarantine directory belongs makes the copy fail, so
+        // the corrupt bytes exist nowhere else and must not be overwritten.
+        std::fs::write(root.join(REVIEW_DIR).join("quarantine"), b"").unwrap();
+        std::fs::write(&path, b"{not json").unwrap();
+        let mut store = ReviewStore::load(&path).unwrap();
+        let error = store
+            .upsert_annotation(annotation("main", AnnotationKind::Defect, "x"))
+            .unwrap_err();
+        assert_eq!(error.code, "E-REVIEW-EXTERNAL");
+        assert_eq!(std::fs::read(&path).unwrap(), b"{not json");
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -1,7 +1,7 @@
 # TASK-009 — 2.3.0 device preview and review loop
 
-Status: VERIFY
-Review Status: PENDING
+Status: DONE
+Review Status: PASS
 
 ## Goal
 
@@ -27,7 +27,7 @@ already provided everything needed to close that loop.
 
 | Task | Delivered |
 | --- | --- |
-| T22 | `VecRuntimeLog`, `SceneRuntime::attach`, `*_logged` editor calls, `preview.rs`, 60 ms playback tick, device bezel, event feed, boundary caption |
+| T22 | `VecRuntimeLog`, `SceneRuntime::attach`, `*_logged` editor calls, `preview.rs`, minimum 500 ms playback interval polled every 60 ms, device bezel, event feed, boundary caption |
 | T23 | `crates/mono-project/src/review.rs`: `review/review.json` sidecar (atomic write, fingerprint refusal, quarantine, schema guard) |
 | T24 | Annotations UI (`ui/notes.slint`), stale badge, derived presets, named scenarios |
 | T25 | `export::frame_for_state`, Review Device/Code switch, evidence panel, contract discovery/adoption, copy hash |
@@ -39,7 +39,7 @@ already provided everything needed to close that loop.
 
 - Playback: `crates/mono-core/src/runtime.rs` (`RuntimeRecord`, `VecRuntimeLog`,
   `attach`), `crates/mono-project/src/editor.rs` (`step_logged`,
-  `reset_runtime_logged`, `set_state_logged`, `fingerprint`),
+  `reset_runtime_logged`, `set_state_logged`),
   `apps/mono-desktop/src/preview.rs`, `apps/mono-desktop/src/app.rs`
   (`preview_step`, `preview_reset`, `preview_tick`), `src/main.rs` timer.
 - Review sidecar: `crates/mono-project/src/review.rs` (+ `read_annotations`).
@@ -96,5 +96,26 @@ annotations.
 
 ## Result
 
-Implemented and verified locally as described above. `DONE`/`PASS` remain with
-an independent reviewer, per `.ai/README.md`.
+Independent review of the release changes initially returned PASS WITH MINOR
+NOTES. Follow-up review requested gallery invalidation and runtime note-refresh
+corrections; targeted independent re-review of the corrected tree returned PASS.
+
+- Gallery results are checked against current saved-scene inputs; each reopening
+  reloads saved assets, while search/filter actions reuse the current cards.
+- Note counts merge from the in-memory sidecar; inspector refresh also updates
+  state-dependent note badges. Completed exports refresh Review evidence.
+- Failed quarantine preserves overwrite protection; generated scenario IDs
+  avoid collisions. External-write detection remains best-effort, not locking.
+- Playback documentation now states a minimum 500 ms interval, not 60 ms or 2x.
+- New gallery regression tests first failed on both reopening and inflight
+  refresh before the fixes. CLI annotations/schema and quarantine failure tests
+  cover the other review findings.
+
+Final isolated desktop regression also exposed a configured-shortcut RefCell
+panic: the mutable shortcut lookup borrow survived into command dispatch. Binding
+the lookup result first fixes it; Ctrl+Shift+L, matching/empty gallery searches,
+and navigation into Review were exercised after rebuilding. A separate targeted
+independent review confirmed the borrow-lifetime fix (PASS).
+
+The final independent reviewers found no release-blocking defects in this scope;
+UI-model assertions and pixel-level resource-reopen assertions remain test gaps.

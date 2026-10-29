@@ -6,7 +6,7 @@
 
 - Project: MonoOLED Studio
 - Product version: 2.3.0 (Rust; Python 1.x source at the v1-final tag)
-- Current phase: Rust Rewrite G6 complete; 2.0.4 trust fixes complete (TASK-004 DONE); 2.0.5 project loop complete (TASK-005 DONE, review PASS WITH MINOR NOTES); 2.1.0 professional workflow implemented (TASK-006 VERIFY, T12–T17); 2.2.0 polish and governance implemented (TASK-007 VERIFY, T18–T21); 2.3.0 device preview and review loop implemented (TASK-009 VERIFY, T22–T28)
+- Current phase: Rust Rewrite G6 complete; 2.0.4 trust fixes complete (TASK-004 DONE); 2.0.5 project loop complete (TASK-005 DONE, review PASS WITH MINOR NOTES); 2.1.0 professional workflow implemented (TASK-006 VERIFY, T12–T17); 2.2.0 polish and governance implemented (TASK-007 VERIFY, T18–T21); 2.3.0 device preview and review loop implemented (TASK-009 DONE, T22–T28)
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
@@ -14,7 +14,7 @@
 
 ## Workflow
 
-- Last completed workflow task: TASK-005
+- Last completed workflow task: TASK-009
 - TASK-001 status: DONE
 - TASK-002 status: DONE
 - TASK-003 status: DONE
@@ -22,11 +22,11 @@
 - TASK-005 status: DONE (2.0.5; T9 recent projects, T10 asset-to-Pixel, T11 atomic write-back; review PASS WITH MINOR NOTES)
 - TASK-006 status: VERIFY (2.1.0; T12–T17 professional workflow; Result recorded, two GUI-found defects fixed)
 - TASK-007 status: VERIFY (2.2.0; T18–T21 terminology, help/tooltips, new-project wizard, docs and version truth)
-- TASK-008 status: VERIFY (CLI `--json` for validate/export/asset-audit and package discoverability docs; folded into the 2.3.0 source, not released separately)
-- TASK-009 status: VERIFY (2.3.0; T22 playback and runtime events, T23 review sidecar, T24 annotations and scenarios, T25 Review evidence/code view, T26 screen gallery, T27 review pack HTML plus CLI, T28 docs and version)
-- Independent Review: PASS (TASK-003, TASK-004, TASK-005); PENDING for TASK-006/TASK-007 (subagent dispatch failed three times — two model-queue errors and one daily usage limit — so only inline self-review and implementer-side evidence are recorded; DONE/PASS remain open)
-- Active tasks: `.ai/tasks/TASK-006.md`, `.ai/tasks/TASK-007.md`, `.ai/tasks/TASK-008.md`, `.ai/tasks/TASK-009.md`
-- Next workflow action: an independent reviewer confirms TASK-006/TASK-007/TASK-008/TASK-009 (then `DONE`/`PASS`); 2.2.0 and 2.2.1 are published (`v2.2.1` is Latest, `v2.2.0` kept as published); the 2.3.0 source is complete and unreleased — publishing it (with TASK-008's CLI `--json`) needs the user's explicit authorization
+- TASK-008 status: DONE (CLI `--json`; independent review PASS WITH MINOR NOTES; folded into 2.3.0, not released separately)
+- TASK-009 status: DONE (2.3.0 T22–T28; independent re-review PASS after gallery invalidation, note refresh, sidecar protection and documentation corrections)
+- Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-009); PASS WITH MINOR NOTES (TASK-008); PENDING for TASK-006/TASK-007 (subagent dispatch failed three times — two model-queue errors and one daily usage limit — so only inline self-review and implementer-side evidence are recorded; DONE/PASS remain open)
+- Active tasks: `.ai/tasks/TASK-006.md`, `.ai/tasks/TASK-007.md`
+- Next workflow action: finish the explicitly authorized 2.3.0 release after final CI and package verification; independent review of TASK-006/TASK-007 remains separate historical follow-up. Published release status must be queried from GitHub.
 
 ## Current workstream
 

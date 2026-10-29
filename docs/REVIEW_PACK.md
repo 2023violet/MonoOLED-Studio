@@ -18,6 +18,11 @@ Options:
 | `--annotations <file>` | review JSON; defaults to `<project>/review/review.json` |
 | `--json` | print one JSON object instead of the text summary |
 
+`--output` is an arbitrary destination, like `mono export --output`; it is not
+confined to the project root. Only the default annotations sidecar is resolved
+inside the project. `review/review.json` is meant to be committed;
+`review/quarantine/` and the generated HTML are build artifacts.
+
 `--json` prints `command`, `ok`, `exit_code`, `output`, `screens`, `frames`,
 `annotations`, `blocking`, `bytes` and `sha256`. Exit codes are unchanged:
 0 success, 2 error (with a JSON error object when `--json` is present).
@@ -43,8 +48,10 @@ frame hash, and filters screens by All / Blocking / Annotated or by search.
 
 Two runs over the same project and review file produce byte-identical HTML:
 
-- screens are sorted by `(category, label, id)`, frames by their state map,
-  annotations by `(screen, state, element, kind, id)`;
+- screens are sorted by `(category, label, id)`; each screen's init frame comes
+  first, then the states that carry annotations in review-file order
+  (deduplicated by state map); annotations by `(screen, state, element, kind,
+  id)`;
 - the file contains no generation timestamp and no absolute path;
 - the JSON embedded in the page escapes `<`, `>`, `&`, U+2028 and U+2029, so
   annotation text cannot close the script tag.

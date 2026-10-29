@@ -8,11 +8,13 @@ contract, per-frame code) inside the app.
 
 ### Added
 
-- **Device preview and playback.** The State tab draws the framebuffer in a 2×
-  device bezel and the Play button actually plays: a 60 ms timer advances the
-  scene timeline one step per tick, Step pauses and advances once, Reset returns
-  to the init state. A runtime event feed lists `RESET` and `STATE` records.
-  Playback and preset changes are runtime-only and never mark the scene dirty.
+- **Device preview and playback.** The State tab draws the framebuffer inside a
+  device bezel and the Play button actually plays: a minimum 500 ms interval
+  advances the scene timeline by one tick (approximately two steps per second,
+  not a real-time clock). Step pauses and
+  advances once, Reset returns to the init state. A runtime event feed lists
+  `RESET` and `STATE` records. Playback and preset changes are runtime-only and
+  never mark the scene dirty.
 - **Annotations.** Defect / decision / explanation notes anchored to the current
   screen, state and selected element, with the frame's SHA-256 and lit-pixel
   count as evidence. Notes can be added, edited and deleted from the Designer's
@@ -31,7 +33,9 @@ contract, per-frame code) inside the app.
   grouped by category (explicit `screens[].category`, otherwise the id prefix),
   with search, All/Blocking/Annotated filters, blocker and note counts, and
   buttons to open the screen in Designer (resetting the runtime) or in Review.
-  Cards cache on the scene fingerprint; at most 200 screens are rendered.
+  Cards render saved scenes and resources afresh whenever the gallery opens;
+  annotation counts reflect the in-memory review sidecar. At most 200 screens
+  are listed.
 - **Review pack HTML.** One deterministic, self-contained page (inline CSS and
   JavaScript, no new dependency) with raw VLSB frames, SHA-256, lit pixels,
   findings, visible elements, C headers, hex, annotations and a contract page.
@@ -43,6 +47,11 @@ contract, per-frame code) inside the app.
   (same exit codes as the text mode); README documents that `mono` ships inside
   every release package and what exit codes 0/1/2 mean.
 
+### Fixed
+
+- Configured shortcuts release the shortcut lookup borrow before dispatch,
+  preventing a desktop panic when opening the gallery with `Ctrl+Shift+L`.
+
 ### Changed
 
 - The View menu and command palette gain Screen gallery (`Ctrl+Shift+L`); the
@@ -53,6 +62,8 @@ contract, per-frame code) inside the app.
   `project.oled.json` and outside the export contract.
 - Documentation: new `docs/REVIEW_PACK.md`; the user guides, `AI_HANDOFF.md`,
   `SCENE_SCHEMA.md` and the docs index describe the review loop.
+- Dependency: `pulldown-cmark` 0.13.4 → 0.13.5 for RUSTSEC-2026-0414 (pulled in
+  by Slint; no API change), and `review/quarantine/` is ignored.
 
 ### Not in this release
 
