@@ -65,6 +65,7 @@ export component Button inherits Rectangle {
         mouse-cursor: root.enabled ? pointer : default;
         clicked => { root.clicked(); }
     }
+    if root.tooltip != "": Tooltip { text: @markdown("\{root.tooltip}"); }
     focus := FocusScope {
         enabled: root.enabled;
         key-pressed(event) => {
@@ -209,6 +210,33 @@ export component Divider inherits Rectangle {
     background: Theme.border-subtle;
 }
 
+// ListView that keeps row `current` visible (1.18 has no scroll-to-index).
+// A Flickable's content-y is negative once scrolled: row i sits at
+// `content-y + i * row-height` inside the viewport, so scrolling down means
+// making content-y smaller.
+// Scroll a plain ListView so that row `current` sits inside its viewport.
+// Slint 1.18 gives ListView no scroll-to-index API, and neither inheriting it
+// nor wrapping it is allowed (a ListView accepts exactly one `for` child), so a
+// list calls this from a `changed` handler on its own component.
+// A Flickable's content-y is negative once scrolled: row i sits at
+// `content-y + i * row-height` inside the viewport.
+export global Scroll {
+    public pure function into-view(current: int, row-height: length, content-y: length,
+                            visible-height: length, content-height: length) -> length {
+        if (row-height <= 0px || current < 0 || current * row-height >= content-height) {
+            return content-y;
+        }
+        let row-top = content-y + current * row-height;
+        if (row-top + row-height < 0px) {
+            return 0px - current * row-height;
+        }
+        if (row-top > visible-height - row-height) {
+            return visible-height - (current + 1) * row-height;
+        }
+        return content-y;
+    }
+}
+
 // Selectable list row (screens, elements, assets, font packs, glyphs).
 export component ListRow inherits Rectangle {
     in property <string> text;
@@ -247,8 +275,25 @@ export component ListRow inherits Rectangle {
 }
 
 export component Scrim inherits Rectangle {
+    // Overlays own a focus scope so Escape works wherever focus sits inside
+    // the dialog (text fields reject the key and it bubbles up to here).
+    in property <bool> dismissable: true;
+    callback dismissed();
+    public function take-focus() { keys.focus(); }
     background: Theme.overlay-scrim;
-    TouchArea { }
+    scrim-touch := TouchArea {
+        clicked => { if (root.dismissable) { root.dismissed(); } }
+    }
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                if (root.dismissable) { root.dismissed(); }
+                return accept;
+            }
+            return reject;
+        }
+        @children
+    }
 }
 
 export component Dialog inherits Rectangle {
@@ -260,4 +305,6 @@ export component Dialog inherits Rectangle {
     border-color: Theme.border-normal;
     drop-shadow-blur: 24px;
     drop-shadow-color: Theme.popover-shadow;
+    // Clicks on empty dialog space must not reach the scrim behind it.
+    swallow := TouchArea { clicked => { } }
 }

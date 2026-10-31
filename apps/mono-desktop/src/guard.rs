@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use mono_core::CoreError;
+use mono_project::editor::EditorSession;
 use mono_project::scene_io::load_project_scene;
 
 use crate::app::App;
@@ -16,9 +17,16 @@ pub enum Unsaved {
     Cancel,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirtyDoc {
+    Scene,
+    Pixel,
+    Font,
+}
+
 impl App {
     fn scene_dirty(&self) -> bool {
-        self.session.as_ref().is_some_and(|s| s.dirty)
+        self.session.as_ref().is_some_and(EditorSession::is_dirty)
     }
 
     /// Designer scene, Pixel Studio bitmap or Font Lab glyph/metrics.
@@ -31,15 +39,64 @@ impl App {
                 .is_some_and(crate::fontlab::FontLab::dirty)
     }
 
+    /// Which documents are dirty, so the prompt can name them instead of
+    /// claiming "the scene" while a Pixel PNG is the actual change.
+    pub fn dirty_documents(&self) -> Vec<DirtyDoc> {
+        let mut docs = Vec::new();
+        if self.scene_dirty() {
+            docs.push(DirtyDoc::Scene);
+        }
+        if self.pixel.doc.dirty {
+            docs.push(DirtyDoc::Pixel);
+        }
+        if self
+            .font
+            .as_ref()
+            .is_some_and(crate::fontlab::FontLab::dirty)
+        {
+            docs.push(DirtyDoc::Font);
+        }
+        docs
+    }
+
+    fn dirty_labels(&self, docs: &[DirtyDoc]) -> String {
+        docs.iter()
+            .map(|doc| {
+                self.t(match doc {
+                    DirtyDoc::Scene => "doc.scene",
+                    DirtyDoc::Pixel => "doc.pixel",
+                    DirtyDoc::Font => "doc.font",
+                })
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The prompt that names what is unsaved. One document takes the singular
+    /// verb: "Designer scene have unsaved changes" is not English, and the list
+    /// is the sentence's subject, so the count has to pick the wording.
+    fn unsaved_message(&self) -> String {
+        let docs = self.dirty_documents();
+        crate::i18n::trf(
+            &self.lang,
+            if docs.len() == 1 {
+                "dialog.unsaved_doc"
+            } else {
+                "dialog.unsaved_docs"
+            },
+            &[("docs", self.dirty_labels(&docs))],
+        )
+    }
+
     /// Save / Discard / Cancel. Non-interactive runs (screenshots, benches,
     /// tests) never block on a dialog: they use `scripted_choice` or Cancel.
-    fn ask_unsaved(&self, message_key: &str) -> Unsaved {
+    fn ask_unsaved(&self, message: &str) -> Unsaved {
         if !self.interactive {
             return self.scripted_choice.unwrap_or(Unsaved::Cancel);
         }
         match rfd::MessageDialog::new()
             .set_title(self.t("dialog.unsaved_title"))
-            .set_description(self.t(message_key))
+            .set_description(message)
             .set_buttons(rfd::MessageButtons::YesNoCancel)
             .show()
         {
@@ -92,6 +149,8 @@ impl App {
     /// Before closing the window, exiting or opening another project/scene.
     /// Returns true when the transition may proceed.
     pub fn confirm_transition(&mut self) -> bool {
+        // Buffered preference edits are part of "saved"; write them before asking.
+        self.flush_prefs();
         // A running glyph generation writes into the pack: neither Save nor
         // Discard can be honoured until it finishes.
         if self
@@ -116,7 +175,8 @@ impl App {
         if !self.has_unsaved() {
             return true;
         }
-        match self.ask_unsaved("dialog.unsaved_message") {
+        let message = self.unsaved_message();
+        match self.ask_unsaved(&message) {
             Unsaved::Cancel => false,
             Unsaved::Discard => {
                 self.pixel.doc.dirty = false;
@@ -139,7 +199,7 @@ impl App {
         if !self.scene_dirty() {
             return true;
         }
-        match self.ask_unsaved("dialog.unsaved_message") {
+        match self.ask_unsaved(&self.t("dialog.unsaved_message")) {
             Unsaved::Cancel => false,
             Unsaved::Discard => true,
             Unsaved::Save => match self.save() {
@@ -153,12 +213,13 @@ impl App {
     }
 
     /// Bind the Designer to `screen_id` without asking (callers confirm first).
+    /// Viewing another screen is not an edit: the manifest is written on the
+    /// next explicit save, so browsing never rewrites `project.oled.json`.
     pub fn switch_screen(&mut self, screen_id: &str) -> Result<(), CoreError> {
         let Some(project) = self.project.as_mut() else {
             return Ok(());
         };
         project.set_active_screen(screen_id)?;
-        project.save()?;
         let scene = load_project_scene(project, Some(screen_id))?;
         self.bind_scene(scene)?;
         self.prompt_recovery();
@@ -186,11 +247,40 @@ impl App {
             project.set_active_screen(&next)?;
             project.remove_screen(&active, true)?;
         }
-        // The deleted screen's session is gone with its file; never save it.
-        if let Some(session) = self.session.as_mut() {
-            session.dirty = false;
-        }
+        // Drop the deleted screen's session before switching: if the switch
+        // fails, nothing may write that file back.
+        self.session = None;
         self.switch_screen(&next)
+    }
+
+    /// Rename the active screen. The scene file moves on disk, so the session
+    /// is dropped and re-bound afterwards: a session still pointing at the old
+    /// path would resurrect that file on the next save.
+    pub fn rename_active_screen(&mut self, new_id: &str) -> Result<(), CoreError> {
+        if self.project.is_none() {
+            return Err(CoreError::invalid(self.t("status.no_document")));
+        }
+        // Save-or-discard first, so the rename moves the file as the user last
+        // left it.
+        if !self.confirm_scene_transition() {
+            self.refresh_navigator();
+            return Ok(());
+        }
+        let active = self
+            .project
+            .as_ref()
+            .map(|project| project.active_screen())
+            .unwrap_or_default();
+        // Drop the session before the rename, not after: `rename_screen` moves the
+        // scene file and can fail halfway (the manifest write, or the rollback of
+        // that move), and a session still bound to the old path would recreate it
+        // on the next save. Nothing is lost — the prompt above already saved or
+        // discarded every change.
+        self.session = None;
+        if let Some(project) = self.project.as_mut() {
+            project.rename_screen(&active, new_id, Some(new_id))?;
+        }
+        self.switch_screen(new_id)
     }
 
     /// Open a project or scene path after the unsaved-changes check.
@@ -243,7 +333,7 @@ mod tests {
         session
             .batch_move(&["hero_digits".to_string()], 1, 0, false)
             .unwrap();
-        assert!(session.dirty);
+        assert!(session.is_dirty());
     }
 
     #[test]
@@ -254,7 +344,7 @@ mod tests {
         assert!(!app.confirm_transition());
         app.open_screen("123").unwrap();
         assert_eq!(app.project.as_ref().unwrap().active_screen(), "main");
-        assert!(app.session.as_ref().unwrap().dirty);
+        assert!(app.session.as_ref().unwrap().is_dirty());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -273,6 +363,37 @@ mod tests {
         app.open_screen("123").unwrap();
         assert_ne!(std::fs::read(&scene_file).unwrap(), before);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Renaming moves the scene file, so the session must follow it: a session
+    /// still pointing at the old path would write that file back on save.
+    #[test]
+    fn renaming_the_active_screen_rebinds_the_session_and_never_writes_the_old_path() {
+        let (mut app, root) = app("rename");
+        edit(&mut app);
+        app.scripted_choice = Some(Unsaved::Save);
+        app.rename_active_screen("renamed").unwrap();
+
+        let session = app.session.as_ref().unwrap();
+        assert_eq!(session.doc.path, root.join("scenes/renamed.json"));
+        assert!(!session.is_dirty(), "the saved edits moved with the screen");
+        assert!(
+            !root.join("scenes/main_scene.json").exists(),
+            "the rename left the old file behind"
+        );
+        assert_eq!(
+            app.project.as_ref().unwrap().active_screen(),
+            "renamed",
+            "the manifest still points at the old id"
+        );
+
+        app.save().unwrap();
+        assert!(
+            !root.join("scenes/main_scene.json").exists(),
+            "a later save resurrected the renamed-away file"
+        );
+        assert!(root.join("scenes/renamed.json").exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -342,6 +463,59 @@ mod tests {
         app.open_project(&root.join("project.oled.json")).unwrap();
         assert!(app.font.is_none());
         assert_eq!(std::fs::read(pack.join("fontpack.json")).unwrap(), before);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dirty_documents_names_each_edited_document() {
+        let (mut app, root) = app("docs");
+        assert!(app.dirty_documents().is_empty());
+        edit(&mut app);
+        assert_eq!(app.dirty_documents(), vec![DirtyDoc::Scene]);
+        app.pixel.doc.pencil(0, 0, true);
+        assert_eq!(
+            app.dirty_documents(),
+            vec![DirtyDoc::Scene, DirtyDoc::Pixel]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_unsaved_prompt_agrees_with_its_subject() {
+        let (mut app, root) = app("grammar");
+        app.lang = "en_US".to_string();
+        edit(&mut app);
+        let one = app.unsaved_message();
+        assert!(
+            one.starts_with("Designer scene has unsaved"),
+            "one document: {one}"
+        );
+        app.pixel.doc.pencil(0, 0, true);
+        let both = app.unsaved_message();
+        assert!(
+            both.starts_with("Designer scene, Pixel Studio bitmap have unsaved"),
+            "two documents: {both}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn viewing_another_screen_leaves_the_manifest_untouched_until_save() {
+        let (mut app, root) = app("view");
+        let manifest = root.join("project.oled.json");
+        let before = std::fs::read(&manifest).unwrap();
+        // The fixture opens on "123"; the setup bound the Designer to "main".
+        app.switch_screen("main").unwrap();
+        assert_eq!(
+            std::fs::read(&manifest).unwrap(),
+            before,
+            "merely viewing a screen must not rewrite the project file"
+        );
+        app.save().unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&manifest).unwrap()).unwrap();
+        assert_eq!(saved["active_screen"], "main");
+        assert_ne!(std::fs::read(&manifest).unwrap(), before);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

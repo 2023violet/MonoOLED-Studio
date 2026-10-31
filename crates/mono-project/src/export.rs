@@ -665,6 +665,19 @@ pub fn validate_scene(
             None,
         )),
     }
+    // The declared-geometry and post-render passes inspect the same box, so a
+    // single element can be reported twice. Keep the first (declared) report;
+    // findings whose message differs (e.g. text measured wider than declared)
+    // stay distinct.
+    let mut seen: BTreeSet<(String, String, Option<String>, String)> = BTreeSet::new();
+    findings.retain(|f| {
+        seen.insert((
+            f.severity.clone(),
+            f.code.clone(),
+            f.element_id.clone(),
+            f.message.clone(),
+        ))
+    });
     findings
 }
 
@@ -1128,11 +1141,58 @@ pub fn frame_png(rows: &[Vec<u8>], width: usize, height: usize) -> CoreResult<Ve
     encode_bitmap_png(width, height, rows)
 }
 
+#[derive(Debug)]
 pub struct ExportSummary {
     pub output_dir: PathBuf,
     pub frame_count: usize,
     pub frame_hashes: BTreeMap<String, String>,
     pub findings: BTreeMap<String, Vec<Finding>>,
+}
+
+/// Export refused by the release gate. `findings` is keyed by frame name in
+/// matrix order; `report` is the written markdown report, when one survives.
+#[derive(Debug, Clone, Default)]
+pub struct BlockedExport {
+    pub findings: BTreeMap<String, Vec<Finding>>,
+    pub report: Option<PathBuf>,
+}
+
+impl BlockedExport {
+    pub fn has_blockers(findings: &BTreeMap<String, Vec<Finding>>) -> bool {
+        findings.values().flatten().any(Finding::is_blocking)
+    }
+}
+
+/// Validate every state without writing anything. The scene exporters run this
+/// before emitting a file: `export_scene` gates itself, and the desktop, CLI and
+/// Automation C-header producers call it first. It does **not** cover the
+/// Output Workbench (`apps/mono-desktop/src/workbench.rs`) or
+/// `export.bitmap_data`, which can render the live scene into a file of their
+/// own; adding them is a contract change for the Automation API, not a bugfix.
+pub fn preflight(
+    scene: &Map<String, Value>,
+    root: &Path,
+    states: &[(String, State)],
+) -> CoreResult<BTreeMap<String, Vec<Finding>>> {
+    let mut resources = DiskResources::frozen();
+    let mut all = BTreeMap::new();
+    for (name, state) in states {
+        all.insert(
+            name.clone(),
+            validate_scene(scene, root, Some(state), &mut resources),
+        );
+    }
+    Ok(all)
+}
+
+pub fn write_validation_report(
+    path: &Path,
+    all: &BTreeMap<String, Vec<Finding>>,
+) -> CoreResult<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| crate::resources::io_error(parent, &e))?;
+    }
+    atomic_write(path, validation_markdown(all).as_bytes())
 }
 
 fn prune(directory: &Path, suffix: &str, keep: &BTreeSet<String>) {
@@ -1171,6 +1231,20 @@ pub fn export_scene(
     states: &[(String, State)],
     progress: Progress<'_>,
 ) -> CoreResult<ExportSummary> {
+    export_scene_with_report(scene, root, output_dir, states, None, progress)
+}
+
+/// `export_scene` with an explicit blocking-report location. Handoff packages
+/// write the report next to the ZIP because their staging directory is
+/// temporary and deleted right after the run.
+pub fn export_scene_with_report(
+    scene: &Map<String, Value>,
+    root: &Path,
+    output_dir: &Path,
+    states: &[(String, State)],
+    report: Option<&Path>,
+    progress: Progress<'_>,
+) -> CoreResult<ExportSummary> {
     let mut folded: BTreeMap<String, String> = BTreeMap::new();
     for (name, _) in states {
         let safe = validate_frame_name(name)?;
@@ -1188,9 +1262,6 @@ pub fn export_scene(
     }
     let reference_dir = output_dir.join("reference");
     let golden_dir = output_dir.join("golden");
-    for dir in [&reference_dir, &golden_dir] {
-        std::fs::create_dir_all(dir).map_err(|e| crate::resources::io_error(dir, &e))?;
-    }
     let mut resources = DiskResources::frozen();
     let total_steps = (states.len() * 2).max(1);
     let mut all: BTreeMap<String, Vec<Finding>> = BTreeMap::new();
@@ -1204,17 +1275,18 @@ pub fn export_scene(
         }
     }
     if all.values().any(|f| has_blockers(f)) {
-        atomic_write(
-            &output_dir.join("validation_report.md"),
-            validation_markdown(&all).as_bytes(),
-        )?;
+        let report = report
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| output_dir.join("validation_report.md"));
+        atomic_write(&report, validation_markdown(&all).as_bytes())?;
         return Err(CoreError::new(
             EXPORT_BLOCKED,
-            format!(
-                "export blocked; see {}",
-                display(&output_dir.join("validation_report.md"))
-            ),
+            format!("export blocked; see {}", display(&report)),
         ));
+    }
+    // Only after the gate: a refused export must not leave directories behind.
+    for dir in [&reference_dir, &golden_dir] {
+        std::fs::create_dir_all(dir).map_err(|e| crate::resources::io_error(dir, &e))?;
     }
     let canvas = scene.get("canvas").cloned().unwrap_or(json!({}));
     let (width, height) = (
@@ -1539,19 +1611,27 @@ pub fn build_handoff_package(
     ));
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work).map_err(|e| crate::resources::io_error(&work, &e))?;
+    let report = output_zip.with_extension("validation.md");
     let result = (|| {
-        let summary = export_scene(scene, root, &work, states, &mut |stage, done, total| {
-            let ratio = if total == 0 {
-                0.0
-            } else {
-                done as f64 / total as f64
-            };
-            progress(
-                &format!("handoff.{stage}"),
-                (ratio * 650.0).round() as usize,
-                1000,
-            )
-        })?;
+        let summary = export_scene_with_report(
+            scene,
+            root,
+            &work,
+            states,
+            Some(&report),
+            &mut |stage, done, total| {
+                let ratio = if total == 0 {
+                    0.0
+                } else {
+                    done as f64 / total as f64
+                };
+                progress(
+                    &format!("handoff.{stage}"),
+                    (ratio * 650.0).round() as usize,
+                    1000,
+                )
+            },
+        )?;
         let matrix = build_state_matrix(scene, policy)?;
         let matrix_summary = validate_matrix(scene, root, &matrix, &mut |stage, done, total| {
             let ratio = if total == 0 {

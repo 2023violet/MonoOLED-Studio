@@ -13,8 +13,9 @@ use mono_core::state::{
 use mono_core::{CoreError, CoreResult};
 use mono_project::atomic::atomic_write;
 use mono_project::export::{
-    asset_health, build_handoff_package, check_design_rules, export_scene, matrix_report,
-    validate_matrix, validate_scene,
+    BlockedExport, EXPORT_BLOCKED, asset_health, build_handoff_package, check_design_rules,
+    export_scene, matrix_report, preflight, validate_matrix, validate_scene,
+    write_validation_report,
 };
 use mono_project::project::ProjectWorkspace;
 use mono_project::resources::DiskResources;
@@ -360,11 +361,24 @@ fn cmd_asset_audit(args: &Args) -> CoreResult<u8> {
 fn cmd_c_header(args: &Args) -> CoreResult<u8> {
     let (_, scene) = load(args)?;
     let state = state_from_args(&scene, args)?;
-    let result = render_scene(&scene.data, &scene.root, &state, &mut DiskResources::new())?;
     let output = PathBuf::from(
         args.get("output")
             .ok_or_else(|| CoreError::invalid("--output is required"))?,
     );
+    let findings = preflight(
+        &scene.data,
+        &scene.root,
+        &[("current".into(), state.clone())],
+    )?;
+    if BlockedExport::has_blockers(&findings) {
+        let report = output.with_extension("validation.md");
+        write_validation_report(&report, &findings)?;
+        return Err(CoreError::new(
+            EXPORT_BLOCKED,
+            format!("export blocked; see {}", report.display()),
+        ));
+    }
+    let result = render_scene(&scene.data, &scene.root, &state, &mut DiskResources::new())?;
     atomic_write(
         &output,
         framebuffer_to_c_header(

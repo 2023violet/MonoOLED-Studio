@@ -23,8 +23,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use mono_core::render::posix;
-use slint::{ComponentHandle, SharedString};
+use slint::{ComponentHandle, Model, SharedString};
 
 #[allow(clippy::all, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod generated {
@@ -252,13 +251,16 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
                 return;
             };
             let mut a = app.borrow_mut();
-            if let Some(fb) = a.current_framebuffer() {
-                let result = mono_core::c_header::framebuffer_to_c_header(&fb, "oled_frame")
-                    .and_then(|text| mono_project::atomic::atomic_write(&path, text.as_bytes()));
-                match result {
-                    Ok(()) => a.set_status(posix(&path)),
-                    Err(e) => a.error(&e),
-                }
+            if let Err(e) = a.export_c_header(&path) {
+                a.error(&e);
+            }
+        }
+        // Scripted runs: the same gate and dialog without the native file picker.
+        other if other.starts_with("export-c-header:") => {
+            let path = PathBuf::from(&other["export-c-header:".len()..]);
+            let mut a = app.borrow_mut();
+            if let Err(e) = a.export_c_header(&path) {
+                a.error(&e);
             }
         }
         "batch-validate" => {
@@ -268,6 +270,21 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             }
         }
         "preferences" => app.borrow_mut().open_preferences(),
+        "open-recent" => {
+            let mut a = app.borrow_mut();
+            let last = a.prefs.str("startup.last_project");
+            if last.is_empty() {
+                let message = a.t("status.no_document");
+                a.set_status(message);
+                return;
+            }
+            if !a.confirm_transition() {
+                return;
+            }
+            if let Err(e) = a.open_project(Path::new(&last)) {
+                a.error(&e);
+            }
+        }
         "about" => AppModel::get(ui).set_about_visible(true),
         "exit" => {
             if app.borrow_mut().confirm_transition() {
@@ -286,6 +303,20 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             &t("dialog.screen_id"),
             "copy",
         ),
+        "rename-screen" => {
+            let active = app
+                .borrow()
+                .project
+                .as_ref()
+                .map(|project| project.active_screen())
+                .unwrap_or_default();
+            app.borrow_mut().show_prompt(
+                Prompt::RenameScreen,
+                &t("action.rename"),
+                &t("dialog.rename_hint"),
+                &active,
+            );
+        }
         "undo" | "redo" | "save" if app.borrow().workspace == 1 => {
             app.borrow_mut().pixel_action(action);
         }
@@ -347,9 +378,317 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
             let tab = other["pixel-inspector:".len()..].parse().unwrap_or(0);
             PixelModel::get(ui).set_inspector_tab(tab);
         }
+        other if other.starts_with("navigator:") => {
+            let tab = other["navigator:".len()..].parse().unwrap_or(0);
+            DesignerModel::get(ui).set_navigator_tab(tab);
+        }
         other if other.starts_with("workspace:") => {
             let index: i32 = other[10..].parse().unwrap_or(0);
             switch_workspace(app, ui, index);
+        }
+        // Scripted runs: exercise the real key path (focus chain, modals).
+        other if other.starts_with("key:") => {
+            let text = match &other[4..] {
+                "escape" | "esc" => "\u{1b}".to_string(),
+                "enter" => "\n".to_string(),
+                "space" => " ".to_string(),
+                "tab" => "\t".to_string(),
+                other => other.to_string(),
+            };
+            ui.window()
+                .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+                    text: text.as_str().into(),
+                });
+            ui.window()
+                .dispatch_event(slint::platform::WindowEvent::KeyReleased {
+                    text: text.as_str().into(),
+                });
+        }
+        "dump:dirty" => {
+            let a = app.borrow();
+            let dirty = a.session.as_ref().is_some_and(|s| s.is_dirty());
+            println!("SELFCHECK dirty={dirty}");
+        }
+        "dump:pixel-tool" => {
+            let a = app.borrow();
+            println!("SELFCHECK pixel.tool={}", a.pixel.tool.index());
+        }
+        // Scripted runs: exercise the buffered preference path.
+        other if other.starts_with("pref-section:") => {
+            let index: i32 = other["pref-section:".len()..].parse().unwrap_or(0);
+            PrefsModel::get(ui).set_section(index);
+            // Same path as the section-chosen callback: pending edits land when
+            // the user leaves a section.
+            app.borrow_mut().flush_prefs();
+            app.borrow_mut().refresh_prefs();
+        }
+        other if other.starts_with("pref-edit:") => {
+            if let Some((key, value)) = other["pref-edit:".len()..].split_once('=') {
+                app.borrow_mut().pref_draft(key, value);
+            }
+        }
+        "dump:prefs-shortcut" => {
+            let a = app.borrow();
+            let value = a.prefs.get("shortcuts.project.save");
+            println!(
+                "SELFCHECK shortcut.project.save={}",
+                value.as_str().unwrap_or("")
+            );
+            // The settings page is a view of the same value: a stored chord the
+            // UI never renders is the bug this hook exists to catch.
+            let pm = PrefsModel::get(ui);
+            let rows = pm.get_rows();
+            let shown = rows
+                .iter()
+                .find(|row| row.key == "shortcuts.project.save")
+                .map(|row| row.text.to_string())
+                .unwrap_or_default();
+            println!("SELFCHECK shortcut.project.save.row={shown}");
+        }
+        "dump:overlay" => {
+            let am = AppModel::get(ui);
+            let open = if am.get_prompt_visible() {
+                "prompt"
+            } else if am.get_about_visible() {
+                "about"
+            } else if am.get_preferences_visible() {
+                "preferences"
+            } else if am.get_picker_visible() {
+                "picker"
+            } else if am.get_blocked_visible() {
+                "blocked"
+            } else if am.get_workspace() == 1 && PixelModel::get(ui).get_dialog() != 0 {
+                "pixel"
+            } else {
+                "none"
+            };
+            println!("SELFCHECK overlay={open}");
+        }
+        // Scripted runs: the zone overlay is only honest if the model actually
+        // carries the project's `design_rules.zones` and the flag reaches it.
+        "dump:zones" => {
+            let dm = DesignerModel::get(ui);
+            println!(
+                "SELFCHECK zones={} shown={}",
+                dm.get_zones().iter().count(),
+                dm.get_show_zones()
+            );
+        }
+        // Scripted runs: what the state schema panel currently shows, and a way
+        // to drive its edits (`schema:<action>:<name or row>:<value>`).
+        "dump:states" => {
+            let dm = DesignerModel::get(ui);
+            let names: Vec<String> = dm.get_var_names().iter().map(|n| n.to_string()).collect();
+            println!(
+                "SELFCHECK states=vars:{} relations:{} valid:{} names:{}",
+                dm.get_schema_vars().iter().count(),
+                dm.get_relations().iter().count(),
+                dm.get_schema_valid(),
+                names.join(","),
+            );
+            println!("SELFCHECK states.errors={}", dm.get_schema_errors());
+        }
+        other if other.starts_with("schema:") => {
+            let mut parts = other["schema:".len()..].splitn(3, ':');
+            let action = parts.next().unwrap_or_default();
+            let key = parts.next().unwrap_or_default();
+            let value = parts.next().unwrap_or_default();
+            app.borrow_mut().schema_edit(action, key, value);
+        }
+        // Scripted runs: the design-rules panel (`rules:<action>:<row>:<field>:<value>`).
+        "dump:rules" => {
+            let dm = DesignerModel::get(ui);
+            println!(
+                "SELFCHECK rules=required:{} zones:{} groups:{} valid:{}",
+                dm.get_rule_required().iter().count(),
+                dm.get_rule_zones().iter().count(),
+                dm.get_rule_groups().iter().count(),
+                dm.get_rules_valid(),
+            );
+            println!("SELFCHECK rules.errors={}", dm.get_rules_errors());
+            println!("SELFCHECK rules.status={}", dm.get_rules_status());
+        }
+        // Scripted runs: what the validator currently reports.
+        "dump:findings" => {
+            let dm = DesignerModel::get(ui);
+            let codes: Vec<String> = dm
+                .get_findings()
+                .iter()
+                .map(|f| f.code.to_string())
+                .collect();
+            println!("SELFCHECK findings={}", codes.join(","));
+            println!("SELFCHECK findings.summary={}", dm.get_findings_summary());
+        }
+        other if other.starts_with("rules:") => {
+            let mut parts = other["rules:".len()..].splitn(4, ':');
+            let action = parts.next().unwrap_or_default();
+            let row = parts.next().unwrap_or_default();
+            let field = parts.next().unwrap_or_default();
+            let value = parts.next().unwrap_or_default();
+            app.borrow_mut().rule_edit(action, row, field, value);
+        }
+        // Scripted runs: the busy flag the status bar renders, and the same
+        // reading from inside the event loop once the job timer has polled.
+        "dump:job" => {
+            let am = AppModel::get(ui);
+            println!("SELFCHECK busy={}", am.get_busy());
+            println!("SELFCHECK busy.text={}", am.get_busy_text());
+            println!("SELFCHECK status.text={}", am.get_status_text());
+        }
+        other if other.starts_with("job-later:") => {
+            let ms: u64 = other["job-later:".len()..].parse().unwrap_or(600);
+            let w = ui.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(ms), move || {
+                if let Some(ui) = w.upgrade() {
+                    let am = AppModel::get(&ui);
+                    println!("SELFCHECK busy.later={}", am.get_busy());
+                    println!("SELFCHECK busy.text.later={}", am.get_busy_text());
+                    println!("SELFCHECK status.text.later={}", am.get_status_text());
+                }
+            });
+        }
+        "dump:undo-label" => {
+            let token = {
+                let a = app.borrow();
+                a.session
+                    .as_ref()
+                    .and_then(|s| s.undo_label())
+                    .unwrap_or("none")
+                    .to_string()
+            };
+            println!("SELFCHECK undo.token={token}");
+            println!("SELFCHECK undo.text={}", AppModel::get(ui).get_undo_text());
+        }
+        // Scripted runs: answer the open prompt exactly as the dialog's OK
+        // button does, so the modal path itself is what gets exercised.
+        other if other.starts_with("prompt-answer:") => {
+            let text = SharedString::from(&other["prompt-answer:".len()..]);
+            AppModel::get(ui).invoke_prompt_accepted(text);
+        }
+        // Scripted runs: open a screen by id (the Navigator row click path).
+        other if other.starts_with("open-screen:") => {
+            let id = &other["open-screen:".len()..];
+            let mut a = app.borrow_mut();
+            if let Err(e) = a.open_screen(id) {
+                a.error(&e);
+            }
+        }
+        "dump:screen-ids" => {
+            let a = app.borrow();
+            println!(
+                "SELFCHECK screen.ids={}",
+                a.project
+                    .as_ref()
+                    .map(|p| p
+                        .screens()
+                        .iter()
+                        .map(|s| s.id.clone())
+                        .collect::<Vec<_>>()
+                        .join(","))
+                    .unwrap_or_default()
+            );
+            println!(
+                "SELFCHECK session.path={}",
+                a.session
+                    .as_ref()
+                    .map(|s| s.doc.path.to_string_lossy().replace('\\', "/"))
+                    .unwrap_or_default()
+            );
+        }
+        // Scripted runs: what the Inspector says about the current selection.
+        "dump:selection" => {
+            println!(
+                "SELFCHECK selection.text={}",
+                DesignerModel::get(ui).get_selection_text()
+            );
+        }
+        // Scripted runs: the generator form's offsets, read from both sides of the
+        // binding so a dead SpinBox row cannot pass as wired up.
+        "dump:font-offset" => {
+            let fm = FontModel::get(ui);
+            let a = app.borrow();
+            match a.font.as_ref() {
+                Some(lab) => println!(
+                    "SELFCHECK font.offset=form{},{} model{},{}",
+                    lab.form.offset_x,
+                    lab.form.offset_y,
+                    fm.get_offset_x(),
+                    fm.get_offset_y()
+                ),
+                None => println!("SELFCHECK font.offset=none"),
+            }
+        }
+        // Scripted runs: drive one generator form field (`font-edit:<field>:<value>`).
+        other if other.starts_with("font-edit:") => {
+            let rest = &other["font-edit:".len()..];
+            let (field, value) = rest.split_once(':').unwrap_or((rest, ""));
+            app.borrow_mut().font_edit(field, value);
+        }
+        // Scripted runs: switch the Inspector tab (`inspector-tab:<index>`).
+        other if other.starts_with("inspector-tab:") => {
+            let tab: i32 = other["inspector-tab:".len()..].parse().unwrap_or(0);
+            DesignerModel::get(ui).set_inspector_tab(tab);
+        }
+        // Scripted runs: run one action after the first frame
+        // (`later:<ms>:<action>`). Startup actions all land before the window is
+        // drawn, so they can never observe what a deferred action changed.
+        other if other.starts_with("later:") => {
+            let rest = &other["later:".len()..];
+            let Some((ms, action)) = rest.split_once(':') else {
+                eprintln!("malformed action {other}: expected later:<ms>:<action>");
+                return;
+            };
+            let Ok(delay) = ms.parse::<u64>() else {
+                eprintln!("malformed action {other}: <ms> is not a number");
+                return;
+            };
+            let action = action.to_string();
+            let a = app.clone();
+            let w = ui.as_weak();
+            slint::Timer::single_shot(std::time::Duration::from_millis(delay), move || {
+                // Timers keep firing while a nested file or confirmation dialog is
+                // open, and `handle_action` takes the state unconditionally, so a
+                // busy state means this deferred step is dropped rather than panic.
+                if a.try_borrow_mut().is_err() {
+                    return;
+                }
+                if let Some(ui) = w.upgrade() {
+                    handle_action(&a, &ui, &action);
+                }
+            });
+        }
+        // Scripted runs: change the selection from inside the event loop, the
+        // way a click does. Startup actions all land before the first frame, so
+        // they can never exercise a `changed` handler.
+        other if other.starts_with("select-later:") => {
+            let id = other["select-later:".len()..].to_string();
+            // `+id` joins the selection, the way a Ctrl+click does.
+            let (ctrl, id) = match id.strip_prefix('+') {
+                Some(rest) => (true, rest.to_string()),
+                None => (false, id),
+            };
+            let a = app.clone();
+            slint::Timer::single_shot(std::time::Duration::from_millis(300), move || {
+                // Same reason as `later:` above: a timer can land while a nested
+                // dialog is holding the state.
+                if let Ok(mut app) = a.try_borrow_mut() {
+                    app.element_clicked(&id, ctrl);
+                    app.refresh_all();
+                }
+            });
+        }
+        // Scripted runs: nudge the selection like an arrow key does.
+        "edit:nudge" => {
+            let mut a = app.borrow_mut();
+            let ids = a.selection.ids().to_vec();
+            let result = a
+                .session
+                .as_mut()
+                .map(|session| session.batch_move(&ids, 1, 0, false));
+            match result {
+                Some(Err(e)) => a.error(&e),
+                _ => a.refresh_all(),
+            }
         }
         other => {
             let mut a = app.borrow_mut();
@@ -374,6 +713,7 @@ fn switch_workspace(app: &Rc<RefCell<App>>, ui: &MainWindow, index: i32) {
     }
     let mut a = app.borrow_mut();
     a.workspace = index;
+    a.reset_status();
     if index == 1 {
         a.refresh_pixel();
         a.refresh_bench();
@@ -419,6 +759,11 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
         let text = text.trim().to_string();
         let prompt = match prompt {
             Prompt::NewScreen | Prompt::DuplicateScreen => prompt,
+            Prompt::RenameScreen => {
+                let result = app.rename_active_screen(&text);
+                finish_prompt(&mut app, result);
+                return;
+            }
             Prompt::NewFontPack => {
                 app.create_font_pack(&text);
                 return;
@@ -466,13 +811,33 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
                     app.error(&e);
                 }
             }
-            Ok(None) => {}
+            Ok(None) => {
+                // No project to add a screen to: say so instead of nothing.
+                let message = app.t("status.no_document");
+                app.set_status(message);
+            }
             Err(e) => app.error(&e),
         }
     });
     let a = app.clone();
     AppModel::get(ui).on_prompt_cancelled(move || {
         a.borrow_mut().prompt = None;
+    });
+    let a = app.clone();
+    AppModel::get(ui).on_blocked_jump(move |index| a.borrow_mut().blocked_jump(index));
+    let a = app.clone();
+    AppModel::get(ui).on_blocked_copy(move || a.borrow_mut().copy_blocked_report());
+    let a = app.clone();
+    AppModel::get(ui).on_blocked_close(move || a.borrow_mut().hide_blocked());
+    let a = app.clone();
+    AppModel::get(ui).on_about_link(move |url| {
+        let mut app = a.borrow_mut();
+        match arboard::Clipboard::new()
+            .and_then(|mut clipboard| clipboard.set_text(url.to_string()))
+        {
+            Ok(()) => app.set_status(url.to_string()),
+            Err(e) => app.error(&mono_core::CoreError::invalid(e.to_string())),
+        }
     });
 
     let a = app.clone();
@@ -527,6 +892,14 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     DesignerModel::get(ui)
         .on_state_edited(move |name, value| a.borrow_mut().state_edited(&name, &value));
     let a = app.clone();
+    DesignerModel::get(ui).on_schema_edited(move |action, key, value| {
+        a.borrow_mut().schema_edit(&action, &key, &value);
+    });
+    let a = app.clone();
+    DesignerModel::get(ui).on_rules_edited(move |action, row, field, value| {
+        a.borrow_mut().rule_edit(&action, &row, &field, &value);
+    });
+    let a = app.clone();
     DesignerModel::get(ui).on_canvas_pointer(move |phase, x, y, shift, ctrl| {
         if let Ok(mut app) = a.try_borrow_mut() {
             app.canvas_pointer(&phase, x, y, shift, ctrl);
@@ -549,6 +922,18 @@ fn wire(ui: &MainWindow, app: &Rc<RefCell<App>>) {
 
 /// Configured shortcut → command (V1 command registry). Returns true if handled.
 fn run_shortcut(app: &Rc<RefCell<App>>, ui: &MainWindow, chord: &str) -> bool {
+    // A modal owns the keyboard: chords (and bare tool keys) must not fire
+    // behind it. Escape is handled by the modal's own focus scope.
+    let app_model = AppModel::get(ui);
+    let modal = app_model.get_prompt_visible()
+        || app_model.get_about_visible()
+        || app_model.get_preferences_visible()
+        || app_model.get_picker_visible()
+        || app_model.get_blocked_visible()
+        || (app_model.get_workspace() == 1 && PixelModel::get(ui).get_dialog() != 0);
+    if modal {
+        return false;
+    }
     let Some(command) = app.borrow_mut().shortcut(chord) else {
         // V1 fixed menu shortcuts (not user-configurable).
         let action = match prefs_ui::normalize_shortcut(chord).as_str() {
@@ -616,16 +1001,23 @@ fn wire_prefs(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     });
     let pm = PrefsModel::get(ui);
     let a = app.clone();
-    pm.on_section_chosen(move |_| a.borrow_mut().refresh_prefs());
+    pm.on_section_chosen(move |_| {
+        let mut app = a.borrow_mut();
+        app.flush_prefs();
+        app.refresh_prefs();
+    });
     let a = app.clone();
     pm.on_search_changed(move |_| a.borrow_mut().refresh_prefs());
     let a = app.clone();
     pm.on_changed(move |key, value| a.borrow_mut().pref_changed(&key, &value));
     let a = app.clone();
+    pm.on_text_changed(move |key, value| a.borrow_mut().pref_draft(&key, &value));
+    let a = app.clone();
     pm.on_button(move |key| a.borrow_mut().pref_button(&key));
-    let w = ui.as_weak();
+    let (a, w) = (app.clone(), ui.as_weak());
     pm.on_close(move || {
         if let Some(ui) = w.upgrade() {
+            a.borrow_mut().flush_prefs();
             AppModel::get(&ui).set_preferences_visible(false);
         }
     });
@@ -674,6 +1066,8 @@ fn wire_pixel(ui: &MainWindow, app: &Rc<RefCell<App>>) {
     pm.on_import_changed(move || a.borrow_mut().pixel_import_changed());
     let a = app.clone();
     pm.on_dialog_accepted(move || a.borrow_mut().pixel_dialog_accepted());
+    let a = app.clone();
+    pm.on_dialog_dismissed(move || a.borrow_mut().pixel_dialog_dismissed());
 
     let fm = FontModel::get(ui);
     let a = app.clone();
@@ -737,6 +1131,7 @@ fn main() {
     let app = Rc::new(RefCell::new(App::new(ui.as_weak(), prefs)));
     app.borrow_mut().interactive = args.screenshot.is_none() && args.bench.is_none();
     apply_appearance(&ui, &app.borrow(), args.theme.as_deref());
+    app.borrow_mut().apply_canvas_preferences();
     wire(&ui, &app);
     {
         let mut a = app.borrow_mut();
@@ -787,6 +1182,7 @@ fn main() {
         std::time::Duration::from_millis(60),
         move || {
             if let Ok(mut app) = a.try_borrow_mut() {
+                app.flush_prefs_if_idle();
                 app.poll_font();
                 app.poll_agent();
                 app.poll_background();
@@ -814,7 +1210,10 @@ fn main() {
     for action in &args.actions {
         match action.strip_prefix("font:") {
             Some(rest) => app.borrow_mut().font_action(rest),
-            None => handle_action(&app, &ui, action),
+            None => match action.strip_prefix("pixel:") {
+                Some(rest) => app.borrow_mut().pixel_action(rest),
+                None => handle_action(&app, &ui, action),
+            },
         }
     }
     if let Some((w, h)) = args.window_size {
@@ -849,5 +1248,302 @@ fn main() {
     watchdog::start();
     if let Err(error) = ui.run() {
         eprintln!("MonoOLED Studio stopped: {error}");
+    }
+}
+
+#[cfg(test)]
+mod ui_source_tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+
+    const MAIN: &str = include_str!("../ui/main.slint");
+    const WIDGETS: &str = include_str!("../ui/widgets.slint");
+    const PREFERENCES: &str = include_str!("../ui/preferences.slint");
+    const PIXEL: &str = include_str!("../ui/pixel.slint");
+    const DESIGNER: &str = include_str!("../ui/designer.slint");
+    const FONTLAB: &str = include_str!("../ui/fontlab.slint");
+
+    /// Brace depth just before `needle`, ignoring string literals.
+    fn depth_at(src: &str, needle: &str) -> i32 {
+        let at = src
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing {needle}"));
+        let mut depth = 0;
+        let mut in_string = false;
+        let mut escaped = false;
+        for ch in src[..at].chars() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                continue;
+            }
+            match ch {
+                '"' => in_string = true,
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        depth
+    }
+
+    #[test]
+    fn every_overlay_sits_inside_the_shortcut_focus_scope() {
+        let base = depth_at(MAIN, "shortcuts := FocusScope");
+        for anchor in [
+            "if AppModel.workspace == 1 && PixelModel.dialog != 0: PixelDialogs",
+            "if AppModel.blocked-visible: BlockedDialog",
+            "if AppModel.preferences-visible: PreferencesDialog",
+            "if AppModel.picker-visible: PickerDialog",
+            "if AppModel.prompt-visible: PromptDialog",
+            "if AppModel.about-visible: AboutDialog",
+        ] {
+            assert!(
+                depth_at(MAIN, anchor) > base,
+                "{anchor} must live inside the shortcuts FocusScope"
+            );
+        }
+    }
+
+    #[test]
+    fn no_list_is_a_subclassed_listview() {
+        // Slint 1.18 lays out the delegates of a component that inherits
+        // `ListView` inside the flickable wrongly (they stack at one offset),
+        // and it rejects forwarding `@children` into a ListView at all. Scroll
+        // to selection therefore stays a plain ListView plus a `changed`
+        // handler in the owning component.
+        for (name, src) in [
+            ("widgets.slint", WIDGETS),
+            ("designer.slint", DESIGNER),
+            ("fontlab.slint", FONTLAB),
+        ] {
+            assert!(
+                !src.contains("inherits ListView"),
+                "{name}: inheriting ListView breaks the delegate layout"
+            );
+        }
+        assert!(DESIGNER.contains("Scroll.into-view("));
+        assert!(FONTLAB.contains("Scroll.into-view("));
+    }
+
+    #[test]
+    fn declared_tooltips_are_rendered() {
+        // A `tip`/`tooltip` property that nothing renders is invisible: the
+        // control must own a Tooltip child.
+        for (name, src) in [
+            ("main.slint", MAIN),
+            ("widgets.slint", WIDGETS),
+            ("pixel.slint", PIXEL),
+        ] {
+            if src.contains("in property <string> tip")
+                || src.contains("in property <string> tooltip")
+            {
+                assert!(
+                    src.contains("Tooltip {"),
+                    "{name}: tooltip declared but never rendered"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scrim_owns_escape_and_every_dialog_binds_dismissal() {
+        assert!(WIDGETS.contains("callback dismissed();"));
+        assert!(WIDGETS.contains("Key.Escape"));
+        assert!(WIDGETS.contains("@children"));
+        for (name, src) in [
+            ("main.slint", MAIN),
+            ("preferences.slint", PREFERENCES),
+            ("pixel.slint", PIXEL),
+        ] {
+            let dialogs = src.matches("inherits Scrim").count();
+            let dismissals = src.matches("dismissed =>").count();
+            assert_eq!(dialogs, dismissals, "{name}: a dialog ignores Escape");
+        }
+    }
+
+    /// The executable text of every `src/*.rs`, where the Rust half of each
+    /// binding lives. Comments and test modules are stripped: a doc comment
+    /// naming `set_zones` must not be allowed to prove that anything calls it.
+    fn controller_text() -> String {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut out = String::new();
+        for entry in std::fs::read_dir(root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let mut text = std::fs::read_to_string(path).unwrap();
+            for anchor in ["mod tests {", "mod ui_source_tests {"] {
+                if let Some(at) = text.find(anchor) {
+                    text.truncate(at);
+                }
+            }
+            for line in text.lines() {
+                if !line.trim_start().starts_with("//") {
+                    out.push_str(line);
+                    out.push('\n');
+                }
+            }
+        }
+        out
+    }
+
+    /// The byte span of the `export global <name> { … }` block inside `src`.
+    fn global_span(src: &str, name: &str) -> Option<(usize, usize)> {
+        let start = src.find(&format!("export global {name} {{"))?;
+        let bytes = src.as_bytes();
+        let mut depth = 0;
+        for (index, byte) in bytes.iter().enumerate().skip(start) {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some((start, index + 1));
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// `(direction, name)` for each property and callback declared in a global.
+    fn global_members(block: &str) -> Vec<(&str, String)> {
+        let mut out = Vec::new();
+        for line in block.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("//") {
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("callback ") {
+                let name = rest
+                    .split(['(', ' ', ';'])
+                    .next()
+                    .unwrap_or_default()
+                    .to_string();
+                if !name.is_empty() {
+                    out.push(("callback", name));
+                }
+                continue;
+            }
+            let Some(at) = line.find("property <") else {
+                continue;
+            };
+            let direction = line[..at].trim();
+            let after = &line[at + "property <".len()..];
+            let Some(gt) = after.find('>') else { continue };
+            let name: String = after[gt + 1..]
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
+                .collect();
+            if !name.is_empty() {
+                out.push((direction, name));
+            }
+        }
+        out
+    }
+
+    /// `needle` as a whole identifier: no word character on either side, so
+    /// `set_states` never satisfies a search for `set_state`.
+    fn names(text: &str, needle: &str) -> bool {
+        text.match_indices(needle).into_iter().any(|(at, _)| {
+            let before = at
+                .checked_sub(1)
+                .and_then(|i| text.as_bytes().get(i).copied())
+                .unwrap_or(b' ');
+            let after = text
+                .as_bytes()
+                .get(at + needle.len())
+                .copied()
+                .unwrap_or(b' ');
+            let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
+            !word(before) && !word(after)
+        })
+    }
+
+    /// A property that no view reads, or that no controller writes, is a control
+    /// that lies: the panel shows a value the engine never produced, or the
+    /// engine computes something nothing displays. Every member of the six
+    /// Rust-driven model globals must be touched on both sides of the bridge.
+    ///
+    /// Honest edge: an `in-out` property may be state the view owns by itself
+    /// (the output panel's collapse flag), so only its view side is required; and
+    /// a member that is read and written yet still means nothing (a status string
+    /// nobody composes) is out of reach for a text scan — the `dump:` SELFCHECK
+    /// hooks are what prove those.
+    #[test]
+    fn every_model_property_is_used() {
+        const MODELS: [&str; 6] = [
+            "AppModel",
+            "DesignerModel",
+            "PixelModel",
+            "OutputModel",
+            "FontModel",
+            "PrefsModel",
+        ];
+        let files = [
+            ("main.slint", MAIN),
+            ("widgets.slint", WIDGETS),
+            ("preferences.slint", PREFERENCES),
+            ("pixel.slint", PIXEL),
+            ("designer.slint", DESIGNER),
+            ("fontlab.slint", FONTLAB),
+        ];
+        let controller = controller_text();
+        let mut dead = Vec::new();
+        for model in MODELS {
+            let (file, src, span) = files
+                .iter()
+                .find_map(|(name, text)| global_span(text, model).map(|span| (*name, *text, span)))
+                .unwrap_or_else(|| panic!("{model} is not an exported global"));
+            let block = &src[span.0..span.1];
+            let members = global_members(block);
+            // `global_members` reads one declaration per line, so a declaration
+            // wrapped over two lines would vanish from the scan. Counting the
+            // keywords instead turns that into a failure rather than a blind spot.
+            let declared = block.matches("property <").count() + block.matches("callback ").count();
+            assert_eq!(
+                members.len(),
+                declared,
+                "{file}: {model} declares {declared} members but only {parsed} were parsed — \
+                 a wrapped declaration would hide a dead binding",
+                parsed = members.len()
+            );
+            for (direction, member) in members {
+                let snake = member.replace('-', "_");
+                let setter = match direction {
+                    "callback" => format!("on_{snake}"),
+                    "in" => format!("set_{snake}"),
+                    "out" => format!("get_{snake}"),
+                    _ => String::new(),
+                };
+                if !setter.is_empty() && !names(&controller, &setter) {
+                    dead.push(format!("{file}: {model}.{member} has no {setter} call"));
+                    continue;
+                }
+                let needle = format!("{model}.{member}");
+                let shown = files.iter().any(|(_, text)| {
+                    // The declaration itself does not count as a use, so the
+                    // global's own block is cut out of the file that holds it.
+                    let outside = match global_span(text, model) {
+                        Some((start, end)) => format!("{}{}", &text[..start], &text[end..]),
+                        None => text.to_string(),
+                    };
+                    names(&outside, &needle)
+                });
+                if !shown {
+                    dead.push(format!("{file}: {model}.{member} is read by no view"));
+                }
+            }
+        }
+        dead.sort();
+        assert!(dead.is_empty(), "dead bindings:\n{}", dead.join("\n"));
     }
 }

@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 use mono_core::pyvalue::{is_py_int, py_int, py_str};
 use mono_core::render::{RenderResult, Resources, normalize_path, posix, render_scene, resolve};
 use mono_core::runtime::SceneRuntime;
-use mono_core::state::{State, init_state, subst, when_match};
+use mono_core::state::{
+    State, apply_state_schema, init_state, schema_from_scene, subst, when_match,
+};
 use mono_core::{CoreError, CoreResult};
 use serde_json::{Map, Value, json};
 
@@ -59,12 +61,26 @@ pub struct EditorSession {
     pub state: State,
     pub elapsed: i64,
     pub resources: DiskResources,
-    pub dirty: bool,
+    /// The scene as last written to disk; `is_dirty` compares against it so
+    /// undo back to the saved state is honestly clean.
+    saved: Map<String, Value>,
+    /// Content restored from a recovery snapshot is unsaved even though it was
+    /// just loaded into the session.
+    force_dirty: bool,
     disk_fingerprint: Option<String>,
     undo: Vec<Command>,
     redo: Vec<Command>,
     coalesce_open: bool,
     max_history: usize,
+}
+
+/// Runtime-only keys (`_asset_dirs`, …) never reach the file, so they must not
+/// participate in the dirty comparison either.
+fn persisted(data: &Map<String, Value>) -> Map<String, Value> {
+    data.iter()
+        .filter(|(k, _)| !k.starts_with('_'))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
 }
 
 fn key_error(message: impl Into<String>) -> CoreError {
@@ -93,12 +109,14 @@ impl EditorSession {
     pub fn new(doc: SceneDoc) -> CoreResult<Self> {
         let state = SceneRuntime::new(&doc.data, None)?.state;
         let disk_fingerprint = std::fs::read(&doc.path).ok().map(|b| hex_digest(&b));
+        let saved = persisted(&doc.data);
         Ok(Self {
             doc,
             state,
             elapsed: 0,
             resources: DiskResources::new(),
-            dirty: false,
+            saved,
+            force_dirty: false,
             disk_fingerprint,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -113,15 +131,46 @@ impl EditorSession {
     pub fn reset_scene(&mut self, doc: SceneDoc) -> CoreResult<()> {
         let state = SceneRuntime::new(&doc.data, None)?.state;
         self.disk_fingerprint = std::fs::read(&doc.path).ok().map(|b| hex_digest(&b));
+        self.saved = persisted(&doc.data);
+        self.force_dirty = false;
         self.doc = doc;
         self.state = state;
         self.elapsed = 0;
         self.resources = DiskResources::new();
-        self.dirty = false;
         self.undo.clear();
         self.redo.clear();
         self.coalesce_open = false;
         Ok(())
+    }
+
+    /// True when the scene differs from what is on disk. Runtime-only `_` keys
+    /// are ignored, so undo back to the last save reports clean again.
+    /// Compared in place: this runs on every refresh, including drag frames.
+    pub fn is_dirty(&self) -> bool {
+        if self.force_dirty {
+            return true;
+        }
+        let live = self
+            .doc
+            .data
+            .iter()
+            .filter(|(key, _)| !key.starts_with('_'))
+            .count();
+        live != self.saved.len()
+            || self.doc.data.iter().any(|(key, value)| {
+                !key.starts_with('_') && self.saved.get(key).is_none_or(|saved| saved != value)
+            })
+    }
+
+    /// Treat the current scene as the saved baseline (Automation writes).
+    pub fn mark_clean(&mut self) {
+        self.saved = persisted(&self.doc.data);
+        self.force_dirty = false;
+    }
+
+    /// Loaded content that is not on disk (recovery snapshots).
+    pub fn mark_dirty(&mut self) {
+        self.force_dirty = true;
     }
 
     /// Preference `performance.undo_history`; trims existing history to fit.
@@ -203,7 +252,6 @@ impl EditorSession {
             return Ok(false);
         }
         self.set_elements(working.clone());
-        self.dirty = true;
         self.push_undo(Command::Elements {
             label: label.into(),
             before,
@@ -435,7 +483,6 @@ impl EditorSession {
             return Ok(false);
         }
         self.set_elements(after.clone());
-        self.dirty = true;
         self.redo.clear();
         let coalesced = coalesce
             && self.coalesce_open
@@ -527,14 +574,18 @@ impl EditorSession {
                 } else {
                     before.clone()
                 };
-                self.state = init_state(&self.doc.data);
-                if let Ok(runtime) = SceneRuntime::new(&self.doc.data, None) {
-                    self.state = runtime.state;
-                }
+                self.reseed_state();
                 self.resources = DiskResources::new();
             }
         }
-        self.dirty = true;
+    }
+
+    /// Re-seed the preview state after the scene's `states` changed.
+    fn reseed_state(&mut self) {
+        self.state = init_state(&self.doc.data);
+        if let Ok(runtime) = SceneRuntime::new(&self.doc.data, None) {
+            self.state = runtime.state;
+        }
     }
 
     pub fn undo(&mut self) -> bool {
@@ -575,7 +626,6 @@ impl EditorSession {
             after,
         });
         self.redo.clear();
-        self.dirty = true;
         self.coalesce_open = false;
         true
     }
@@ -592,9 +642,21 @@ impl EditorSession {
             after,
         });
         self.redo.clear();
-        self.dirty = true;
         self.coalesce_open = false;
         true
+    }
+
+    /// Replace the scene's state schema (`states` plus `state_relations`) with a
+    /// normalized one as a single undo step, and re-seed the preview state.
+    /// False when the schema already says this, so no empty undo step appears.
+    pub fn set_state_schema(&mut self, schema: &Value) -> bool {
+        if &schema_from_scene(&self.doc.data) == schema {
+            return false;
+        }
+        let before = self.doc.data.clone();
+        apply_state_schema(&mut self.doc.data, schema);
+        self.reseed_state();
+        self.record_external_scene(before, "state_schema")
     }
 
     pub fn add_elements(&mut self, elements: Vec<Value>, label: &str) -> CoreResult<Vec<String>> {
@@ -876,7 +938,6 @@ impl EditorSession {
         canvas["h"] = json!(height);
         let storage = self.doc.data.entry("storage").or_insert_with(|| json!({}));
         storage["bytes_per_frame"] = json!(width * (height / 8));
-        self.dirty = true;
         Ok(())
     }
 
@@ -944,7 +1005,7 @@ impl EditorSession {
             .collect();
         atomic_write_json(&self.doc.path, &Value::Object(data))?;
         self.disk_fingerprint = std::fs::read(&self.doc.path).ok().map(|b| hex_digest(&b));
-        self.dirty = false;
+        self.mark_clean();
         Ok(self.doc.path.clone())
     }
 

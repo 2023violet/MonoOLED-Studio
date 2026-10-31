@@ -5,12 +5,12 @@ import { Icon } from "icons.slint";
 import { Shell, I18n, Button, ButtonRole, Segmented, StatusPill, PillTone, Caption, Scrim, Dialog, ListRow } from "widgets.slint";
 import { PreferencesDialog, PrefsModel, PrefRow } from "preferences.slint";
 import { DesignerView, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar } from "designer.slint";
-import { PixelView, PixelDialogs, PixelModel, OutputModel, ProfileItem } from "pixel.slint";
+import { PixelView, PixelDialogs, PixelModel, OutputModel } from "pixel.slint";
 import { FontLabView, FontModel, GlyphItem } from "fontlab.slint";
 
-export { Theme, Metrics, I18n, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar, PillTone, PixelModel, OutputModel, ProfileItem, FontModel, GlyphItem, PrefsModel, PrefRow, Shell }
+export { Theme, Metrics, I18n, DesignerModel, ScreenItem, ElementItem, AssetItem, FindingItem, OverlayBox, StateVar, PillTone, PixelModel, OutputModel, FontModel, GlyphItem, PrefsModel, PrefRow, Shell }
 
-export struct DocTab { title: string, kind: string, dirty: bool }
+export struct BlockedItem { severity: string, code: string, message: string, frame: string, jumpable: bool }
 
 export global AppModel {
     in property <string> project-name;
@@ -18,33 +18,46 @@ export global AppModel {
     in property <string> agent-text;
     in property <bool> can-undo;
     in property <bool> can-redo;
+    // "Undo" plus what the next step really reverts, e.g. "Undo: move".
+    in property <string> undo-text;
     in property <bool> dirty;
     in property <string> health-text;
     in property <PillTone> health-tone: PillTone.neutral;
     in-out property <int> workspace: 0;
-    in property <[DocTab]> tabs;
-    in-out property <int> current-tab: 0;
+    // Busy state of a background job: the StatusBar shows `busy-text` and a
+    // cancel control while it is set.
     in property <bool> busy;
     in property <string> busy-text;
-    in property <string> toast;
+    in property <bool> has-document;
+    in property <string> recent-project;
+    in property <string> repo-url;
+    in property <string> docs-url;
+    callback about-link(string /* url */);
     in-out property <bool> prompt-visible;
     in property <string> prompt-title;
     in property <string> prompt-label;
     in-out property <string> prompt-text;
     in-out property <bool> about-visible;
     in-out property <bool> preferences-visible;
-    in property <string> version: "2.0.0";
+    // Set from CARGO_PKG_VERSION at startup; no literal default, so the About
+    // dialog can never show a version the binary is not.
+    in property <string> version;
     in-out property <bool> picker-visible;
     in property <string> picker-title;
     in property <[string]> picker-items;
     in-out property <string> picker-filter;
+    in-out property <bool> blocked-visible;
+    in property <[BlockedItem]> blocked-items;
+    in property <string> blocked-report;
+    in property <string> blocked-summary;
     callback picker-filter-changed(string);
     callback picker-chosen(int);
+    callback blocked-jump(int);
+    callback blocked-copy();
+    callback blocked-close();
     callback prompt-accepted(string);
     callback prompt-cancelled();
     callback action(string);
-    callback tab-selected(int);
-    callback tab-closed(int);
     // Key chord such as "Ctrl+S" → true when a configured shortcut consumed it.
     callback key-chord(string) -> bool;
 }
@@ -70,6 +83,7 @@ component IconButton inherits Rectangle {
         enabled: root.enabled;
         clicked => { root.clicked(); }
     }
+    Tooltip { text: @markdown("\{root.tip}"); }
 }
 
 component CommandBar inherits Rectangle {
@@ -84,7 +98,7 @@ component CommandBar inherits Rectangle {
         spacing: 8px;
         alignment: stretch;
         IconButton { icon: "folder"; tip: I18n.tr(I18n.lang, "action.open_project"); clicked => { AppModel.action("open-project"); } }
-        IconButton { icon: "undo"; tip: I18n.tr(I18n.lang, "action.undo"); enabled: AppModel.can-undo; clicked => { AppModel.action("undo"); } }
+        IconButton { icon: "undo"; tip: AppModel.undo-text; enabled: AppModel.can-undo; clicked => { AppModel.action("undo"); } }
         IconButton { icon: "redo"; tip: I18n.tr(I18n.lang, "action.redo"); enabled: AppModel.can-redo; clicked => { AppModel.action("redo"); } }
         VerticalLayout {
             alignment: center;
@@ -102,8 +116,8 @@ component CommandBar inherits Rectangle {
         }
         Rectangle { horizontal-stretch: 1; }
         StatusPill { text: AppModel.health-text; tone: AppModel.health-tone; }
-        Button { text: I18n.tr(I18n.lang, "action.batch_validate"); clicked => { AppModel.action("batch-validate"); } }
-        Button { text: I18n.tr(I18n.lang, "action.handoff"); clicked => { AppModel.action("handoff"); } }
+        Button { text: I18n.tr(I18n.lang, "action.batch_validate"); tooltip: I18n.tr(I18n.lang, "tooltip.validate"); clicked => { AppModel.action("batch-validate"); } }
+        Button { text: I18n.tr(I18n.lang, "action.handoff"); tooltip: I18n.tr(I18n.lang, "tooltip.export"); clicked => { AppModel.action("handoff"); } }
         Button { text: I18n.tr(I18n.lang, "action.save"); role: ButtonRole.primary; clicked => { AppModel.action("save"); } }
         IconButton { icon: "settings"; tip: I18n.tr(I18n.lang, "action.preferences"); clicked => { AppModel.action("preferences"); } }
     }
@@ -116,13 +130,41 @@ component StatusBar inherits Rectangle {
         padding-left: 12px;
         padding-right: 12px;
         spacing: 12px;
-        Text { text: AppModel.status-text; font-size: Metrics.font-small; color: Theme.text-muted; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
-        Text { text: "Pixel Truth: Canonical Renderer · VLSB · 1 = OLED lit"; font-size: Metrics.font-small; color: Theme.text-muted; vertical-alignment: center; horizontal-stretch: 0; }
+        Text { text: AppModel.busy ? AppModel.busy-text : AppModel.status-text; font-size: Metrics.font-small; color: Theme.text-muted; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+        // A running job is only cancellable from here while the status bar is
+        // 26px tall, so this is an inline control rather than a `Button`.
+        if AppModel.busy: Rectangle {
+            horizontal-stretch: 0;
+            height: 20px;
+            min-width: cancel-label.preferred-width + 16px;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.border-normal;
+            background: cancel-touch.has-hover ? Theme.surface-hover : transparent;
+            accessible-role: button;
+            accessible-label: cancel-label.text;
+            accessible-action-default => { AppModel.action("cancel-job"); }
+            cancel-touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { AppModel.action("cancel-job"); }
+            }
+            cancel-label := Text {
+                text: I18n.tr(I18n.lang, "action.cancel_job");
+                font-size: Metrics.font-small;
+                color: Theme.text-primary;
+                x: 8px;
+                width: parent.width - 16px;
+                height: parent.height;
+                vertical-alignment: center;
+            }
+        }
+        Text { text: I18n.tr(I18n.lang, "footer.truth"); font-size: Metrics.font-small; color: Theme.text-muted; vertical-alignment: center; horizontal-stretch: 0; }
         Text { text: AppModel.agent-text; font-size: Metrics.font-small; color: Theme.text-muted; vertical-alignment: center; horizontal-stretch: 0; }
     }
 }
 
 component PromptDialog inherits Scrim {
+    dismissed => { AppModel.prompt-visible = false; AppModel.prompt-cancelled(); }
     Dialog {
         height: 190px;
         VerticalLayout {
@@ -147,6 +189,11 @@ component PromptDialog inherits Scrim {
 
 // Searchable list (V1 CommandPalette / QInputDialog.getItem).
 component PickerDialog inherits Scrim {
+    dismissed => {
+        AppModel.picker-visible = false;
+        AppModel.picker-filter = "";
+        AppModel.picker-filter-changed("");
+    }
     Dialog {
         width: 520px;
         height: 430px;
@@ -178,6 +225,7 @@ component PickerDialog inherits Scrim {
 }
 
 component AboutDialog inherits Scrim {
+    dismissed => { AppModel.about-visible = false; }
     Dialog {
         height: 360px;
         VerticalLayout {
@@ -188,11 +236,85 @@ component AboutDialog inherits Scrim {
             Text { text: "MIT License · Rust · Slint"; color: Theme.text-muted; font-size: Metrics.font-small; }
             AboutSlint { height: 140px; }
             HorizontalLayout {
-                alignment: end;
+                spacing: 8px;
+                Button { text: "GitHub"; role: ButtonRole.ghost; clicked => { AppModel.about-link(AppModel.repo-url); } }
+                Button { text: I18n.tr(I18n.lang, "about.docs"); role: ButtonRole.ghost; clicked => { AppModel.about-link(AppModel.docs-url); } }
+                Rectangle { horizontal-stretch: 1; }
                 Button { text: I18n.tr(I18n.lang, "dialog.close"); role: ButtonRole.primary; clicked => { AppModel.about-visible = false; } }
             }
         }
     }
+    init => { root.take-focus(); }
+}
+
+// No document: a real starting point instead of an empty editor shell.
+component EmptyState inherits Rectangle {
+    background: Theme.surface-panel;
+    border-radius: Metrics.radius-panel;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
+    VerticalLayout {
+        alignment: center;
+        padding: 32px;
+        spacing: 12px;
+        Text { text: I18n.tr(I18n.lang, "empty.title"); font-size: 22px; font-weight: 700; color: Theme.text-primary; horizontal-alignment: center; }
+        Text { text: I18n.tr(I18n.lang, "empty.body"); color: Theme.text-secondary; horizontal-alignment: center; wrap: word-wrap; }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 10px;
+            Button { text: I18n.tr(I18n.lang, "action.new_project"); role: ButtonRole.primary; clicked => { AppModel.action("new-project"); } }
+            Button { text: I18n.tr(I18n.lang, "action.open_project"); clicked => { AppModel.action("open-project"); } }
+            if AppModel.recent-project != "": Button { text: I18n.tr(I18n.lang, "empty.recent"); clicked => { AppModel.action("open-recent"); } }
+        }
+    }
+}
+
+// Release gate refused the export: blocking findings, with a jump back to the
+// offending element and the path of the written report.
+component BlockedDialog inherits Scrim {
+    dismissed => { AppModel.blocked-close(); }
+    Dialog {
+        width: 640px;
+        height: 540px;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 10px;
+            Text { text: I18n.tr(I18n.lang, "dialog.blocked_title"); font-size: 16px; font-weight: 700; color: Theme.text-primary; }
+            Text { text: AppModel.blocked-summary; color: Theme.text-secondary; wrap: word-wrap; }
+            Caption { text: AppModel.blocked-report; wrap: no-wrap; overflow: elide; }
+            ListView {
+                vertical-stretch: 1;
+                for item[index] in AppModel.blocked-items: Rectangle {
+                    height: 52px;
+                    HorizontalLayout {
+                        padding: 4px;
+                        spacing: 8px;
+                        StatusPill {
+                            horizontal-stretch: 0;
+                            width: self.min-width;
+                            text: item.severity;
+                            tone: item.severity == "BLOCKER" || item.severity == "ERROR" ? PillTone.error : PillTone.warning;
+                        }
+                        VerticalLayout {
+                            vertical-stretch: 1;
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            Text { text: item.code + " · " + item.message; font-size: Metrics.font-body; color: Theme.text-primary; overflow: elide; vertical-alignment: center; }
+                            Text { text: item.frame; font-size: Metrics.font-small; color: Theme.text-muted; overflow: elide; }
+                        }
+                        Button { visible: item.jumpable; text: I18n.tr(I18n.lang, "dialog.blocked_jump"); clicked => { AppModel.blocked-jump(index); } }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Button { text: I18n.tr(I18n.lang, "dialog.blocked_copy"); clicked => { AppModel.blocked-copy(); } }
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: I18n.tr(I18n.lang, "dialog.close"); role: ButtonRole.primary; clicked => { AppModel.blocked-close(); } }
+            }
+        }
+    }
+    init => { root.take-focus(); }
 }
 
 export component MainWindow inherits Window {
@@ -207,6 +329,10 @@ export component MainWindow inherits Window {
     icon: @image-url("../assets/monooled.png");
     // std-widgets follow the app theme, not the OS colour scheme.
     property <bool> dark-theme: Theme.dark;
+    // Any modal owns keyboard focus; when the last one closes, the shortcuts
+    // scope takes it back instead of leaving the window without a focus owner.
+    property <bool> overlay-open: AppModel.prompt-visible || AppModel.about-visible || AppModel.preferences-visible || AppModel.picker-visible || AppModel.blocked-visible || (AppModel.workspace == 1 && PixelModel.dialog != 0);
+    changed overlay-open => { if (!self.overlay-open) { shortcuts.focus(); } }
     changed dark-theme => { Palette.color-scheme = self.dark-theme ? ColorScheme.dark : ColorScheme.light; }
     changed width => { Shell.window-width = self.width; }
     init => {
@@ -233,7 +359,7 @@ export component MainWindow inherits Window {
         }
         Menu {
             title: I18n.tr(I18n.lang, "menu.edit");
-            MenuItem { title: I18n.tr(I18n.lang, "action.undo"); enabled: AppModel.can-undo; activated => { AppModel.action("undo"); } }
+            MenuItem { title: AppModel.undo-text; enabled: AppModel.can-undo; activated => { AppModel.action("undo"); } }
             MenuItem { title: I18n.tr(I18n.lang, "action.redo"); enabled: AppModel.can-redo; activated => { AppModel.action("redo"); } }
             MenuSeparator { }
             MenuItem { title: I18n.tr(I18n.lang, "action.add_placeholder"); activated => { AppModel.action("add-placeholder"); } }
@@ -260,10 +386,13 @@ export component MainWindow inherits Window {
             MenuItem { title: "Font Lab"; activated => { AppModel.action("workspace:2"); } }
             MenuItem { title: I18n.tr(I18n.lang, "workspace.review"); activated => { AppModel.action("workspace:3"); } }
             MenuSeparator { }
-            MenuItem { title: I18n.tr(I18n.lang, "action.diagnostics"); activated => { AppModel.action("diagnostics"); } }
-            MenuItem { title: I18n.tr(I18n.lang, "view.navigator"); activated => { AppModel.action("toggle-navigator"); } }
-            MenuItem { title: I18n.tr(I18n.lang, "view.inspector"); activated => { AppModel.action("toggle-inspector"); } }
-            MenuItem { title: I18n.tr(I18n.lang, "view.canvas_only"); activated => { AppModel.action("canvas-only"); } }
+            // Slint 1.18 cannot two-way-bind MenuItem.checked (the framework
+            // flips it and MenuBar internals are not reachable), so the
+            // checkmark is rendered from the shell state: always truthful.
+            MenuItem { title: (Shell.hide-drawer ? "     " : "✓  ") + I18n.tr(I18n.lang, "action.diagnostics"); activated => { AppModel.action("diagnostics"); } }
+            MenuItem { title: (Shell.hide-navigator ? "     " : "✓  ") + I18n.tr(I18n.lang, "view.navigator"); activated => { AppModel.action("toggle-navigator"); } }
+            MenuItem { title: (Shell.hide-inspector ? "     " : "✓  ") + I18n.tr(I18n.lang, "view.inspector"); activated => { AppModel.action("toggle-inspector"); } }
+            MenuItem { title: (Shell.canvas-only ? "✓  " : "     ") + I18n.tr(I18n.lang, "view.canvas_only"); activated => { AppModel.action("canvas-only"); } }
             MenuItem { title: I18n.tr(I18n.lang, "view.reset_workspace"); activated => { AppModel.action("reset-workspace"); } }
         }
         Menu {
@@ -302,17 +431,22 @@ export component MainWindow inherits Window {
             VerticalLayout {
                 padding: 8px;
                 spacing: 8px;
-                if AppModel.workspace == 0 || AppModel.workspace == 3: DesignerView { vertical-stretch: 1; }
-                if AppModel.workspace == 1: PixelView { vertical-stretch: 1; }
-                if AppModel.workspace == 2: FontLabView { vertical-stretch: 1; }
+                if !AppModel.has-document: EmptyState { vertical-stretch: 1; }
+                if AppModel.has-document && (AppModel.workspace == 0 || AppModel.workspace == 3): DesignerView { vertical-stretch: 1; }
+                if AppModel.has-document && AppModel.workspace == 1: PixelView { vertical-stretch: 1; }
+                if AppModel.has-document && AppModel.workspace == 2: FontLabView { vertical-stretch: 1; }
             }
         }
         StatusBar { }
     }
-    }
+    // Overlays live inside the shortcuts scope: their dialogs sit in its focus
+    // chain, so a chord that arrives while a modal owns focus still dispatches
+    // and closing a modal never strands the window without a focus owner.
     if AppModel.workspace == 1 && PixelModel.dialog != 0: PixelDialogs { width: root.width; height: root.height; }
+    if AppModel.blocked-visible: BlockedDialog { width: root.width; height: root.height; }
     if AppModel.preferences-visible: PreferencesDialog { width: root.width; height: root.height; }
     if AppModel.picker-visible: PickerDialog { width: root.width; height: root.height; }
     if AppModel.prompt-visible: PromptDialog { width: root.width; height: root.height; }
     if AppModel.about-visible: AboutDialog { width: root.width; height: root.height; }
+    }
 }

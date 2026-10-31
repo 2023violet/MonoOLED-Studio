@@ -32,6 +32,7 @@ export global PrefsModel {
     callback section-chosen(int);
     callback search-changed(string);
     callback changed(string /* key */, string /* value */);
+    callback text-changed(string /* key */, string /* value */);
     callback button(string /* key */);
     callback close();
 }
@@ -73,6 +74,8 @@ component PrefRowView inherits HorizontalLayout {
     if item.kind == "text": LineEdit {
         width: 220px;
         text: item.text;
+        // Typing is buffered (debounced) like every other edit; Enter flushes now.
+        edited(t) => { PrefsModel.text-changed(item.key, t); }
         accepted(t) => { PrefsModel.changed(item.key, t); }
     }
     if item.kind == "value": Text { width: 220px; text: item.text; color: Theme.text-secondary; vertical-alignment: center; }
@@ -81,6 +84,7 @@ component PrefRowView inherits HorizontalLayout {
 }
 
 export component PreferencesDialog inherits Scrim {
+    dismissed => { PrefsModel.close(); }
     Rectangle {
         width: min(root.width - 80px, 980px);
         height: min(root.height - 80px, 720px);
@@ -145,4 +149,5 @@ export component PreferencesDialog inherits Scrim {
             }
         }
     }
+    init => { root.take-focus(); }
 }

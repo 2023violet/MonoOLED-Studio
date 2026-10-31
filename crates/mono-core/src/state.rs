@@ -1,5 +1,10 @@
 //! Scene state schema, validation and export matrix (V1 `state_schema.py`,
 //! `batch_validate.build_state_matrix`, `batch_validate.case_name`, `scene.py` helpers).
+//!
+//! Error copy here is intentionally Chinese and stays that way: mono-core has no
+//! i18n layer, so `mono` CLI, the Automation API and the desktop app all return
+//! this exact string. Desktop UI strings go through `apps/mono-desktop/i18n`;
+//! engine messages are part of the wire contract, not a UI bypass.
 
 use serde_json::{Map, Value, json};
 
@@ -8,7 +13,9 @@ use crate::pyvalue::{is_py_int, py_cmp, py_eq, py_in, py_int, py_repr, py_str};
 
 pub type State = Map<String, Value>;
 
-const RELATION_OPERATORS: [&str; 6] = ["<", "<=", "==", "!=", ">=", ">"];
+/// The six relation operators the engine understands. The desktop editor lists
+/// these, so there is only one vocabulary.
+pub const RELATION_OPERATORS: [&str; 6] = ["<", "<=", "==", "!=", ">=", ">"];
 
 fn error(code: &str, path: impl Into<String>, message: impl Into<String>) -> Value {
     json!({"code": code, "path": path.into(), "message": message.into()})
@@ -26,6 +33,26 @@ pub fn schema_from_scene(scene: &Map<String, Value>) -> Value {
         "variables": scene.get("states").cloned().unwrap_or_else(|| json!({})),
         "relations": scene.get("state_relations").cloned().unwrap_or_else(|| json!([])),
     })
+}
+
+/// V1 `apply_state_schema`: write a normalized schema back into a scene, as the
+/// `states` object plus optional `state_relations`.
+pub fn apply_state_schema(scene: &mut Map<String, Value>, schema: &Value) {
+    scene.insert(
+        "states".into(),
+        schema
+            .get("variables")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    );
+    match schema.get("relations").and_then(Value::as_array) {
+        Some(relations) if !relations.is_empty() => {
+            scene.insert("state_relations".into(), Value::Array(relations.clone()));
+        }
+        _ => {
+            scene.remove("state_relations");
+        }
+    }
 }
 
 fn unique_ints(values: &[Value]) -> bool {

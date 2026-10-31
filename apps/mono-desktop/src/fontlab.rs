@@ -67,6 +67,10 @@ pub struct FontForm {
     pub baseline: i64,
     pub advance: i64,
     pub threshold: i64,
+    /// Glyph nudge in pixels: x right, y down (V1 水平/垂直偏移). A non-zero
+    /// offset leaves the exact built-in 5x7 path, so it needs a TrueType font.
+    pub offset_x: i64,
+    pub offset_y: i64,
     /// 0 = font set, 1 = glyph width (V1 default).
     pub alignment: i32,
     /// 1 or 2.
@@ -125,6 +129,8 @@ impl FontLab {
             baseline: i64::from(pack.baseline),
             advance: i64::from(pack.advance),
             threshold: 128,
+            offset_x: 0,
+            offset_y: 0,
             alignment: 1,
             antialias: 1,
             baseline_override: false,
@@ -343,6 +349,16 @@ impl FontLab {
                     self.form.threshold = v.clamp(0, 255);
                 }
             }
+            "offset_x" => {
+                if let Some(v) = int() {
+                    self.form.offset_x = v.clamp(-64, 64);
+                }
+            }
+            "offset_y" => {
+                if let Some(v) = int() {
+                    self.form.offset_y = v.clamp(-64, 64);
+                }
+            }
             "alignment" => self.form.alignment = i32::from(value == "1"),
             "antialias" => self.form.antialias = if value == "2" { 2 } else { 1 },
             _ => {}
@@ -385,13 +401,13 @@ impl FontLab {
         let options = GenerateOptions {
             font_size: self.form.font_size,
             threshold: self.form.threshold,
+            offset: (self.form.offset_x, self.form.offset_y),
             alignment: if self.form.alignment == 0 {
                 Alignment::FontSet
             } else {
                 Alignment::GlyphWidth
             },
             antialias_scale: self.form.antialias,
-            ..GenerateOptions::default()
         };
         let mut unique: Vec<char> = Vec::new();
         for c in characters.chars() {
@@ -572,5 +588,41 @@ mod tests {
         assert!(matches!(lab.wait(), Poll::Finished(Err(_))));
         assert!(!lab.error.is_empty());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `GenerateOptions::offset` existed in the engine but the form never set it,
+    /// so the two offset rows used to be unreachable. A non-zero x offset has to
+    /// move the rasterised ink by exactly that many pixels.
+    #[test]
+    fn glyph_offsets_reach_the_generator() {
+        let ttf = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../test_assets/fonts/DejaVuSans.ttf")
+            .to_string_lossy()
+            .to_string();
+        assert!(Path::new(&ttf).is_file(), "missing test font: {ttf}");
+        let left_ink = |rows: &[Vec<u8>]| {
+            rows.iter()
+                .filter_map(|row| row.iter().position(|v| *v == 1))
+                .min()
+                .unwrap_or(0)
+        };
+        let raster = |offset: i64| -> Vec<Vec<u8>> {
+            let root = temp(&format!("offset{offset}"));
+            let mut lab = FontLab::open(&root, "Offset Font", (12, 12)).unwrap();
+            lab.edit("characters", "A");
+            lab.edit("font_path", &ttf);
+            lab.edit("offset_x", &offset.to_string());
+            assert_eq!(lab.form.offset_x, offset);
+            lab.start_generate().unwrap();
+            let rows = match lab.wait() {
+                Poll::Finished(Ok(_)) => lab.pack.glyph('A').unwrap().rows.clone(),
+                _ => panic!("offset {offset} generation did not finish"),
+            };
+            let _ = std::fs::remove_dir_all(&root);
+            rows
+        };
+        let (plain, shifted) = (raster(0), raster(3));
+        assert_ne!(plain, shifted, "the offset must change the raster");
+        assert_eq!(left_ink(&shifted) - left_ink(&plain), 3);
     }
 }

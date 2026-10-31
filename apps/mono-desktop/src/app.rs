@@ -2,18 +2,22 @@
 //! sync. Every UI callback goes through `App`; Slint models are rebuilt from
 //! the session after each change (the scene JSON stays the single truth).
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use mono_core::CoreError;
-use mono_core::pyvalue::py_str;
+use mono_core::pyvalue::{py_int, py_str};
 use mono_core::render::posix;
-use mono_core::state::{IntegerPolicy, build_export_states};
+use mono_core::state::{
+    IntegerPolicy, RELATION_OPERATORS, build_export_states, schema_from_scene,
+    validate_state_schema,
+};
 use mono_project::editor::{
     EditorSession, Selection, align_to, distribute, selection_metrics, smart_guides, snap_positions,
 };
 use mono_project::export::{
-    Finding, build_handoff_package, check_design_rules, export_scene, matrix_report,
-    validate_matrix,
+    BlockedExport, EXPORT_BLOCKED, Finding, build_handoff_package, check_design_rules,
+    export_scene_with_report, matrix_report, preflight, validate_matrix, write_validation_report,
 };
 use mono_project::project::{ProjectWorkspace, create_project};
 use mono_project::scene_io::{SceneDoc, load_project_scene, load_scene};
@@ -31,8 +35,9 @@ use crate::pixel_ui::ImportState;
 use crate::prefs::Preferences;
 use crate::workbench::Workbench;
 use crate::{
-    AppModel, AssetItem, DesignerModel, DocTab, ElementItem, FindingItem, MainWindow, OverlayBox,
-    PillTone, ScreenItem, StateVar,
+    AppModel, AssetItem, BlockedItem, DesignerModel, ElementItem, FindingItem, MainWindow,
+    OverlayBox, PillTone, RuleGroup, RuleText, RuleZone, ScreenItem, StateRelation, StateVar,
+    StateVarSpec,
 };
 
 const ZOOM_STEPS: [f32; 8] = [0.0, 1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0];
@@ -40,6 +45,8 @@ const ZOOM_STEPS: [f32; 8] = [0.0, 1.0, 2.0, 4.0, 6.0, 8.0, 12.0, 16.0];
 pub enum Prompt {
     NewScreen,
     DuplicateScreen,
+    /// Rename whichever screen is active when the answer arrives.
+    RenameScreen,
     CSymbol(PathBuf),
     NewFontPack,
     TemplateName,
@@ -81,6 +88,15 @@ pub struct App {
     pub font: Option<FontLab>,
     /// Export / handoff / batch validation / thumbnail wall running off the UI thread.
     pub bg_job: Option<BackgroundJob>,
+    /// Stage last reported by the running job; changes are logged once each.
+    pub job_stage: String,
+    /// Schema the state panel is editing. Only set while it is invalid: a valid
+    /// draft is written straight into the scene, so the panel cannot drift from
+    /// what a save would produce.
+    pub schema_draft: Option<Value>,
+    /// Same idea for the project's design rules: held while invalid, written to
+    /// the manifest as soon as it parses.
+    pub rules_draft: Option<Value>,
     pub picker: Option<Picker>,
     pub picker_matches: Vec<(String, String)>,
     pub profiler: Profiler,
@@ -95,6 +111,12 @@ pub struct App {
     /// Visible cells of the Pixel canvas and the outline runs shown for them.
     pub cell_window: crate::canvas::CellWindow,
     pub border_lines: std::rc::Rc<slint::VecModel<crate::BorderLine>>,
+    /// Element behind each row of the blocked-export dialog.
+    pub blocked_targets: Vec<Option<String>>,
+    pub blocked_report: Option<PathBuf>,
+    /// Preference edits buffered in memory, waiting for the debounced write.
+    pub prefs_pending: bool,
+    pub prefs_edit_at: Option<std::time::Instant>,
 }
 
 pub(crate) fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
@@ -134,6 +156,9 @@ impl App {
             bench: Workbench::default(),
             font: None,
             bg_job: None,
+            job_stage: String::new(),
+            schema_draft: None,
+            rules_draft: None,
             picker: None,
             picker_matches: Vec::new(),
             profiler: Profiler::default(),
@@ -144,6 +169,10 @@ impl App {
             display_draft: Default::default(),
             cell_window: crate::canvas::CellWindow::default(),
             border_lines: std::rc::Rc::new(slint::VecModel::default()),
+            blocked_targets: Vec::new(),
+            blocked_report: None,
+            prefs_pending: false,
+            prefs_edit_at: None,
         }
     }
 
@@ -171,6 +200,14 @@ impl App {
         }
     }
 
+    /// Clear a status left over from the previous project / workspace.
+    pub fn reset_status(&mut self) {
+        if self.bg_job.is_none() {
+            let text = self.t("status.ready");
+            self.set_status(text);
+        }
+    }
+
     pub fn error(&mut self, error: &CoreError) {
         let text = format!("{}: {}", self.t("status.error"), error.message);
         self.log_event(format!("ERROR {}", error.message));
@@ -191,6 +228,7 @@ impl App {
         self.project = Some(project);
         self.bind_scene(scene)?;
         self.scan_project_files();
+        self.reset_status();
         Ok(())
     }
 
@@ -200,6 +238,7 @@ impl App {
         self.project = None;
         self.bind_scene(scene)?;
         self.scan_project_files();
+        self.reset_status();
         Ok(())
     }
 
@@ -225,6 +264,8 @@ impl App {
         self.session = Some(session);
         self.selection.clear();
         self.drag = None;
+        self.schema_draft = None;
+        self.rules_draft = None;
         self.refresh_all();
         Ok(())
     }
@@ -348,6 +389,8 @@ impl App {
         self.refresh_navigator();
         self.refresh_canvas();
         self.refresh_inspector();
+        self.refresh_state_schema();
+        self.refresh_design_rules();
         self.refresh_validation();
         self.refresh_app();
     }
@@ -370,29 +413,54 @@ impl App {
             })
             .unwrap_or_default();
         app.set_project_name(ss(name));
+        // The title dot speaks for the project scene only; Pixel (standalone
+        // PNG) and Font Lab keep their own dots in their headers.
+        app.set_dirty(self.session.as_ref().is_some_and(EditorSession::is_dirty));
         if self.workspace == 1 || self.workspace == 2 {
             let studio = self.studio();
-            app.set_dirty(studio.doc.dirty);
             app.set_can_undo(studio.doc.can_undo());
             app.set_can_redo(studio.doc.can_redo());
         } else {
-            app.set_dirty(self.session.as_ref().is_some_and(|s| s.dirty));
             app.set_can_undo(self.session.as_ref().is_some_and(EditorSession::can_undo));
             app.set_can_redo(self.session.as_ref().is_some_and(EditorSession::can_redo));
         }
         app.set_status_text(ss(&self.status));
-        app.set_tabs(model(vec![DocTab {
-            title: ss(self.t("workspace.design")),
-            kind: ss("designer"),
-            dirty: self.session.as_ref().is_some_and(|s| s.dirty),
-        }]));
+        app.set_undo_text(ss(self.undo_text()));
+        app.set_has_document(self.session.is_some());
+        app.set_recent_project(ss(self.prefs.str("startup.last_project")));
+        let repo = env!("CARGO_PKG_REPOSITORY");
+        app.set_repo_url(ss(repo));
+        app.set_docs_url(ss(format!("{repo}/blob/main/docs/README.md")));
         let dm = DesignerModel::get(&ui);
         dm.set_log_lines(model(self.log.iter().rev().take(200).map(ss).collect()));
+    }
+
+    /// "Undo" on its own when nothing named is pending; "Undo: move" once the
+    /// designer stack knows the last step. Pixel / Font Lab keep their own
+    /// histories and report no labels, so they get the plain verb.
+    fn undo_text(&self) -> String {
+        let token = match self.workspace {
+            1 | 2 => None,
+            _ => self
+                .session
+                .as_ref()
+                .and_then(EditorSession::undo_label)
+                .map(str::to_string),
+        };
+        match token {
+            Some(token) => trf(
+                &self.lang,
+                "undo.menu",
+                &[("what", undo_phrase(&self.lang, &token))],
+            ),
+            None => self.t("action.undo"),
+        }
     }
 
     pub fn refresh_navigator(&mut self) {
         let Some(ui) = self.ui.upgrade() else { return };
         let dm = DesignerModel::get(&ui);
+        let mut screen_current = -1;
         let screens = self
             .project
             .as_ref()
@@ -400,16 +468,23 @@ impl App {
                 let active = p.active_screen();
                 p.screens()
                     .into_iter()
-                    .map(|s| ScreenItem {
-                        active: s.id == active,
-                        id: ss(&s.id),
-                        label: ss(&s.label),
+                    .enumerate()
+                    .map(|(index, s)| {
+                        if s.id == active {
+                            screen_current = index as i32;
+                        }
+                        ScreenItem {
+                            active: s.id == active,
+                            id: ss(&s.id),
+                            label: ss(&s.label),
+                        }
                     })
                     .collect()
             })
             .unwrap_or_default();
         dm.set_screens(model(screens));
-        let elements = self
+        dm.set_screen_current(screen_current);
+        let elements: Vec<ElementItem> = self
             .session
             .as_ref()
             .map(|s| {
@@ -433,7 +508,17 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
+        let element_current = self
+            .selection
+            .primary()
+            .and_then(|primary| {
+                elements
+                    .iter()
+                    .position(|element| element.id.as_str() == primary)
+            })
+            .map_or(-1, |index| index as i32);
         dm.set_elements(model(elements));
+        dm.set_element_current(element_current);
         let filter = dm.get_asset_filter().to_lowercase();
         dm.set_assets(model(
             self.assets
@@ -452,6 +537,7 @@ impl App {
         let lang = self.lang.clone();
         let Some(ui) = self.ui.upgrade() else { return };
         let dm = DesignerModel::get(&ui);
+        let rules = self.effective_rules();
         let Some(session) = self.session.as_mut() else {
             return;
         };
@@ -552,6 +638,26 @@ impl App {
             }
         }
         dm.set_boxes(model(boxes));
+        // Zones come from the same `design_rules.zones` map that produces
+        // ELEMENT_OUTSIDE_ZONE, so the overlay and the finding cannot disagree.
+        let mut zones = Vec::new();
+        if let Some(rules) = rules.get("zones").and_then(Value::as_object) {
+            for (id, rect) in rules {
+                let edge = |key: &str| rect.get(key).and_then(Value::as_i64).unwrap_or(0) as i32;
+                zones.push(OverlayBox {
+                    id: ss(id),
+                    x: edge("x"),
+                    y: edge("y"),
+                    w: edge("w"),
+                    h: edge("h"),
+                    selected: false,
+                    primary: false,
+                    hidden: false,
+                });
+            }
+        }
+        zones.sort_by(|a, b| a.id.cmp(&b.id));
+        dm.set_zones(model(zones));
     }
 
     pub fn refresh_inspector(&mut self) {
@@ -559,6 +665,7 @@ impl App {
         let dm = DesignerModel::get(&ui);
         let Some(session) = self.session.as_mut() else {
             dm.set_has_selection(false);
+            dm.set_selection_text(ss(""));
             return;
         };
         let primary = self
@@ -566,7 +673,18 @@ impl App {
             .primary()
             .map(str::to_string)
             .or_else(|| self.selection.ids().last().cloned());
-        dm.set_selection_count(self.selection.ids().len() as i32);
+        // The property fields below describe the primary element only, so name
+        // the whole selection when it is bigger than one element.
+        let count = self.selection.ids().len();
+        dm.set_selection_text(if count > 1 {
+            ss(trf(
+                &self.lang,
+                "inspector.selected_count",
+                &[("count", count.to_string())],
+            ))
+        } else {
+            ss("")
+        });
         match primary
             .as_deref()
             .map(|id| (session.element(id), session.geometry(id)))
@@ -669,18 +787,235 @@ impl App {
         dm.set_canvas_h_setting(canvas.get("h").and_then(Value::as_i64).unwrap_or(32) as i32);
     }
 
+    /// The schema the panel edits: the pending draft, else the scene's own.
+    fn schema_snapshot(&self) -> Value {
+        if let Some(draft) = &self.schema_draft {
+            return draft.clone();
+        }
+        self.session
+            .as_ref()
+            .map(|s| schema_from_scene(&s.doc.data))
+            .unwrap_or_else(|| json!({"variables": {}, "relations": []}))
+    }
+
+    pub fn refresh_state_schema(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let dm = DesignerModel::get(&ui);
+        let draft = self.schema_snapshot();
+        let checked = validate_state_schema(&draft);
+        let valid = checked.get("valid") == Some(&json!(true));
+        let errors = if valid {
+            String::new()
+        } else {
+            let text = checked
+                .get("errors")
+                .and_then(Value::as_array)
+                .map(|list| {
+                    list.iter()
+                        .map(|e| e.get("message").map(py_str).unwrap_or_default())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                })
+                .unwrap_or_default();
+            trf(&self.lang, "state.schema_invalid", &[("errors", text)])
+        };
+        let (vars, relations, names) = schema_rows(&draft);
+        dm.set_schema_vars(model(vars));
+        dm.set_relations(model(relations));
+        dm.set_var_names(model(names.iter().map(ss).collect()));
+        dm.set_relation_ops(model(RELATION_OPERATORS.iter().map(|o| ss(*o)).collect()));
+        dm.set_schema_valid(valid);
+        dm.set_schema_errors(ss(&errors));
+    }
+
+    /// One edit in the state schema panel. A result the engine accepts goes
+    /// into the scene as one undo step; anything else stays visible as a draft
+    /// with the validator's own message, so nothing the user typed is dropped.
+    pub fn schema_edit(&mut self, action: &str, key: &str, value: &str) {
+        let mut draft = self.schema_snapshot();
+        let handled = edit_variables(&mut draft, action, key, value)
+            | edit_relations(&mut draft, action, key, value);
+        if !handled {
+            return;
+        }
+        let checked = validate_state_schema(&draft);
+        if checked.get("valid") != Some(&json!(true)) {
+            self.schema_draft = Some(draft);
+            self.refresh_state_schema();
+            return;
+        }
+        let normalized = checked
+            .get("schema")
+            .cloned()
+            .unwrap_or_else(|| json!({"variables": {}, "relations": []}));
+        self.schema_draft = None;
+        let changed = self
+            .session
+            .as_mut()
+            .is_some_and(|session| session.set_state_schema(&normalized));
+        if changed {
+            self.after_edit();
+        } else {
+            self.refresh_state_schema();
+        }
+    }
+
+    /// The rules the panel edits: the pending draft, else the manifest's own.
+    fn rules_snapshot(&self) -> Value {
+        if let Some(draft) = &self.rules_draft {
+            return draft.clone();
+        }
+        self.project
+            .as_ref()
+            .and_then(|project| project.data.get("design_rules"))
+            .cloned()
+            .unwrap_or_else(|| json!({"required_elements": [], "zones": {}, "baseline_groups": []}))
+    }
+
+    /// The rules the overlay and the findings must use. The manifest is the
+    /// source of truth: a scene undo restores the whole document, including the
+    /// `_design_rules` snapshot injected at load, so reading it back from the
+    /// session would let the findings disagree with the file after a Ctrl+Z.
+    fn effective_rules(&self) -> Value {
+        self.project
+            .as_ref()
+            .and_then(|project| project.data.get("design_rules"))
+            .cloned()
+            .or_else(|| {
+                self.session
+                    .as_ref()
+                    .and_then(|session| session.scene().get("_design_rules").cloned())
+            })
+            .unwrap_or_else(|| json!({"required_elements": [], "zones": {}, "baseline_groups": []}))
+    }
+
+    pub fn refresh_design_rules(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let dm = DesignerModel::get(&ui);
+        let rules = self.rules_snapshot();
+        let required = rules
+            .get("required_elements")
+            .and_then(Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .map(|item| RuleText {
+                        value: ss(py_str(item)),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let zones = rules
+            .get("zones")
+            .and_then(Value::as_object)
+            .map(|map| {
+                map.iter()
+                    .map(|(name, rect)| RuleZone {
+                        h: ss(rule_edge(rect, "h")),
+                        name: ss(name),
+                        w: ss(rule_edge(rect, "w")),
+                        x: ss(rule_edge(rect, "x")),
+                        y: ss(rule_edge(rect, "y")),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let groups = rules
+            .get("baseline_groups")
+            .and_then(Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .map(|group| RuleGroup {
+                        axis: ss(group.get("axis").map(py_str).unwrap_or_else(|| "y".into())),
+                        ids: ss(group
+                            .get("ids")
+                            .and_then(Value::as_array)
+                            .map(|ids| ids.iter().map(py_str).collect::<Vec<_>>().join(","))
+                            .unwrap_or_default()),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let (valid, errors) = match check_rules_draft(&rules) {
+            Ok(()) => (true, String::new()),
+            Err(problem) => (
+                false,
+                trf(&self.lang, "rules.invalid", &[("errors", problem)]),
+            ),
+        };
+        let status = self
+            .project
+            .as_ref()
+            .map(|project| {
+                trf(
+                    &self.lang,
+                    "rules.saved_to",
+                    &[("path", posix(&project.path))],
+                )
+            })
+            .unwrap_or_default();
+        dm.set_rule_required(model(required));
+        dm.set_rule_zones(model(zones));
+        dm.set_rule_groups(model(groups));
+        dm.set_rules_valid(valid);
+        dm.set_rules_errors(ss(&errors));
+        dm.set_rules_status(ss(&status));
+    }
+
+    /// One edit in the design-rules panel. Rules live in the project manifest,
+    /// so a valid result is written to disk immediately and re-injected into
+    /// the scene; an invalid one stays on screen.
+    pub fn rule_edit(&mut self, action: &str, row: &str, field: &str, value: &str) {
+        let mut draft = self.rules_snapshot();
+        if !edit_rules(&mut draft, action, row, field, value) {
+            return;
+        }
+        if let Err(problem) = check_rules_draft(&draft) {
+            self.rules_draft = Some(draft);
+            self.set_status(trf(&self.lang, "rules.invalid", &[("errors", problem)]));
+            self.refresh_design_rules();
+            return;
+        }
+        self.rules_draft = None;
+        match self.apply_rules(&draft) {
+            Ok(()) => {}
+            Err(error) => {
+                self.rules_draft = Some(draft);
+                self.error(&error);
+                self.refresh_design_rules();
+            }
+        }
+    }
+
+    fn apply_rules(&mut self, rules: &Value) -> Result<(), CoreError> {
+        if self.project.is_none() {
+            return Err(CoreError::invalid(self.t("status.no_document")));
+        }
+        if let Some(project) = self.project.as_mut() {
+            project.set_design_rules(rules.clone())?;
+        }
+        // The scene carries the rules as `_design_rules`, which is what the
+        // validator reads; refresh it so findings follow without a reopen.
+        if let Some(session) = self.session.as_mut() {
+            session
+                .doc
+                .data
+                .insert("_design_rules".into(), rules.clone());
+        }
+        self.log_event("DESIGN_RULES");
+        self.refresh_canvas();
+        self.refresh_validation();
+        self.refresh_design_rules();
+        Ok(())
+    }
+
     pub fn refresh_validation(&mut self) {
         let Some(ui) = self.ui.upgrade() else { return };
         let dm = DesignerModel::get(&ui);
+        let rules = self.effective_rules();
         let Some(session) = self.session.as_mut() else {
             return;
         };
         let mut findings = session.validate();
-        let rules = session
-            .scene()
-            .get("_design_rules")
-            .cloned()
-            .unwrap_or(json!({}));
         findings.extend(check_design_rules(session.scene(), &rules));
         let blockers = findings.iter().filter(|f| f.is_blocking()).count();
         let summary = trf(
@@ -733,6 +1068,8 @@ impl App {
         self.refresh_navigator();
         self.refresh_canvas();
         self.refresh_inspector();
+        self.refresh_state_schema();
+        self.refresh_design_rules();
         self.refresh_validation();
         self.refresh_app();
     }
@@ -939,6 +1276,13 @@ impl App {
 
     /// Menu, command bar and inspector actions.
     pub fn action(&mut self, action: &str) {
+        // Every action here edits the Designer scene; without one, say so
+        // instead of silently doing nothing.
+        if self.session.is_none() {
+            let message = self.t("status.no_document");
+            self.error(&CoreError::invalid(message));
+            return;
+        }
         let result: Result<(), CoreError> = (|| {
             match action {
                 "undo" => {
@@ -1008,7 +1352,7 @@ impl App {
                     let grid = self.prefs.int("canvas.snap").max(1);
                     self.session_ids(|s, ids| snap_positions(s, ids, grid))?;
                 }
-                "toggle-play" | "step" => {
+                "step" => {
                     if let Some(s) = self.session.as_mut() {
                         s.step(1)?;
                     }
@@ -1121,7 +1465,7 @@ impl App {
     /// Export the current state or the whole state matrix in the background.
     pub fn start_export(&mut self, all: bool, output: PathBuf) -> Result<(), CoreError> {
         let Some((scene, root)) = self.scene_parts() else {
-            return Ok(());
+            return Err(CoreError::invalid(self.t("status.no_document")));
         };
         let states = if all {
             build_export_states(&scene, IntegerPolicy::Representative, 5000, false)?
@@ -1134,8 +1478,16 @@ impl App {
             vec![("current".to_string(), state)]
         };
         let lang = self.lang.clone();
+        let report = output.join("validation_report.md");
         self.start_background("action.export_all", move |progress| {
-            let summary = export_scene(&scene, &root, &output, &states, progress)?;
+            let result =
+                export_scene_with_report(&scene, &root, &output, &states, Some(&report), progress);
+            let summary = match result {
+                Err(failure) if failure.code == EXPORT_BLOCKED => {
+                    return blocked_after_failure(&scene, &root, &states, report, &lang, failure);
+                }
+                other => other?,
+            };
             Ok(Outcome {
                 status: trf(
                     &lang,
@@ -1153,19 +1505,26 @@ impl App {
     /// Build the Code AI handoff ZIP in the background.
     pub fn start_handoff(&mut self, output: PathBuf) -> Result<(), CoreError> {
         let Some((scene, root)) = self.scene_parts() else {
-            return Ok(());
+            return Err(CoreError::invalid(self.t("status.no_document")));
         };
         let states = build_export_states(&scene, IntegerPolicy::Representative, 5000, false)?;
         let lang = self.lang.clone();
+        let report = output.with_extension("validation.md");
         self.start_background("action.handoff", move |progress| {
-            let summary = build_handoff_package(
+            let result = build_handoff_package(
                 &scene,
                 &root,
                 &output,
                 &states,
                 IntegerPolicy::Representative,
                 progress,
-            )?;
+            );
+            let summary = match result {
+                Err(failure) if failure.code == EXPORT_BLOCKED => {
+                    return blocked_after_failure(&scene, &root, &states, report, &lang, failure);
+                }
+                other => other?,
+            };
             Ok(Outcome {
                 status: trf(
                     &lang,
@@ -1180,25 +1539,78 @@ impl App {
         })
     }
 
+    /// Write the current frame as a C header, refusing scenes that fail the
+    /// same release gate as every other export.
+    pub fn export_c_header(&mut self, path: &Path) -> Result<(), CoreError> {
+        let Some((scene, root)) = self.scene_parts() else {
+            return Err(CoreError::invalid(self.t("status.no_document")));
+        };
+        let state = self
+            .session
+            .as_ref()
+            .map(|s| s.state.clone())
+            .unwrap_or_default();
+        let findings = preflight(&scene, &root, &[("current".into(), state)])?;
+        if BlockedExport::has_blockers(&findings) {
+            let report = root.join(".oled").join("validation_report.md");
+            write_validation_report(&report, &findings)?;
+            let count = findings
+                .values()
+                .flatten()
+                .filter(|f| f.is_blocking())
+                .count();
+            self.set_status(trf(
+                &self.lang,
+                "status.export_blocked",
+                &[("count", count.to_string()), ("report", posix(&report))],
+            ));
+            self.show_blocked(&BlockedExport {
+                findings,
+                report: Some(report),
+            });
+            return Ok(());
+        }
+        let fb = self.current_framebuffer()?;
+        let text = mono_core::c_header::framebuffer_to_c_header(&fb, "oled_frame")?;
+        mono_project::atomic::atomic_write(path, text.as_bytes())?;
+        self.set_status(posix(path));
+        Ok(())
+    }
+
     /// Validate the boundary state matrix in the background.
     pub fn start_batch_validate(&mut self) -> Result<(), CoreError> {
         let Some((scene, root)) = self.scene_parts() else {
-            return Ok(());
+            return Err(CoreError::invalid(self.t("status.no_document")));
         };
-        let states = build_export_states(&scene, IntegerPolicy::Boundaries, 5000, false)?;
+        let states = build_export_states(&scene, IntegerPolicy::Representative, 5000, false)?;
         let lang = self.lang.clone();
         self.start_background("action.batch_validate", move |progress| {
             let matrix: Vec<_> = states.into_iter().map(|(_, s)| s).collect();
             let summary = validate_matrix(&scene, &root, &matrix, progress)?;
-            let report = matrix_report(&summary);
+            // Same policy and rules as the export gate, so the panel and the
+            // batch report cannot disagree about a release.
+            let rules =
+                check_design_rules(&scene, scene.get("_design_rules").unwrap_or(&json!({})));
+            let mut report = matrix_report(&summary);
+            if !rules.is_empty() {
+                report.push_str("\n## Project Design Rules\n\n");
+                for finding in &rules {
+                    report.push_str(&format!(
+                        "- **{}/{}**: {}\n",
+                        finding.severity, finding.code, finding.message
+                    ));
+                }
+            }
+            let findings = summary.findings + rules.len();
+            let blockers = summary.blockers + rules.iter().filter(|f| f.is_blocking()).count();
             Ok(Outcome {
                 status: trf(
                     &lang,
                     "status.batch_done",
                     &[
                         ("cases", summary.cases.to_string()),
-                        ("findings", summary.findings.to_string()),
-                        ("blockers", summary.blockers.to_string()),
+                        ("findings", findings.to_string()),
+                        ("blockers", blockers.to_string()),
                     ],
                 ),
                 log: report
@@ -1207,6 +1619,7 @@ impl App {
                     .map(str::to_string)
                     .collect(),
                 refresh: true,
+                blocked: None,
             })
         })
     }
@@ -1226,10 +1639,25 @@ impl App {
             )));
         }
         let label = self.t(label_key);
-        self.set_status(trf(&self.lang, "job.started", &[("label", label.clone())]));
+        let started = trf(&self.lang, "job.started", &[("label", label.clone())]);
+        self.set_status(started.clone());
         self.log_event(format!("JOB_START {label_key}"));
+        self.job_stage.clear();
         self.bg_job = Some(BackgroundJob::spawn(label, work));
+        // The status bar shows the busy text instead of the status line, so it
+        // has to carry something before the first progress poll.
+        self.report_job(true, &started);
         Ok(())
+    }
+
+    /// Mirror the running job into the status bar (label + cancel control).
+    fn report_job(&mut self, running: bool, text: &str) {
+        let Some(ui) = self.ui.upgrade() else {
+            return;
+        };
+        let app = AppModel::get(&ui);
+        app.set_busy(running);
+        app.set_busy_text(ss(text));
     }
 
     /// Job timer: progress in the status bar, then the result.
@@ -1237,34 +1665,53 @@ impl App {
         let Some(job) = &self.bg_job else { return };
         match job.poll() {
             Poll::Running(p) => {
+                let label = job.label.clone();
                 let text = if p.total > 0 {
                     trf(
                         &self.lang,
                         "job.progress",
                         &[
-                            ("label", job.label.clone()),
+                            ("label", label.clone()),
                             ("done", p.done.to_string()),
                             ("total", p.total.to_string()),
                         ],
                     )
                 } else {
-                    trf(&self.lang, "job.started", &[("label", job.label.clone())])
+                    trf(&self.lang, "job.started", &[("label", label.clone())])
                 };
-                if text != self.status {
-                    self.set_status(text);
+                // The worker's own stage name is a diagnostic token, so it goes
+                // to the log rather than the status bar.
+                if !p.stage.is_empty() && p.stage != self.job_stage {
+                    self.job_stage = p.stage.clone();
+                    self.log_event(format!(
+                        "JOB_STAGE {label} {} {}/{}",
+                        p.stage, p.done, p.total
+                    ));
                 }
+                self.report_job(true, &text);
             }
             Poll::Finished(result) => {
                 let label = job.label.clone();
                 self.bg_job = None;
+                self.job_stage.clear();
+                self.report_job(false, "");
                 match result {
                     Ok(outcome) => {
-                        for line in outcome.log {
+                        let Outcome {
+                            status,
+                            log,
+                            refresh,
+                            blocked,
+                        } = outcome;
+                        for line in log {
                             self.log_event(line);
                         }
                         self.log_event(format!("JOB_DONE {label}"));
-                        self.set_status(outcome.status);
-                        if outcome.refresh {
+                        self.set_status(status);
+                        if let Some(blocked) = &blocked {
+                            self.show_blocked(blocked);
+                        }
+                        if refresh {
                             self.refresh_app();
                         }
                     }
@@ -1287,11 +1734,132 @@ impl App {
         }
     }
 
-    pub fn current_framebuffer(&mut self) -> Option<mono_core::FrameBuffer> {
-        self.session
+    pub fn current_framebuffer(&mut self) -> Result<mono_core::FrameBuffer, CoreError> {
+        let message = self.t("status.no_document");
+        let session = self
+            .session
             .as_mut()
-            .and_then(|s| s.render().ok())
-            .map(|r| r.framebuffer)
+            .ok_or_else(|| CoreError::invalid(message))?;
+        Ok(session.render()?.framebuffer)
+    }
+
+    // ------------------------------------------------------------ blocked gate
+
+    /// Fill and show the blocked-export dialog from a refused job.
+    pub fn show_blocked(&mut self, blocked: &BlockedExport) {
+        let mut items = Vec::new();
+        let mut targets = Vec::new();
+        for (frame, findings) in &blocked.findings {
+            for finding in findings.iter().filter(|f| f.is_blocking()) {
+                let target = finding.element_id.clone().filter(|id| !id.is_empty());
+                items.push(BlockedItem {
+                    severity: ss(&finding.severity),
+                    code: ss(&finding.code),
+                    message: ss(&finding.message),
+                    frame: ss(frame),
+                    jumpable: target.is_some(),
+                });
+                targets.push(target);
+            }
+        }
+        let count = items.len();
+        self.blocked_targets = targets;
+        self.blocked_report = blocked.report.clone();
+        self.log_event(format!("EXPORT_BLOCKED {count}"));
+        if let Some(ui) = self.ui.upgrade() {
+            let app = AppModel::get(&ui);
+            app.set_blocked_items(model(items));
+            app.set_blocked_report(ss(blocked.report.as_deref().map(posix).unwrap_or_default()));
+            app.set_blocked_summary(ss(trf(
+                &self.lang,
+                "dialog.blocked_summary",
+                &[("count", count.to_string())],
+            )));
+            app.set_blocked_visible(true);
+        }
+    }
+
+    pub fn hide_blocked(&mut self) {
+        self.blocked_targets.clear();
+        self.blocked_report = None;
+        if let Some(ui) = self.ui.upgrade() {
+            AppModel::get(&ui).set_blocked_visible(false);
+        }
+    }
+
+    /// Show the offending element in the Designer and open the validation tab.
+    pub fn blocked_jump(&mut self, index: i32) {
+        let Some(Some(id)) = usize::try_from(index)
+            .ok()
+            .and_then(|i| self.blocked_targets.get(i))
+            .cloned()
+        else {
+            return;
+        };
+        self.hide_blocked();
+        if let Some(ui) = self.ui.upgrade() {
+            AppModel::get(&ui).set_workspace(0);
+            DesignerModel::get(&ui).set_drawer_tab(0);
+        }
+        self.workspace = 0;
+        self.element_clicked(&id, false);
+        self.refresh_app();
+    }
+
+    pub fn copy_blocked_report(&mut self) {
+        let Some(report) = self.blocked_report.as_ref() else {
+            return;
+        };
+        let text = posix(report);
+        match arboard::Clipboard::new().and_then(|mut c| c.set_text(text.clone())) {
+            Ok(()) => self.set_status(text),
+            Err(e) => self.error(&CoreError::invalid(e.to_string())),
+        }
+    }
+}
+
+/// Outcome for a job the release gate refused: the UI opens the blocked dialog.
+pub(crate) fn blocked_outcome(
+    lang: &str,
+    findings: BTreeMap<String, Vec<Finding>>,
+    report: PathBuf,
+) -> Outcome {
+    let count = findings
+        .values()
+        .flatten()
+        .filter(|f| f.is_blocking())
+        .count();
+    Outcome {
+        status: trf(
+            lang,
+            "status.export_blocked",
+            &[("count", count.to_string()), ("report", posix(&report))],
+        ),
+        blocked: Some(BlockedExport {
+            findings,
+            report: Some(report),
+        }),
+        ..Outcome::default()
+    }
+}
+
+/// A job failed with `EXPORT_BLOCKED`. `export_scene` already validated the
+/// whole state set, so the findings are collected only here, to fill the dialog
+/// without validating every successful export twice. If the scene has since
+/// become exportable, the original error is what the user hears.
+pub(crate) fn blocked_after_failure(
+    scene: &serde_json::Map<String, serde_json::Value>,
+    root: &Path,
+    states: &[(String, mono_core::state::State)],
+    report: PathBuf,
+    lang: &str,
+    failure: CoreError,
+) -> Result<Outcome, CoreError> {
+    let findings = preflight(scene, root, states)?;
+    if BlockedExport::has_blockers(&findings) {
+        Ok(blocked_outcome(lang, findings, report))
+    } else {
+        Err(failure)
     }
 }
 
@@ -1300,4 +1868,522 @@ pub fn zoom_for(index: i32) -> f32 {
         .get(index.max(0) as usize)
         .copied()
         .unwrap_or(0.0)
+}
+
+/// Undo tokens are machine labels produced by `EditorSession` and the
+/// Automation API (`move_batch`, `geometry:battery`). A verb we have copy for
+/// translates; an unknown token stays verbatim, which is still more useful to
+/// the user than a generic "last edit".
+pub(crate) fn undo_phrase(lang: &str, token: &str) -> String {
+    let exact = format!("undo.{token}");
+    let label = tr(lang, &exact);
+    if label != exact {
+        return label;
+    }
+    match token.split_once(':') {
+        Some((verb, rest)) => {
+            let key = format!("undo.{verb}");
+            let phrase = tr(lang, &key);
+            if phrase == key {
+                token.to_string()
+            } else {
+                format!("{phrase} {}", rest.replace(':', " "))
+            }
+        }
+        None => token.to_string(),
+    }
+}
+
+/// Panel rows for a schema draft. The indices point into the name and operator
+/// lists so the combo boxes can show each row's current choice.
+fn schema_rows(schema: &Value) -> (Vec<StateVarSpec>, Vec<StateRelation>, Vec<String>) {
+    let mut names: Vec<String> = Vec::new();
+    let mut vars: Vec<StateVarSpec> = Vec::new();
+    if let Some(map) = schema.get("variables").and_then(Value::as_object) {
+        for (name, spec) in map {
+            names.push(name.clone());
+            let number = |key: &str| match spec.get(key) {
+                Some(Value::String(text)) => text.clone(),
+                Some(other) => other.to_string(),
+                None => String::new(),
+            };
+            vars.push(StateVarSpec {
+                init: ss(spec.get("init").map(py_str).unwrap_or_default()),
+                kind: ss(spec.get("type").map(py_str).unwrap_or_default()),
+                max: ss(number("max")),
+                min: ss(number("min")),
+                name: ss(name),
+                values: ss(spec
+                    .get("values")
+                    .and_then(Value::as_array)
+                    .map(|list| list.iter().map(py_str).collect::<Vec<_>>().join(","))
+                    .unwrap_or_default()),
+            });
+        }
+    }
+    let index_of = |needle: &str| {
+        names
+            .iter()
+            .position(|n| n == needle)
+            .map_or(-1, |i| i as i32)
+    };
+    let relations = schema
+        .get("relations")
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .map(|row| {
+                    let left = row.get("left").map(py_str).unwrap_or_default();
+                    let operator = row.get("operator").map(py_str).unwrap_or_default();
+                    let right = row.get("right").map(py_str).unwrap_or_default();
+                    StateRelation {
+                        left_index: index_of(&left),
+                        left: ss(&left),
+                        operator_index: RELATION_OPERATORS
+                            .iter()
+                            .position(|o| *o == operator)
+                            .map_or(-1, |i| i as i32),
+                        operator: ss(&operator),
+                        right_index: index_of(&right),
+                        right: ss(&right),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    (vars, relations, names)
+}
+
+/// Apply a variable edit to the draft. False when the action is not one of
+/// these, so the caller can still try the relation edits.
+fn edit_variables(draft: &mut Value, action: &str, name: &str, value: &str) -> bool {
+    let Some(root) = draft.as_object_mut() else {
+        return false;
+    };
+    if !root.contains_key("variables") {
+        root.insert("variables".into(), json!({}));
+    }
+    let Some(vars) = root.get_mut("variables").and_then(Value::as_object_mut) else {
+        return false;
+    };
+    match action {
+        "add-variable" => {
+            if name.trim().is_empty() {
+                return false;
+            }
+            vars.insert(
+                name.trim().to_string(),
+                json!({"type": "int", "init": 0, "min": 0, "max": 100}),
+            );
+        }
+        "remove-variable" => {
+            vars.shift_remove(name);
+        }
+        "set-kind" | "set-init" | "set-min" | "set-max" | "set-values" => {
+            let Some(spec) = vars.get_mut(name).and_then(Value::as_object_mut) else {
+                return false;
+            };
+            match action {
+                "set-kind" => {
+                    spec.insert("type".into(), json!(value));
+                    if value == "int" {
+                        // Discrete int values and enum values are different
+                        // shapes; keeping the old list would fail validation.
+                        spec.shift_remove("values");
+                    }
+                }
+                "set-init" => {
+                    let as_int = spec.get("type").map(py_str).unwrap_or_default() == "int";
+                    let parsed = value.trim().parse::<i64>();
+                    let next = if as_int {
+                        parsed.map_or(json!(value), |n| json!(n))
+                    } else {
+                        json!(value)
+                    };
+                    spec.insert("init".into(), next);
+                }
+                "set-min" | "set-max" => {
+                    let field = if action == "set-min" { "min" } else { "max" };
+                    let parsed = value.trim().parse::<i64>();
+                    spec.insert(field.into(), parsed.map_or(json!(value), |n| json!(n)));
+                }
+                _ => {
+                    let values: Vec<String> = value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|v| !v.is_empty())
+                        .map(str::to_string)
+                        .collect();
+                    spec.insert("values".into(), json!(values));
+                }
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// Apply a relation edit to the draft. Deleting a variable drops the relations
+/// that named it, because they could never validate again.
+fn edit_relations(draft: &mut Value, action: &str, row: &str, value: &str) -> bool {
+    match action {
+        "remove-variable" => {
+            if let Some(list) = draft.get_mut("relations").and_then(Value::as_array_mut) {
+                list.retain(|relation| {
+                    relation.get("left").map(py_str) != Some(row.to_string())
+                        && relation.get("right").map(py_str) != Some(row.to_string())
+                });
+            }
+            return true;
+        }
+        "add-relation" | "remove-relation" | "set-relation-left" | "set-relation-op"
+        | "set-relation-right" => {}
+        _ => return false,
+    }
+    let names: Vec<String> = draft
+        .get("variables")
+        .and_then(Value::as_object)
+        .map(|map| map.keys().cloned().collect())
+        .unwrap_or_default();
+    let root = match draft.as_object_mut() {
+        Some(root) => root,
+        None => return false,
+    };
+    if !root.contains_key("relations") {
+        root.insert("relations".into(), json!([]));
+    }
+    let Some(list) = root.get_mut("relations").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    if action == "add-relation" {
+        if names.len() < 2 {
+            return false;
+        }
+        list.push(json!({"left": names[0], "operator": "<=", "right": names[1]}));
+        return true;
+    }
+    let Ok(index) = row.parse::<usize>() else {
+        return false;
+    };
+    if action == "remove-relation" {
+        if index >= list.len() {
+            return false;
+        }
+        list.remove(index);
+        return true;
+    }
+    let Some(relation) = list.get_mut(index).and_then(Value::as_object_mut) else {
+        return false;
+    };
+    let (field, next) = match action {
+        "set-relation-left" | "set-relation-right" => {
+            let field = if action == "set-relation-left" {
+                "left"
+            } else {
+                "right"
+            };
+            (field, names.iter().find(|n| *n == value).cloned())
+        }
+        "set-relation-op" => (
+            "operator",
+            RELATION_OPERATORS
+                .iter()
+                .find(|o| **o == value)
+                .map(|o| (*o).to_string()),
+        ),
+        _ => return false,
+    };
+    match next {
+        Some(name) => {
+            relation.insert(field.into(), json!(name));
+            true
+        }
+        None => false,
+    }
+}
+
+/// A zone edge as panel text: an unparseable entry keeps whatever the user
+/// typed so the field does not silently reset.
+fn rule_edge(rect: &Value, key: &str) -> String {
+    match rect.get(key) {
+        Some(Value::String(text)) => text.clone(),
+        Some(other) => other.to_string(),
+        None => String::new(),
+    }
+}
+
+/// The rules engine reads zone coordinates as integers and looks elements up by
+/// id, so those are the two things the panel can get wrong.
+fn check_rules_draft(rules: &Value) -> Result<(), String> {
+    let mut problems = Vec::new();
+    if let Some(map) = rules.get("zones").and_then(Value::as_object) {
+        for (name, rect) in map {
+            for key in ["x", "y", "w", "h"] {
+                // Same acceptance as the engine's `py_int`, so the panel never
+                // rejects what a save would keep.
+                if rect.get(key).and_then(py_int).is_none() {
+                    problems.push(format!("{name}.{key}"));
+                }
+            }
+        }
+    }
+    if let Some(list) = rules.get("required_elements").and_then(Value::as_array) {
+        for (index, item) in list.iter().enumerate() {
+            if item.as_str().map(str::trim).unwrap_or_default().is_empty() {
+                problems.push(format!("required_elements[{index}]"));
+            }
+        }
+    }
+    if let Some(list) = rules.get("baseline_groups").and_then(Value::as_array) {
+        for (index, group) in list.iter().enumerate() {
+            let axis = group.get("axis").map(py_str).unwrap_or_default();
+            if axis != "x" && axis != "y" {
+                problems.push(format!("baseline_groups[{index}].axis"));
+            }
+            let ids = group
+                .get("ids")
+                .and_then(Value::as_array)
+                .map(|ids| ids.is_empty())
+                .unwrap_or(true);
+            if ids {
+                problems.push(format!("baseline_groups[{index}].ids"));
+            }
+        }
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(problems.join(", "))
+    }
+}
+
+/// Apply one design-rule edit to the draft. Rows are addressed by index; the
+/// zone map is ordered, so the panel's row order is the manifest's.
+fn edit_rules(draft: &mut Value, action: &str, row: &str, field: &str, value: &str) -> bool {
+    let Some(target) = draft.as_object_mut() else {
+        return false;
+    };
+    let index = row.parse::<usize>().ok();
+    match action {
+        "add-required" | "set-required" | "remove-required" => {
+            let Value::Array(list) = target
+                .entry("required_elements".to_string())
+                .or_insert_with(|| json!([]))
+            else {
+                return false;
+            };
+            let text = value.trim().to_string();
+            match action {
+                "add-required" => {
+                    if text.is_empty() {
+                        return false;
+                    }
+                    list.push(json!(text));
+                }
+                "remove-required" => {
+                    let Some(i) = index.filter(|i| *i < list.len()) else {
+                        return false;
+                    };
+                    list.remove(i);
+                }
+                _ => {
+                    let Some(item) = index.and_then(|i| list.get_mut(i)) else {
+                        return false;
+                    };
+                    *item = json!(text);
+                }
+            }
+        }
+        "add-zone" => {
+            let Value::Object(map) = target
+                .entry("zones".to_string())
+                .or_insert_with(|| json!({}))
+            else {
+                return false;
+            };
+            let mut next = 1;
+            while map.contains_key(&format!("zone_{next}")) {
+                next += 1;
+            }
+            map.insert(
+                format!("zone_{next}"),
+                json!({"x": 0, "y": 0, "w": 16, "h": 16}),
+            );
+        }
+        "set-zone" | "remove-zone" => {
+            let Some(i) = index else { return false };
+            let names: Vec<String> = target
+                .get("zones")
+                .and_then(Value::as_object)
+                .map(|map| map.keys().cloned().collect())
+                .unwrap_or_default();
+            let Some(name) = names.get(i).cloned() else {
+                return false;
+            };
+            let Some(map) = target.get_mut("zones").and_then(Value::as_object_mut) else {
+                return false;
+            };
+            if action == "remove-zone" {
+                map.shift_remove(&name);
+                return true;
+            }
+            if field == "name" {
+                let text = value.trim().to_string();
+                if text.is_empty() || map.contains_key(&text) {
+                    return false;
+                }
+                let Some(rect) = map.shift_remove(&name) else {
+                    return false;
+                };
+                map.insert(text, rect);
+                return true;
+            }
+            if !matches!(field, "x" | "y" | "w" | "h") {
+                return false;
+            }
+            let Some(rect) = map.get_mut(&name).and_then(Value::as_object_mut) else {
+                return false;
+            };
+            let parsed = value.trim().parse::<i64>();
+            rect.insert(field.to_string(), parsed.map_or(json!(value), |n| json!(n)));
+        }
+        "add-group" => {
+            let Value::Array(list) = target
+                .entry("baseline_groups".to_string())
+                .or_insert_with(|| json!([]))
+            else {
+                return false;
+            };
+            list.push(json!({"axis": "y", "ids": []}));
+        }
+        "remove-group" => {
+            let Some(i) = index else { return false };
+            let Some(list) = target
+                .get_mut("baseline_groups")
+                .and_then(Value::as_array_mut)
+            else {
+                return false;
+            };
+            if i >= list.len() {
+                return false;
+            }
+            list.remove(i);
+        }
+        "set-group" => {
+            let Some(i) = index else { return false };
+            let Some(group) = target
+                .get_mut("baseline_groups")
+                .and_then(Value::as_array_mut)
+                .and_then(|list| list.get_mut(i))
+                .and_then(Value::as_object_mut)
+            else {
+                return false;
+            };
+            match field {
+                "axis" => {
+                    group.insert("axis".into(), json!(if value == "x" { "x" } else { "y" }));
+                }
+                "ids" => {
+                    let ids: Vec<String> = value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_string)
+                        .collect();
+                    group.insert("ids".into(), json!(ids));
+                }
+                _ => return false,
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::undo_phrase;
+    use crate::i18n::has_key;
+
+    /// Every verb the editor and the automation bridge can push onto the undo
+    /// stack is either translated or deliberately shown verbatim.
+    #[test]
+    fn rule_edits_validate_the_way_the_engine_does() {
+        use super::{check_rules_draft, edit_rules};
+        use serde_json::json;
+
+        let mut rules = json!({"required_elements": [], "zones": {}, "baseline_groups": []});
+        assert!(edit_rules(&mut rules, "add-zone", "", "", ""));
+        // A whole number written as text is still an integer to `py_int`.
+        assert!(edit_rules(&mut rules, "set-zone", "0", "w", "24"));
+        assert!(check_rules_draft(&rules).is_ok(), "{rules}");
+        assert!(edit_rules(&mut rules, "set-zone", "0", "h", "abc"));
+        assert_eq!(
+            check_rules_draft(&rules).err(),
+            Some("zone_1.h".to_string())
+        );
+
+        assert!(edit_rules(&mut rules, "set-zone", "0", "name", "battery"));
+        assert_eq!(rules["zones"]["battery"]["w"], json!(24));
+        assert!(rules.get("zone_1").is_none(), "the rename left a copy");
+
+        assert!(edit_rules(&mut rules, "add-group", "", "", ""));
+        assert!(
+            check_rules_draft(&rules).is_err(),
+            "an empty group is not a rule"
+        );
+        assert!(edit_rules(&mut rules, "set-group", "0", "ids", "a, b"));
+        assert_eq!(rules["baseline_groups"][0]["ids"], json!(["a", "b"]));
+        assert_eq!(
+            check_rules_draft(&rules),
+            Err("battery.h".to_string()),
+            "the earlier bad zone must still be reported under its new name"
+        );
+        assert!(edit_rules(&mut rules, "set-zone", "0", "h", "8"));
+        assert!(check_rules_draft(&rules).is_ok(), "{rules}");
+    }
+
+    #[test]
+    fn known_undo_tokens_have_copy() {
+        for token in [
+            "add_placeholder",
+            "assign_bitmap",
+            "bitmap_text_insert",
+            "duplicate",
+            "group",
+            "hide",
+            "lock",
+            "move_batch",
+            "remove_elements",
+            "show",
+            "ungroup",
+            "unlock",
+        ] {
+            assert!(has_key(&format!("undo.{token}")), "undo.{token}");
+            assert!(
+                undo_phrase("zh_CN", token) != token,
+                "{token} renders as its machine token"
+            );
+        }
+        for verb in ["geometry", "align_to", "distribute", "snap"] {
+            assert!(has_key(&format!("undo.{verb}")), "undo.{verb}");
+        }
+    }
+
+    #[test]
+    fn parameterised_and_unknown_undo_tokens_stay_readable() {
+        assert_eq!(undo_phrase("en_US", "geometry:battery"), "geometry battery");
+        assert_eq!(
+            undo_phrase("en_US", "align_to:canvas:left"),
+            "align canvas left"
+        );
+        assert_eq!(undo_phrase("zh_CN", "geometry:battery"), "调整 battery");
+        // No invented translation for tokens we do not know: show what it is.
+        assert_eq!(
+            undo_phrase("zh_CN", "agent_transaction"),
+            "agent_transaction"
+        );
+    }
 }

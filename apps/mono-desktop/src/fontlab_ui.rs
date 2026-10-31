@@ -56,10 +56,11 @@ impl App {
             .and_then(|r| font.root.strip_prefix(r).ok().map(posix))
             .unwrap_or_else(|| posix(&font.root));
         fm.set_pack_title(ss(format!(
-            "{} — {rel}{}",
+            "{}{}",
             font.pack.name,
             if font.dirty() { " ●" } else { "" }
         )));
+        fm.set_pack_path(ss(&rel));
         let chars = font.characters();
         fm.set_glyphs(model(
             chars
@@ -84,6 +85,8 @@ impl App {
         fm.set_baseline(f.baseline as i32);
         fm.set_advance(f.advance as i32);
         fm.set_threshold(f.threshold as i32);
+        fm.set_offset_x(f.offset_x as i32);
+        fm.set_offset_y(f.offset_y as i32);
         fm.set_alignment(f.alignment);
         fm.set_antialias(i32::from(f.antialias == 2));
         fm.set_busy(font.running());

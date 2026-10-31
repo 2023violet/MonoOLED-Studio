@@ -496,6 +496,19 @@ impl ProjectWorkspace {
         })
     }
 
+    /// Replace the project's design rules. Callers only invoke this after the
+    /// user edits something, so a project that never had `design_rules` keeps
+    /// not having one.
+    pub fn set_design_rules(&mut self, rules: Value) -> CoreResult<()> {
+        if !rules.is_object() {
+            return Err(CoreError::invalid("design rules must be an object"));
+        }
+        self.transact(|data| {
+            data.insert("design_rules".into(), rules);
+            Ok(())
+        })
+    }
+
     fn workbench(data: &mut Map<String, Value>) -> CoreResult<&mut Map<String, Value>> {
         if !data.get("output_workbench").is_some_and(Value::is_object) {
             data.insert("output_workbench".into(), default_output_workbench());
@@ -724,7 +737,19 @@ impl ProjectWorkspace {
         });
         if let Err(error) = result {
             if new_path.exists() && !old_path.exists() {
-                let _ = std::fs::rename(&new_path, &old_path);
+                if let Err(rollback) = std::fs::rename(&new_path, &old_path) {
+                    // The manifest kept its old entry, so the scene now lives at a
+                    // path nothing records. Name both files: swallowing this would
+                    // leave the user to discover the orphan by losing edits.
+                    return Err(CoreError::new(
+                        "E-IO",
+                        format!(
+                            "{error}; the moved file is at {} and could not be put back at {} ({rollback})",
+                            posix(&new_path),
+                            posix(&old_path)
+                        ),
+                    ));
+                }
             }
             return Err(error);
         }

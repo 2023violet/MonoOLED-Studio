@@ -11,14 +11,16 @@ use mono_core::render::posix;
 use mono_core::state::{IntegerPolicy, build_export_states};
 use mono_project::asset_ops::{convert_bitmap, import_asset};
 use mono_project::autosave::AutoSaveManager;
-use mono_project::export::{asset_health, build_thumbnail_wall, export_scene};
+use mono_project::export::{
+    EXPORT_BLOCKED, asset_health, build_thumbnail_wall, export_scene_with_report,
+};
 use mono_project::fontpack_io::load_font_pack;
 use mono_project::scene_io::SceneDoc;
 use mono_project::templates::TemplateLibrary;
 use serde_json::{Value, json};
 use slint::Global;
 
-use crate::app::{App, Prompt, model, ss};
+use crate::app::{App, Prompt, blocked_after_failure, model, ss};
 use crate::bgjob::Outcome;
 use crate::i18n::trf;
 use crate::{AppModel, Shell};
@@ -31,13 +33,14 @@ pub enum Picker {
 }
 
 /// V1 command palette entries: (command key, i18n label key, action id).
-pub const PALETTE: [(&str, &str, &str); 16] = [
+pub const PALETTE: [(&str, &str, &str); 17] = [
     ("save", "action.save", "save"),
     ("validate", "action.batch_validate", "batch-validate"),
     ("handoff", "action.handoff", "handoff"),
     ("undo", "action.undo", "undo"),
     ("redo", "action.redo", "redo"),
     ("assets", "action.asset_health", "asset-health"),
+    ("rename_screen", "action.rename", "rename-screen"),
     ("template_save", "action.save_template", "save-template"),
     (
         "template_insert",
@@ -348,7 +351,7 @@ impl App {
 
     fn thumbnail_wall(&mut self) -> Result<(), CoreError> {
         let (Some(root), Some(session)) = (self.scene_root(), self.session.as_ref()) else {
-            return Ok(());
+            return Err(CoreError::invalid(self.t("status.no_document")));
         };
         let scene = session.scene().clone();
         let Some(path) = rfd::FileDialog::new()
@@ -367,9 +370,11 @@ impl App {
             Instant::now().elapsed().as_nanos()
         ));
         let lang = self.lang.clone();
+        // The overview's own report must outlive the staging directory.
+        let report = root.join(".oled").join("validation_report.md");
         self.start_background("action.thumbnail_wall", move |progress| {
             let result = (|| {
-                export_scene(&scene, &root, &work, &states, progress)?;
+                export_scene_with_report(&scene, &root, &work, &states, Some(&report), progress)?;
                 let reference = work.join("reference");
                 let mut refs: Vec<PathBuf> = states
                     .iter()
@@ -386,7 +391,12 @@ impl App {
                 build_thumbnail_wall(&refs, &path, columns, 4)
             })();
             let _ = std::fs::remove_dir_all(&work);
-            result?;
+            if let Err(failure) = result {
+                if failure.code == EXPORT_BLOCKED {
+                    return blocked_after_failure(&scene, &root, &states, report, &lang, failure);
+                }
+                return Err(failure);
+            }
             Ok(Outcome {
                 status: trf(
                     &lang,
@@ -478,7 +488,7 @@ impl App {
 
     /// V1 `_autosave_tick`: snapshot when dirty (or forced).
     pub fn autosave_tick(&mut self, force: bool) -> Result<Option<PathBuf>, CoreError> {
-        let dirty = self.session.as_ref().is_some_and(|s| s.dirty);
+        let dirty = self.session.as_ref().is_some_and(|s| s.is_dirty());
         if !(force || dirty) {
             return Ok(None);
         }
@@ -531,7 +541,8 @@ impl App {
         };
         self.bind_scene(doc)?;
         if let Some(session) = self.session.as_mut() {
-            session.dirty = true;
+            // Restored content is not on disk yet: the title dot must say so.
+            session.mark_dirty();
         }
         self.log_event(format!("AUTOSAVE_RESTORE {}", posix(candidate)));
         Ok(())
@@ -544,7 +555,7 @@ impl App {
         let Some(candidate) = manager.latest_recovery() else {
             return Err(CoreError::invalid(self.t("autosave.none")));
         };
-        if self.session.as_ref().is_some_and(|s| s.dirty)
+        if self.session.as_ref().is_some_and(|s| s.is_dirty())
             && !confirm(
                 &self.t("dialog.unsaved_title"),
                 &self.t("dialog.unsaved_message"),

@@ -100,11 +100,6 @@ fn specs(section: &str) -> Vec<Spec> {
                     ("150%", "=150%"),
                 ],
             ),
-            Check(
-                "appearance.reduced_motion",
-                "check.reduced_motion",
-                Some("help.reduced_motion"),
-            ),
         ],
         "canvas" => vec![
             Group("group.input", None),
@@ -178,16 +173,6 @@ fn specs(section: &str) -> Vec<Spec> {
             ),
             Check("autosave.prompt_recovery", "check.prompt_recovery", None),
             Group("group.recovery", None),
-            Combo(
-                "performance.validation_mode",
-                "label.validation",
-                Some("help.validation"),
-                &[
-                    ("edit_complete", "validation.edit_complete"),
-                    ("idle", "validation.idle"),
-                    ("continuous", "validation.continuous"),
-                ],
-            ),
             Spin(
                 "performance.undo_history",
                 "label.undo",
@@ -197,21 +182,6 @@ fn specs(section: &str) -> Vec<Spec> {
             ),
         ],
         _ => vec![
-            Group("group.performance", None),
-            Combo(
-                "performance.drag_preview",
-                "label.drag_preview",
-                None,
-                &[("fast", "perf.fast"), ("exact", "perf.exact")],
-            ),
-            Spin(
-                "performance.asset_cache_mb",
-                "label.cache",
-                Some("help.asset_cache"),
-                32,
-                4096,
-            ),
-            Check("performance.overlay", "check.overlay", Some("help.overlay")),
             Group("group.maintenance", None),
             Button(
                 "clear_cache",
@@ -244,9 +214,14 @@ pub fn command_for(shortcuts: &Value, chord: &str) -> Option<&'static str> {
     })
 }
 
+/// Preference row labels live under the `pref.` namespace.
+pub fn pref_key(key: &str) -> String {
+    format!("pref.{key}")
+}
+
 impl App {
     fn pt(&self, key: &str) -> String {
-        tr(&self.lang, &format!("pref.{key}"))
+        tr(&self.lang, &pref_key(key))
     }
 
     fn option_label(&self, label: &str) -> String {
@@ -408,8 +383,9 @@ impl App {
         }
     }
 
-    /// One preference edit: validate, persist, apply live (V1 `_controls_changed`).
-    pub fn pref_changed(&mut self, key: &str, value: &str) {
+    /// One preference edit: validate, apply live, buffer for the debounced
+    /// write. Rows are not rebuilt, so typing into a shortcut field is stable.
+    pub fn pref_draft(&mut self, key: &str, value: &str) {
         let typed = self.typed_value(key, value);
         let mut error = String::new();
         if let (Some(command), Some(text)) = (key.strip_prefix("shortcuts."), typed.as_str()) {
@@ -432,20 +408,78 @@ impl App {
         if error.is_empty() && !self.prefs.set(key, typed) {
             error = format!("{}: {value}", self.pt("status.failed"));
         }
-        let saved = error.is_empty() && self.prefs.save();
         if let Some(ui) = self.ui.upgrade() {
             let pm = PrefsModel::get(&ui);
             pm.set_error(ss(&error));
-            pm.set_save_state(ss(self.pt(if saved {
+            pm.set_save_state(ss(self.pt(if error.is_empty() {
+                "status.pending"
+            } else {
+                "status.failed"
+            })));
+        }
+        if !error.is_empty() {
+            return;
+        }
+        self.prefs_pending = true;
+        self.prefs_edit_at = Some(std::time::Instant::now());
+        self.apply_live(key);
+    }
+
+    /// Explicit confirmation (Enter, combo, spin, checkbox): draft then write now.
+    pub fn pref_changed(&mut self, key: &str, value: &str) {
+        self.pref_draft(key, value);
+        self.flush_prefs();
+        self.refresh_prefs();
+    }
+
+    /// Write buffered preference edits; safe to call when nothing is pending.
+    pub fn flush_prefs(&mut self) {
+        if !self.prefs_pending {
+            return;
+        }
+        let saved = self.prefs.save();
+        // A failed write stays pending with a fresh timestamp, so the idle tick
+        // retries on its own half-second rhythm: clearing the flag here would
+        // leave the row showing a value the file never received, and nothing
+        // would ever try again until an unrelated edit happened.
+        self.prefs_pending = !saved;
+        self.prefs_edit_at = if saved {
+            None
+        } else {
+            Some(std::time::Instant::now())
+        };
+        if let Some(ui) = self.ui.upgrade() {
+            PrefsModel::get(&ui).set_save_state(ss(self.pt(if saved {
                 "status.saved"
             } else {
                 "status.failed"
             })));
         }
-        if error.is_empty() {
-            self.apply_live(key);
+    }
+
+    /// 60 ms UI tick: persist once typing has been idle for half a second.
+    pub fn flush_prefs_if_idle(&mut self) {
+        if self.prefs_pending
+            && self
+                .prefs_edit_at
+                .is_some_and(|at| at.elapsed() >= std::time::Duration::from_millis(500))
+        {
+            self.flush_prefs();
         }
-        self.refresh_prefs();
+    }
+
+    /// Persisted canvas overlay flags → designer model. Called at startup and
+    /// whenever a `canvas.*` preference changes; without it a saved preference
+    /// only takes effect after the user touches the row again.
+    pub fn apply_canvas_preferences(&mut self) {
+        let Some(ui) = self.ui.upgrade() else {
+            return;
+        };
+        let dm = DesignerModel::get(&ui);
+        dm.set_show_grid(self.prefs.bool("canvas.grid"));
+        dm.set_show_bounds(self.prefs.bool("canvas.bounds"));
+        dm.set_show_rulers(self.prefs.bool("canvas.rulers"));
+        dm.set_show_zones(self.prefs.bool("canvas.zones"));
     }
 
     fn apply_live(&mut self, key: &str) {
@@ -457,11 +491,7 @@ impl App {
                 crate::apply_appearance(&ui, self, None);
             }
             if key.starts_with("canvas.") {
-                let dm = DesignerModel::get(&ui);
-                dm.set_show_grid(self.prefs.bool("canvas.grid"));
-                dm.set_show_bounds(self.prefs.bool("canvas.bounds"));
-                dm.set_show_rulers(self.prefs.bool("canvas.rulers"));
-                dm.set_show_zones(self.prefs.bool("canvas.zones"));
+                self.apply_canvas_preferences();
             }
         }
         if key.starts_with("pixel_studio.")
@@ -534,6 +564,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
 
     #[test]
@@ -556,5 +587,140 @@ mod tests {
             .map(|m| m.keys().map(String::as_str).collect())
             .unwrap_or_default();
         assert_eq!(keys, SHORTCUTS.to_vec());
+    }
+
+    /// Preference rows assemble their strings at run time from the `pref.`
+    /// namespace, so the literal `"t(\"…\")"` scan in `i18n.rs` cannot see them
+    /// and a missing key renders as raw text. Resolve every row string here.
+    #[test]
+    fn every_preference_string_translates() {
+        use crate::i18n::has_key;
+
+        fn check(missing: &mut Vec<String>, key: &str, where_: &str) {
+            // `=Auto`-style literals are shown verbatim by `option_label`.
+            if key.starts_with('=') {
+                return;
+            }
+            let full = pref_key(key);
+            if !has_key(&full) {
+                missing.push(format!("{where_} -> {full}"));
+            }
+        }
+
+        fn check_opt(missing: &mut Vec<String>, key: &Option<&str>, where_: &str) {
+            if let Some(key) = key {
+                check(missing, key, where_);
+            }
+        }
+
+        let mut missing = Vec::new();
+        for section in SECTIONS {
+            let at = format!("section {section}");
+            check(&mut missing, &format!("section.{section}"), &at);
+            for spec in specs(section) {
+                match spec {
+                    Spec::Group(label, h) => {
+                        check(&mut missing, label, &at);
+                        check_opt(&mut missing, &h, &at);
+                    }
+                    Spec::Check(_, label, h) | Spec::Spin(_, label, h, _, _) => {
+                        check(&mut missing, label, &at);
+                        check_opt(&mut missing, &h, &at);
+                    }
+                    Spec::Combo(_, label, h, options) => {
+                        check(&mut missing, label, &at);
+                        check_opt(&mut missing, &h, &at);
+                        for (_, option) in options {
+                            check(&mut missing, option, &at);
+                        }
+                    }
+                    Spec::Value(label, value) => {
+                        check(&mut missing, label, &at);
+                        check(&mut missing, value, &at);
+                    }
+                    Spec::Button(_, text, h) | Spec::Danger(_, text, h) => {
+                        check(&mut missing, text, &at);
+                        check_opt(&mut missing, &h, &at);
+                    }
+                    Spec::Shortcut(command) => {
+                        check(&mut missing, &format!("shortcut.{command}"), &at);
+                    }
+                }
+            }
+        }
+        missing.sort();
+        missing.dedup();
+        assert!(
+            missing.is_empty(),
+            "untranslated preference strings: {missing:#?}"
+        );
+    }
+
+    /// `text` with the region from `from` up to `to` removed, panicking if either
+    /// anchor moves so a scan can never silently start seeing everything.
+    fn cut(text: &str, from: &str, to: &str) -> String {
+        let start = text
+            .find(from)
+            .unwrap_or_else(|| panic!("anchor moved: {from}"));
+        let end = text[start..].find(to).map_or(text.len(), |at| start + at);
+        format!("{}{}", &text[..start], &text[end..])
+    }
+
+    /// A row that stores a preference nothing reads is a control that lies: the
+    /// user flips it, it is written to disk, and the app behaves as before (this
+    /// is how `appearance.reduced_motion` and `performance.overlay` shipped, and
+    /// what `performance.drag_preview` / `validation_mode` / `asset_cache_mb`
+    /// still were when this scan first ran). Every Check/Combo/Spin key must
+    /// therefore reach an accessor call — `.bool("k")`, `.str("k")`, `.int("k")`,
+    /// `.get("k")` — outside the row table that lists it.
+    ///
+    /// Deliberately narrow, in the loud direction: naming an accessor means
+    /// `prefs.rs` cannot satisfy a row with its `valid()` schema or `defaults()`
+    /// (both files are out of the corpus), a key used only through a run-time
+    /// built path (`format!("pixel_studio.{key}")`) fails until it is listed
+    /// here, and so does a call rustfmt has wrapped across lines. Each of those
+    /// shows up as a failing test, not as a silent pass.
+    #[test]
+    fn every_preference_row_is_consumed() {
+        const ACCESSORS: [&str; 4] = [".bool(", ".str(", ".int(", ".get("];
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut readers = String::new();
+        for dir in ["src", "ui"] {
+            for entry in std::fs::read_dir(root.join(dir)).unwrap() {
+                let path = entry.unwrap().path();
+                // `prefs.rs` stores and validates keys; storing one is not reading it.
+                if path.file_name().and_then(|n| n.to_str()) == Some("prefs.rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).unwrap();
+                readers.push_str(&match path.file_name().and_then(|n| n.to_str()) {
+                    // Declaring a row is not the same as acting on its key.
+                    Some("prefs_ui.rs") => cut(&text, "fn specs(", "/// Normalised shortcut text"),
+                    _ => text,
+                });
+            }
+        }
+        let mut unread = Vec::new();
+        for section in SECTIONS {
+            for spec in specs(section) {
+                let key = match spec {
+                    Spec::Check(key, _, _)
+                    | Spec::Combo(key, _, _, _)
+                    | Spec::Spin(key, _, _, _, _) => key,
+                    _ => continue,
+                };
+                let read = ACCESSORS
+                    .iter()
+                    .any(|accessor| readers.contains(&format!("{accessor}\"{key}\")")));
+                if !read {
+                    unread.push(format!("{section}: {key}"));
+                }
+            }
+        }
+        unread.sort();
+        assert!(
+            unread.is_empty(),
+            "preference rows nothing reads: {unread:#?}"
+        );
     }
 }

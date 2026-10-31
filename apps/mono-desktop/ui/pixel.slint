@@ -75,14 +75,12 @@ export global PixelModel {
     callback zoom-step(int);
     callback import-changed();
     callback dialog-accepted();
+    callback dialog-dismissed();
 }
-
-export struct ProfileItem { id: string, name: string }
 
 export global OutputModel {
     in property <[string]> sources;
     in-out property <int> source: 0;
-    in property <[ProfileItem]> profiles;
     in property <[string]> profile-names;
     in-out property <int> profile: 0;
     in property <bool> project-profiles;
@@ -145,6 +143,7 @@ component ToolButton inherits Rectangle {
         tint: root.checked ? Theme.accent-hover : Theme.text-secondary;
     }
     touch := TouchArea { clicked => { root.clicked(); } }
+    Tooltip { text: @markdown("\{root.tip}"); }
 }
 
 export component ToolRail inherits Panel {
@@ -689,12 +688,13 @@ component DialogButtons inherits VerticalLayout {
     HorizontalLayout {
         alignment: end;
         spacing: 8px;
-        Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { PixelModel.dialog = 0; } }
+        Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { PixelModel.dialog-dismissed(); } }
         Button { text: root.accept-text; role: ButtonRole.primary; clicked => { PixelModel.dialog-accepted(); } }
     }
 }
 
 component ResizeDialog inherits Scrim {
+    dismissed => { PixelModel.dialog-dismissed(); }
     Dialog {
         height: 230px;
         VerticalLayout {
@@ -713,9 +713,11 @@ component ResizeDialog inherits Scrim {
             DialogButtons { accept-text: I18n.tr(I18n.lang, "pixel.resize"); }
         }
     }
+    init => { root.take-focus(); }
 }
 
 component ImportDialog inherits Scrim {
+    dismissed => { PixelModel.dialog-dismissed(); }
     Dialog {
         width: 560px;
         height: 470px;
@@ -750,9 +752,11 @@ component ImportDialog inherits Scrim {
             DialogButtons { accept-text: I18n.tr(I18n.lang, "pixel.import.apply"); }
         }
     }
+    init => { root.take-focus(); }
 }
 
 component TextDialog inherits Scrim {
+    dismissed => { PixelModel.dialog-dismissed(); }
     Dialog {
         height: 300px;
         VerticalLayout {
@@ -771,6 +775,7 @@ component TextDialog inherits Scrim {
             DialogButtons { accept-text: I18n.tr(I18n.lang, "dialog.ok"); }
         }
     }
+    init => { root.take-focus(); }
 }
 
 export component PixelDialogs inherits Rectangle {
@@ -794,6 +799,7 @@ export component PixelView inherits VerticalLayout {
                     spacing: 10px;
                     SectionTitle { text: PixelModel.title; vertical-alignment: center; }
                     StatusPill { text: PixelModel.doc-w + " × " + PixelModel.doc-h; }
+                    Caption { text: I18n.tr(I18n.lang, "pixel.standalone"); vertical-alignment: center; wrap: no-wrap; }
                     Rectangle { horizontal-stretch: 1; }
                     Label { text: I18n.tr(I18n.lang, "pixel.zoom"); }
                     ComboBox {
