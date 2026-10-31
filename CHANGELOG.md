@@ -1,5 +1,62 @@
 # Changelog
 
+## Unreleased
+
+### Compatibility (contract changes)
+
+- **The release gate now covers every scene export.** A scene with a blocking finding can no longer be written as a C header through the desktop menu, `mono c-header`, or the Automation API's `export.c_header`. All three now behave like `export.current`/`export.all`: no export artefact is written — not even the `reference/` and `golden/` directories — while the blocking findings are still saved as a report (`validation_report.md`, or `<zip>.validation.md` for a handoff) so the refusal is readable after the call; the CLI prints `FAIL:` and exits 2, the API returns `INVALID_REQUEST` naming every blocker, and the desktop opens a dialog that lists the blocking findings and can jump to each element. Successful exports are byte-identical to 2.0.3. Still outside the gate, on purpose: the Output Workbench and `export.bitmap_data` can render the current scene into a file of their own; gating them would change API 1.3 behaviour and needs its own decision.
+- **Viewing a screen no longer rewrites the project.** Switching screens previously saved `project.oled.json` immediately; it now only changes the session. The active screen is persisted by the next explicit save, so after a restart a project reopens on the last *saved* screen. The Automation API's `project.open_screen` still writes, as documented for API compatibility.
+
+### Added
+
+- Inspector → **Schema** (State schema) edits the scene's state variables (type, initial value, range or value list) and the relations between them, showing the engine's own validation while you type. An accepted edit is one undo step and re-seeds the preview at once. Editing a variable's *value* still affects only the preview — the panel says so.
+- Inspector → **Rules** (Design rules) edits the project's required elements, zones and baseline groups. Findings follow immediately, without reopening the project. These live in `project.oled.json` and are written as you edit them, so the title's `•` does not track that file; the panel names what it wrote.
+- The Navigator renames a page. **Rename** moves the scene file with it and re-opens it under the new id.
+- The canvas toolbar's **Zones** toggle (and the `canvas.zones` preference) draws the project's design zones over the canvas, in the same editor-only layer as the grid and bounds.
+- The status bar shows what a running background job is doing (`Export · 12/40`) and carries a **Cancel** control; the Edit menu and status bar name what the next undo reverts ("Undo: move battery").
+- Font Lab can offset the glyphs horizontally and vertically. The generator always supported `GenerateOptions::offset`; no control could set it.
+
+### Fixed
+
+- Keyboard shortcuts (for example `Ctrl+S`) keep working after a dialog closes: the shortcut scope now owns the dialogs, so closing one no longer leaves the window without a focus owner. Bare tool keys no longer fire behind a modal.
+- Every dialog closes with Esc or a click on the dimmed backdrop; the Pixel import dialog also releases its converted image instead of leaking it.
+- Preferences → Keyboard shows the configured chords again (they were stored as flat keys but read as nested paths), text fields commit on Enter and are debounced otherwise, and shortcut conflicts are rejected with a visible message.
+- A failed preferences write no longer clears the pending flag, so the value the row shows is retried instead of silently lost.
+- The unsaved-changes prompt names the documents that changed; undo back to the saved scene clears the title `•`; Pixel Studio is labelled as a standalone PNG that is not part of the project.
+- One element now yields one diagnostic per distinct problem (a single out-of-bounds placeholder no longer reports twice), and a blocked handoff keeps its report at `<zip>.validation.md` instead of pointing at a deleted temporary directory. The thumbnail wall writes its report to `.oled/validation_report.md`.
+- Automation's `export.c_header` refuses with every blocking finding, not only the first one.
+- Batch validation uses the same representative state set and design rules as export and handoff, so the panel and the batch report agree.
+- The Navigator scrolls to the selected page, element or glyph; a selection made from the canvas or with the arrow keys is no longer hidden below the fold.
+- Font Lab keeps all three columns at the minimum window width (the generator column is no longer clipped by a long pack path, which now elides).
+- An empty window offers New Project / Open Project / Open Last Project instead of an inert editor; design commands without a document report that instead of silently doing nothing.
+- Icon buttons show tooltips, the View menu shows check marks, About links to the repository and documentation, and the status bar no longer keeps the previous project's message.
+- The canvas overlay switches (grid, bounds, rulers, zones) are restored when a project opens, not only after you touch one.
+- The State schema and Design rules panels refresh on every edit path, including the ones that go through undo and redo.
+- The Output Workbench's scan-mode names, its empty-source error and its truncated-preview note were hardcoded Chinese and ignored the language setting; so was the status bar's "Pixel Truth" line. All are translated now, and the workbench now reports a real render failure instead of blaming a missing project.
+- `pixel.standalone` carried the Chinese text inside the English table, so an English interface showed Chinese.
+- The user manual described a marquee (rubber-band) selection the canvas does not implement; it now says pressing empty canvas clears the selection, and documents the rename, zones, schema and design-rules entries.
+- `AGENTS.md` claimed that opening a screen writes the project manifest back. It does not (see Compatibility above).
+- Font Lab: clearing the font file disabled the two offset rows, so an offset you had already set could not be cleared and every later generation failed while blaming the characters for needing a TrueType font. The rows stay editable, and the engine now says when it is the offset that left the built-in path.
+- The Inspector's five tabs share about 290px at the minimum window width, so "State" and "State schema" elided to the same letters. The tab strip abbreviates the two long names, and the sections inside each panel still name what they edit.
+- A glyph offset outside ±64 px is refused by the generator instead of overflowing its own arithmetic, which the Automation API's `font.generate` could reach directly (the Font Lab form already clamped).
+
+### Removed
+
+- Controls that had never been wired: the multi-document tab model (`AppModel.tabs`, `struct DocTab`), `AppModel.toast`, and the `appearance.reduced_motion` / `performance.overlay` preferences, which were stored, shown in Settings, and read by nothing.
+- The Preferences rows for drag preview, validation timing and asset-cache size. Nothing read those values either; they stay in an existing `preferences.json` as inert leftovers.
+- The Inspector's **Play** button: there is no animated preview, so it only ever stepped the runtime state once — which is what the remaining **Step** button says.
+- 112 translation keys that no view or controller asked for, including the 1.x timeline, diff, measure and preview copy; 67 keys were added for the schema, rules, undo, workbench and dialog copy, leaving 520 per language.
+
+### Security
+
+- `pulldown-cmark` 0.13.5 (via Slint's markdown support) fixes RUSTSEC-2026-0414, exponential event growth with `ENABLE_WIKILINKS`. The option is off by default here; the lockfile is bumped so `cargo deny` stays clean.
+
+### Internal
+
+- Four scans now fail the build when a control stops telling the truth: every property and callback of the six model globals is used on both sides of the Slint bridge; every preference row reaches an accessor outside its own row table; `strings.json` is exactly paired in content and order, duplicate-free and orphan-free (including the `pref.` namespace that rows resolve by suffix), with no user-facing copy bypassing it; and `tools/tests/test_docs_match_code.py` pins the manual's claims to the code that proves them. `tools/CHECK_GUI_TRUST.py` grew to 15 end-to-end cases against the real binary.
+- The orphan-key scan no longer counts a key that survives only inside a source comment as used.
+- The scripted `later:` and `select-later:` hooks skip their step while a nested dialog holds the app state, the way pointer and close events already did, instead of panicking on the second borrow.
+
 ## 2.0.3 - 2026-10-23
 
 ### Performance

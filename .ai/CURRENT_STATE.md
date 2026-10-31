@@ -5,12 +5,13 @@
 ## Project
 
 - Project: MonoOLED Studio
-- Product version: 2.0.0 (Rust; Python 1.x source at the v1-final tag)
-- Current phase: Rust Rewrite G6 complete — v2.0.0 released 2026-10-21 (G6 B1–B4 executed on explicit user confirmation)
+- Product version: 2.0.3 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
+- Current phase: Rust Rewrite G6 complete — v2.0.3 released 2026-10-23; the 2.x line is in maintenance
+- Active round: 2026-10-30 truthful-controls batch (TASK-005) implemented on top of the 2026-10-29 experience-audit fixes (TASK-004); both are uncommitted and await independent review
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
-- Decision: ADR-005 (Rust full rewrite, main-only)
+- Decision: ADR-005 (Rust full rewrite, main-only); ADR-006 (release gate covers every *scene* export producer — the Output Workbench and `export.bitmap_data` stay outside it by decision, viewing a screen never writes)
 
 ## Workflow
 
@@ -19,11 +20,46 @@
 - TASK-002 status: DONE
 - TASK-003 status: DONE
 - Independent Review: PASS (TASK-003, agent review)
-- Active task: NONE (Rust Rewrite G4 evidence recorded)
-- Next workflow action: NONE (2.x maintenance; known gaps in CHANGELOG 2.0.0 and docs/rewrite/G6_EVIDENCE.md §6)
+- Active task: TASK-005 (stacked on TASK-004 in the same working tree)
+- Active task state: VERIFY, Review Status PENDING (independent review not performed); TASK-004 is likewise still VERIFY / PENDING
+- Next workflow action: independent review of `.ai/tasks/TASK-004.md` and `.ai/tasks/TASK-005.md`; only after a PASS may the round be committed, and only on explicit user instruction tagged, released or pushed.
 
 ## Current workstream
 
+- TASK-004 (experience audit closeout) converges five "one signal, two owners"
+  defects onto single sources of truth: the shortcut `FocusScope` owns the
+  keyboard and the overlays sit inside it, `Scrim` owns Escape/backdrop dismissal,
+  `EditorSession::is_dirty` compares against a saved snapshot, preferences read
+  flat dotted shortcut keys, and `mono_project::export::preflight` is the one gate
+  every export producer runs. `tools/CHECK_GUI_TRUST.py` re-checks the seams that
+  only a real window can prove.
+- TASK-005 (truthful controls, exposed engine) removes the rows and properties
+  nothing ever read, draws `design_rules.zones` behind a real toggle, puts the job
+  stage and a Cancel control in the status bar, opens the state schema, design
+  rules, page rename and glyph offsets from the Inspector and Navigator, and
+  rewrites the manual and rule files to match the code. Four text scans plus
+  `tools/tests/test_docs_match_code.py` keep the seams from drifting back.
+- Deferred by decision, not by omission: the Pixel Studio versus Font Lab visual
+  language (black-background white dots versus white-background black shapes) and
+  any theme/colour revision are left for a separate design round.
+- Deferred for a product decision: the Output Workbench and Automation
+  `export.bitmap_data` can still render the current scene into a file without the
+  release gate. Including them changes API 1.3 behaviour, so it needs its own
+  ADR rather than a silent fix; `docs/AI_HANDOFF.md` §5.5 records the boundary.
+- Slint 1.18 constraints that cost this round a broken feature: a component that
+  inherits `ListView` mislays its delegates, and `@children` cannot be forwarded
+  into a `ListView`. Scroll-to-selection is a plain `ListView` plus a `changed`
+  handler in the owning component, pinned by `no_list_is_a_subclassed_listview`.
+- Corrected during the TASK-005 review: the earlier claim that a `changed` handler
+  on a bound property "only runs while something reads it" is **wrong for 1.18**.
+  `ChangeTracker::init` evaluates eagerly (`i-slint-core-1.18.1/properties/change_tracker.rs:188-209`),
+  and `MainWindow.overlay-open` (`ui/main.slint:334`) has no reader outside its own
+  `changed` handler yet still restores focus after every modal — which
+  `check_overlays_and_focus` proves on the real binary. The `visible: x >= -1`
+  guards left in `designer.slint` / `fontlab.slint` are therefore belt-and-braces
+  from the original fix, not load-bearing; their real cause was never isolated.
+- Known library limitation recorded in TASK-004: Slint 1.18.1 cannot two-way-bind
+  `MenuItem.checked`, so View-menu check marks are rendered from `Shell` state.
 - Theme Visual Workstream is closed by TASK-002 under the approved product
   decision B.
 - Dark theme routing decision resolved: preserve one-dark-pro runtime routing and

@@ -8,7 +8,7 @@
 
 Automation API 1.3 lets Code AI operate MonoOLED Studio by project/scene/state/pixel/font/output semantics rather than GUI coordinates. Canonical Renderer and the shared bitmap encoder remain the only pixel/export truth.
 
-API 1.3 is additive and retains API 1.2 methods and byte behavior. In particular, `export.c_header`, `export.current`, `export.all`, and Code AI handoff output are unchanged when no new parameters are supplied.
+API 1.3 is additive and retains API 1.2 methods and byte behavior. In particular, `export.c_header`, `export.current`, `export.all`, and Code AI handoff output are unchanged when no new parameters are supplied and the scene passes the release gate (see [Release gate](#release-gate)).
 
 ## Recommended blind-Agent bootstrap
 
@@ -88,6 +88,14 @@ Use Studio-owned export methods instead of reimplementing VLSB/C-header rules:
 - `export.font_data`
 - `export.font_pack`
 - `export.code_ai_handoff`
+
+### Release gate
+
+`export.current`, `export.all`, `export.c_header` and `export.code_ai_handoff` refuse to write files when validation reports a blocking finding (`BLOCKER` or `ERROR`) for the exported state(s). `export.c_header` honours the same gate as the other producers instead of rendering regardless of findings.
+
+A blocked call returns JSON-RPC error `INVALID_REQUEST` and writes no export artefact: no header, no `golden/` or `reference/` output, and no handoff ZIP. It does still write the blocking report — `validation_report.md` next to the intended output, or `<zip>.validation.md` for a handoff — because the refusal has to be readable after the call returns. A directory an earlier successful export created is left as it was. Fix the findings (the validation report and `validate.*` methods name the element ids) and call again.
+
+`export.bitmap_data` and the Output Workbench are **not** behind the gate: they can render the current scene into a file of their own. Changing that would alter API 1.3 behaviour and needs its own decision.
 
 ## Output profiles — API 1.3
 
