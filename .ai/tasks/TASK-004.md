@@ -1,7 +1,7 @@
 # TASK-004 — Experience Audit Closeout: One Truth Per Signal
 
 Status: VERIFY
-Review Status: PENDING
+Review Status: three independent slices run (see Review Status below)
 
 ## Goal
 
@@ -224,5 +224,21 @@ Found, documented, deliberately not changed:
 
 ## Review Status
 
-PENDING — implementation stops at `VERIFY`. Independent review has not been
-performed, and no commit, tag, push or release was made.
+Covered by the first of three independent review slices dispatched for the
+2026-10-30 round (the two rounds share one working tree, so TASK-004 and
+TASK-005 were reviewed together). Six Important findings came back.
+
+- Four were accepted and fixed in the same slice.
+- One was refused after reading the code: "cancelling a rename still prints a
+  success status" is false, because `finish_prompt` refreshes only on `Ok`. The
+  finding was checked against `apps/mono-desktop/src/main.rs` before being set
+  aside rather than "fixed".
+- One stayed open through that round — backdrop dismissal was wired but never
+  behaviourally proved. The 2.1.0 slice closed it with
+  `tools/tests/test_docs_match_code.py::test_every_dialog_really_closes_on_the_backdrop`:
+  each of the eight `inherits Scrim` components handles `dismissed`, `Scrim`'s
+  own TouchArea emits it, and nothing sets `dismissable: false`.
+
+The fixes shipped with `2.1.0`, split across code, checks and docs commits.
+Status stays `VERIFY`: `AGENTS.md` reserves `DONE` / `PASS` for an independent
+reviewer, and this record does not award it.

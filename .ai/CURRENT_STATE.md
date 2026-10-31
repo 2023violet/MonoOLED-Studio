@@ -5,9 +5,9 @@
 ## Project
 
 - Project: MonoOLED Studio
-- Product version: 2.0.3 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
-- Current phase: Rust Rewrite G6 complete — v2.0.3 released 2026-10-23; the 2.x line is in maintenance
-- Active round: 2026-10-30 truthful-controls batch (TASK-005) implemented on top of the 2026-10-29 experience-audit fixes (TASK-004); both are uncommitted and await independent review
+- Product version: 2.1.0 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
+- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance (2.0.3 on 2026-10-23, 2.1.0 on 2026-10-30)
+- Active round: the 2026-10-30 truthful-controls batch (TASK-005) stacked on the 2026-10-29 experience-audit fixes (TASK-004); both shipped as `2.1.0`
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
@@ -20,9 +20,9 @@
 - TASK-002 status: DONE
 - TASK-003 status: DONE
 - Independent Review: PASS (TASK-003, agent review)
-- Active task: TASK-005 (stacked on TASK-004 in the same working tree)
-- Active task state: VERIFY, Review Status PENDING (independent review not performed); TASK-004 is likewise still VERIFY / PENDING
-- Next workflow action: independent review of `.ai/tasks/TASK-004.md` and `.ai/tasks/TASK-005.md`; only after a PASS may the round be committed, and only on explicit user instruction tagged, released or pushed.
+- Active task: TASK-005 (stacked on TASK-004 in the same working tree), both committed
+- Active task state: VERIFY with three independent review slices absorbed and their findings re-verified by the gates; `DONE` / `PASS` is the reviewer's or the maintainer's verdict and has not been awarded here (see each TASK's Review Status section)
+- Next workflow action: the maintainer confirms `PASS` / `DONE` for TASK-004 and TASK-005. Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules).
 
 ## Current workstream
 

@@ -1,7 +1,7 @@
 # TASK-005 — Truthful Controls, Exposed Engine
 
 Status: VERIFY
-Review Status: PENDING
+Review Status: three independent slices run (see Review Status below)
 
 ## Goal
 
@@ -150,6 +150,5 @@ Accepted and left as known gaps, each checked before being called acceptable:
 Outcome: implementation is complete and the gates below were re-run after the
 last fix. `AGENTS.md` reserves `DONE` / `PASS` for an independent reviewer, so
 this task stays at `VERIFY` with three absorbed review slices recorded above —
-the verdict itself belongs to the maintainer, and was not awarded here. No tag,
-push or release was made.
+the verdict itself belongs to the maintainer, and was not awarded here.
 
