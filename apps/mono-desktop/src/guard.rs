@@ -249,7 +249,7 @@ impl App {
         }
         // Drop the deleted screen's session before switching: if the switch
         // fails, nothing may write that file back.
-        self.session = None;
+        self.drop_session();
         self.switch_screen(&next)
     }
 
@@ -276,7 +276,7 @@ impl App {
         // that move), and a session still bound to the old path would recreate it
         // on the next save. Nothing is lost — the prompt above already saved or
         // discarded every change.
-        self.session = None;
+        self.drop_session();
         if let Some(project) = self.project.as_mut() {
             project.rename_screen(&active, new_id, Some(new_id))?;
         }
@@ -299,7 +299,7 @@ impl App {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
 
@@ -316,7 +316,7 @@ mod tests {
         }
     }
 
-    fn app(name: &str) -> (App, std::path::PathBuf) {
+    pub(crate) fn app(name: &str) -> (App, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!("mono-guard-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -463,6 +463,40 @@ mod tests {
         app.open_project(&root.join("project.oled.json")).unwrap();
         assert!(app.font.is_none());
         assert_eq!(std::fs::read(pack.join("fontpack.json")).unwrap(), before);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_scene_font_pack_outside_the_root_is_neither_listed_nor_opened() {
+        let (mut app, root) = app("outside-pack");
+        let fonts = root.with_file_name(format!("mono-guard-outside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&fonts);
+        let pack = crate::fontlab::create_pack(&fonts, "Outside 5x8").unwrap();
+        let rel = format!(
+            "../{}/{}",
+            fonts.file_name().unwrap().to_string_lossy(),
+            pack.file_name().unwrap().to_string_lossy()
+        );
+        app.session
+            .as_mut()
+            .unwrap()
+            .add_elements(
+                vec![serde_json::json!({
+                    "id": "outside", "type": "bitmap_text", "font_pack": rel,
+                    "text": "A", "x": 0, "y": 0
+                })],
+                "add",
+            )
+            .unwrap();
+        app.scan_project_files();
+        assert!(
+            !app.font_packs.iter().any(|id| id.contains("..")),
+            "{:?}",
+            app.font_packs
+        );
+        app.font_action(&format!("open:{rel}"));
+        assert!(app.font.is_none(), "a pack outside the root was opened");
+        let _ = std::fs::remove_dir_all(&fonts);
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -9,6 +9,9 @@
 //!   `cold_start_from_main_ms` is the part after `main()` entry.
 //! * pixel stroke: 256x128 canvas at 8x, pointer move → rendered (p95 ≤ 8 ms)
 //! * theme switch: light ↔ dark → rendered (p95 ≤ 50 ms)
+//! * designer edit: the Inspector's X field on the open project → rendered.
+//!   There is no budget for this path yet; `panel_*_ms` and
+//!   `state_matrix_build_ms` say where its time goes. Recorded in G4 §4.
 //! * UI-thread blocking: longest synchronous handler (≤ 16 ms)
 //!
 //! `*_render_p95_ms` is the render work of the same frames (BeforeRendering →
@@ -33,10 +36,12 @@ use crate::{AppModel, MainWindow, PixelModel, Theme};
 
 const STROKES: usize = 300;
 const THEMES: usize = 40;
+const DESIGNER_EDITS: usize = 40;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
     Start,
+    Designer,
     Strokes,
     Themes,
     FreeRunning,
@@ -70,6 +75,11 @@ fn stroke_point(k: usize) -> (i32, i32) {
 fn issue(bench: &mut Bench, app: &mut App, ui: &MainWindow) -> bool {
     let started = Instant::now();
     match bench.phase {
+        Phase::Designer if bench.step < DESIGNER_EDITS => {
+            // The Inspector's X field: same entry point as `SpinBox.edited`.
+            bench.pending = Some(Instant::now());
+            app.geometry_edited("x", 4 + (bench.step as i32 % 32));
+        }
         Phase::Strokes if bench.step < STROKES => {
             let (x, y) = stroke_point(bench.step);
             bench.pending = Some(Instant::now());
@@ -102,6 +112,30 @@ fn finish_phase(bench: &mut Bench, key: &str) {
         .results
         .insert(format!("{key}_p95_ms"), json!(p95(&mut samples)));
     bench.step = 0;
+}
+
+/// Move to the Pixel workspace, prepare a 256x128 canvas at 8x and start the
+/// frame-aligned stroke series.
+fn start_strokes(b: &Rc<RefCell<Bench>>, a: &Rc<RefCell<App>>, weak: &slint::Weak<MainWindow>) {
+    let (b2, a2, w2) = (Rc::clone(b), Rc::clone(a), weak.clone());
+    slint::Timer::single_shot(Duration::from_millis(200), move || {
+        let Some(ui) = w2.upgrade() else { return };
+        {
+            let mut app = a2.borrow_mut();
+            AppModel::get(&ui).set_workspace(1);
+            app.workspace = 1;
+            if let Ok(doc) = PixelDocument::new(256, 128) {
+                app.pixel.replace(doc, None, 200);
+            }
+            app.pixel_zoom(3); // combo index 3 = 8x
+            app.refresh_pixel();
+        }
+        let (b3, a3, w3) = (Rc::clone(&b2), Rc::clone(&a2), w2.clone());
+        slint::Timer::single_shot(Duration::from_millis(300), move || {
+            let Some(ui) = w3.upgrade() else { return };
+            issue(&mut b3.borrow_mut(), &mut a3.borrow_mut(), &ui);
+        });
+    });
 }
 
 /// Milliseconds since the launcher's `MONO_T0` (Unix seconds), if given.
@@ -157,27 +191,33 @@ pub fn run(ui: &MainWindow, app: &Rc<RefCell<App>>, out: PathBuf, process_start:
             if let Some(cold) = since_spawn_ms() {
                 s.results.insert("cold_start_ms".into(), json!(cold));
             }
-            s.phase = Phase::Strokes;
+            // The Designer phase runs before the pixel phases: they replace the
+            // Pixel document and move to workspace 1, and this is the only phase
+            // with the project open.
+            s.phase = Phase::Designer;
             drop(s);
-            // Prepare a 256x128 canvas at 8x, then start the frame-aligned strokes.
             let (b2, a2, w2) = (Rc::clone(&b), Rc::clone(&a), weak.clone());
             slint::Timer::single_shot(Duration::from_millis(200), move || {
                 let Some(ui) = w2.upgrade() else { return };
-                {
-                    let mut app = a2.borrow_mut();
-                    AppModel::get(&ui).set_workspace(1);
-                    app.workspace = 1;
-                    if let Ok(doc) = PixelDocument::new(256, 128) {
-                        app.pixel.replace(doc, None, 200);
-                    }
-                    app.pixel_zoom(3); // combo index 3 = 8x
-                    app.refresh_pixel();
+                let mut s = b2.borrow_mut();
+                let mut app = a2.borrow_mut();
+                if !app.bench_designer_ready(&ui) {
+                    // Bench started without a project: no edit path to measure.
+                    s.phase = Phase::Strokes;
+                    drop(s);
+                    drop(app);
+                    start_strokes(&b2, &a2, &w2);
+                    return;
                 }
-                let (b3, a3, w3) = (Rc::clone(&b2), Rc::clone(&a2), w2.clone());
-                slint::Timer::single_shot(Duration::from_millis(300), move || {
-                    let Some(ui) = w3.upgrade() else { return };
-                    issue(&mut b3.borrow_mut(), &mut a3.borrow_mut(), &ui);
-                });
+                for (panel, ms) in app.bench_panels() {
+                    s.results.insert(format!("panel_{panel}_ms"), json!(ms));
+                }
+                if let Some((ms, states)) = app.bench_matrix_ms() {
+                    s.results.insert("state_matrix_build_ms".into(), json!(ms));
+                    s.results
+                        .insert("state_matrix_states".into(), json!(states));
+                }
+                issue(&mut s, &mut app, &ui);
             });
             return;
         }
@@ -204,6 +244,13 @@ pub fn run(ui: &MainWindow, app: &Rc<RefCell<App>>, out: PathBuf, process_start:
                 return;
             }
             match s.phase {
+                Phase::Designer => {
+                    finish_phase(&mut s, "designer_edit");
+                    s.phase = Phase::Strokes;
+                    drop(s);
+                    drop(app);
+                    start_strokes(&b2, &a2, &w2);
+                }
                 Phase::Strokes => {
                     app.pixel_pointer("up", 0, 0, 0);
                     finish_phase(&mut s, "stroke");

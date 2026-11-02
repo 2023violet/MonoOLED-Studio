@@ -184,7 +184,7 @@ API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.al
 - Automation：`cargo test -p mono-automation`（含回放）
 - 桌面逻辑：`cargo test -p mono-desktop`
 - 界面外观：`monooled-studio <项目副本> --screen <id> --action <...> --screenshot out.png`。必须在临时偏好目录和项目副本上运行，并查看截图。
-- 交互性能：`python tools/RUN_DESKTOP_BENCH.py --runs 3`，需要 release 构建。
+- 交互性能：`python tools/RUN_DESKTOP_BENCH.py --runs 3`，需要 release 构建；大场景用 `python tools/BENCH_DESIGNER_PROJECT.py --elements 1000` 生成临时项目副本，再把打印出的路径传给 `--project`。
 - 工具与治理：`python -m pytest tools/tests -q`
 
 ### 8.2 完整门禁

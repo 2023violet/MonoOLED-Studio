@@ -404,6 +404,63 @@ def check_fontlab_offsets_reach_the_form(runner: Runner) -> None:
     expect(dumps[1] == 'form3,-2 model3,-2', f'the offset rows did not reach the form: {dumps[1]!r}')
 
 
+def check_font_pack_stays_in_the_project(runner: Runner) -> None:
+    """TASK-007: a scene member cannot list or open a font pack outside the root."""
+    work = runner.case_dir('fontlab-outside')
+    project = runner.project(work)
+    outside = work / 'outside-pack'
+    outside.mkdir()
+    (outside / 'fontpack.json').write_text(
+        json.dumps({'schema': 1, 'name': 'Outside', 'cell': {'w': 5, 'h': 8}, 'glyphs': {}}),
+        encoding='utf-8',
+    )
+    scene_path = project / 'scenes' / 'main_scene.json'
+    scene = json.loads(scene_path.read_text(encoding='utf-8'))
+    scene['elements'].append({
+        'id': 'outside', 'type': 'bitmap_text', 'font_pack': '../outside-pack',
+        'text': 'A', 'x': 0, 'y': 0,
+    })
+    scene_path.write_text(json.dumps(scene), encoding='utf-8')
+    inside = project / 'fonts' / 'inside-pack'
+    inside.mkdir(parents=True)
+    (inside / 'fontpack.json').write_text((outside / 'fontpack.json').read_text(encoding='utf-8'), encoding='utf-8')
+    actions = [
+        'open-screen:main',
+        'dump:font-offset',
+        'font:open:../outside-pack',
+        'dump:font-offset',
+        'font:open:fonts/inside-pack',
+        'dump:font-offset',
+    ]
+    log = runner.run(work, project, actions, ['--workspace', '2'])
+    dumps = selfcheck(log, 'font.offset')
+    expect(dumps[:2] == ['none', 'none'], f'a pack outside the project was opened: {dumps}')
+    expect(dumps[2] == 'form0,0 model0,0', f'a pack inside the project did not open: {dumps}')
+
+
+def check_canvas_click_picks_the_topmost_element(runner: Runner) -> None:
+    """TASK-006: a click on the real canvas answers from the rects the frame resolved."""
+    work = runner.case_dir('canvas-click')
+    project = runner.project(work)
+    scene_path = project / 'scenes' / '123.json'
+    scene = json.loads(scene_path.read_text(encoding='utf-8'))
+    scene['elements'] = [
+        {'id': 'below', 'type': 'placeholder', 'x': 0, 'y': 0, 'w': 16, 'h': 16},
+        {'id': 'above', 'type': 'placeholder', 'x': 8, 'y': 8, 'w': 16, 'h': 16},
+    ]
+    scene_path.write_text(json.dumps(scene), encoding='utf-8')
+    actions = [
+        'canvas-click:10:10',
+        'dump:primary',
+        'canvas-click:2:2',
+        'dump:primary',
+        'canvas-click:60:20',
+        'dump:primary',
+    ]
+    picks = selfcheck(runner.run(work, project, actions), 'selection.primary')
+    expect(picks == ['above', 'below', 'none'], f'the click picked {picks}')
+
+
 def check_selection_names_the_multi_select(runner: Runner) -> None:
     """R11/WP6: the Inspector says how many elements are in the selection.
 
@@ -493,6 +550,8 @@ CHECKS = [
     check_export_gate,
     check_fontlab_min_size,
     check_fontlab_offsets_reach_the_form,
+    check_font_pack_stays_in_the_project,
+    check_canvas_click_picks_the_topmost_element,
     check_selection_names_the_multi_select,
     check_scroll_to_selection,
     check_inspector_tabs_at_min_size,

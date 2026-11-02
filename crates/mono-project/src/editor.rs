@@ -8,7 +8,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use mono_core::pyvalue::{is_py_int, py_int, py_str};
-use mono_core::render::{RenderResult, Resources, normalize_path, posix, render_scene, resolve};
+use mono_core::render::{
+    RenderResult, Resources, joined_member, posix, render_scene, resolve_member,
+};
 use mono_core::runtime::SceneRuntime;
 use mono_core::state::{
     State, apply_state_schema, init_state, schema_from_scene, subst, when_match,
@@ -23,6 +25,66 @@ use crate::resources::{DiskResources, hex_digest, read_file};
 use crate::scene_io::SceneDoc;
 
 pub const MAX_HISTORY: usize = 500;
+
+/// `(x, y, w, h)` for one element, or `None` where the render left it null.
+pub type OverlayRect = Option<(i64, i64, i64, i64)>;
+
+/// The rect the Inspector reports, the overlay draws and a click must hit, without
+/// a geometry lookup: `resolved` is the frame's resolved elements, index-aligned
+/// with the scene. A complete `zone` wins, then a complete explicit rect, then the
+/// renderer's rect with the element's own fields on top, as `geometry` does:
+/// "complete" means the four keys exist, whatever they hold.
+pub fn overlay_rect(element: &Value, resolved: &[Value], index: usize) -> OverlayRect {
+    let declared = |map: &Map<String, Value>| {
+        ["x", "y", "w", "h"]
+            .iter()
+            .all(|key| map.contains_key(*key))
+            .then(|| {
+                (
+                    int_of(map.get("x")),
+                    int_of(map.get("y")),
+                    int_of(map.get("w")),
+                    int_of(map.get("h")),
+                )
+            })
+    };
+    let rendered = |map: &Map<String, Value>| {
+        let edge = |key: &str| map.get(key).and_then(Value::as_i64);
+        match (edge("x"), edge("y"), edge("w"), edge("h")) {
+            (Some(x), Some(y), Some(w), Some(h)) => Some((x, y, w, h)),
+            _ => None,
+        }
+    };
+    let object = element.as_object();
+    object
+        .and_then(|o| match o.get("zone").and_then(Value::as_object) {
+            Some(zone) => declared(zone),
+            None => declared(o),
+        })
+        .or_else(|| {
+            let (x, y, w, h) = resolved
+                .get(index)
+                .and_then(Value::as_object)
+                .and_then(rendered)?;
+            let position = |key: &str, base: i64| {
+                object
+                    .and_then(|o| o.get(key))
+                    .map_or(base, |v| int_of(Some(v)))
+            };
+            let size = |key: &str, base: i64| {
+                object
+                    .and_then(|o| o.get(key))
+                    .filter(|v| !v.is_null())
+                    .map_or(base, |v| int_of(Some(v)))
+            };
+            Some((
+                position("x", x),
+                position("y", y),
+                size("w", w),
+                size("h", h),
+            ))
+        })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Editable {
@@ -203,13 +265,13 @@ impl EditorSession {
         !self.redo.is_empty()
     }
 
-    fn elements(&self) -> Vec<Value> {
+    fn elements(&self) -> &[Value] {
         self.doc
             .data
             .get("elements")
             .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     fn set_elements(&mut self, items: Vec<Value>) {
@@ -225,7 +287,7 @@ impl EditorSession {
 
     pub fn element(&self, id: &str) -> CoreResult<Map<String, Value>> {
         self.elements()
-            .into_iter()
+            .iter()
             .find(|e| e.get("id").map(py_str).as_deref() == Some(id))
             .and_then(|e| e.as_object().cloned())
             .ok_or_else(|| key_error(format!("unknown element id: {id}")))
@@ -245,7 +307,7 @@ impl EditorSession {
         label: &str,
         mutate: impl FnOnce(&mut Vec<Value>) -> CoreResult<()>,
     ) -> CoreResult<bool> {
-        let before = self.elements();
+        let before = self.elements().to_vec();
         let mut working = before.clone();
         mutate(&mut working)?;
         if working == before {
@@ -262,12 +324,21 @@ impl EditorSession {
         Ok(true)
     }
 
-    fn resolved_size(&mut self, element: &Map<String, Value>) -> CoreResult<(i64, i64, i64, i64)> {
+    /// Geometry inputs from an element value alone. An associated function so a
+    /// whole-scene walk can call it with disjoint field borrows instead of one
+    /// id lookup (and one list clone) per element.
+    fn resolved_size_of(
+        element: &Map<String, Value>,
+        data: &Map<String, Value>,
+        root: &Path,
+        state: &Map<String, Value>,
+        resources: &mut DiskResources,
+    ) -> CoreResult<(i64, i64, i64, i64)> {
         let id = element.get("id").map(py_str).unwrap_or_default();
         let hidden = element
             .get("hidden")
             .is_some_and(|v| v == &Value::Bool(true))
-            || !when_match(element.get("visible_when"), &self.state)?;
+            || !when_match(element.get("visible_when"), state)?;
         let zone = element.get("zone").cloned().unwrap_or(json!({}));
         let pick = |k: &str| {
             element
@@ -280,7 +351,6 @@ impl EditorSession {
             return Ok((pick("x"), pick("y"), pick("w"), pick("h")));
         }
         let kind = element.get("type").map(py_str).unwrap_or_default();
-        let root = self.doc.root.clone();
         let x = int_of(element.get("x"));
         let y = int_of(element.get("y"));
         match kind.as_str() {
@@ -290,28 +360,23 @@ impl EditorSession {
                     let lower = element
                         .get("var_lower")
                         .is_some_and(|v| v == &Value::Bool(true));
-                    resolve(
-                        &root,
+                    resolve_member(
+                        root,
                         &subst(
                             &py_str(element.get("asset").ok_or_else(|| key_error("asset"))?),
-                            &self.state,
+                            state,
                             lower,
                         )?,
-                    )
+                    )?
                 } else {
                     let bind = py_str(element.get("bind").ok_or_else(|| key_error("bind"))?);
-                    let value = int_of(self.state.get(&bind));
+                    let value = int_of(state.get(&bind));
                     let file = py_str(element.get("pattern").ok_or_else(|| key_error("pattern"))?)
                         .replace("{n}", &value.to_string());
-                    normalize_path(
-                        &resolve(
-                            &root,
-                            &py_str(element.get("dir").ok_or_else(|| key_error("dir"))?),
-                        )
-                        .join(file),
-                    )
+                    let dir = py_str(element.get("dir").ok_or_else(|| key_error("dir"))?);
+                    joined_member(root, &dir, &file)?
                 };
-                let asset = self.resources.bitmap(&py_resolve(&path))?;
+                let asset = resources.bitmap(&py_resolve(&path))?;
                 Ok((
                     x,
                     y,
@@ -325,9 +390,13 @@ impl EditorSession {
             }
             "digits" | "text" | "bitmap_text" => {
                 // Width/height follow the renderer; render just this element on a scratch canvas.
-                let mut scene = self.doc.data.clone();
+                let mut scene: Map<String, Value> = data
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != "elements")
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect();
                 scene.insert("elements".into(), json!([Value::Object(element.clone())]));
-                let result = render_scene(&scene, &root, &self.state, &mut self.resources)?;
+                let result = render_scene(&scene, root, state, resources)?;
                 let item = result
                     .resolved_elements
                     .first()
@@ -346,9 +415,28 @@ impl EditorSession {
         }
     }
 
-    /// V1 `geometry`.
+    /// V1 `geometry`: the id-addressed wrapper. Only that one element is cloned
+    /// for the lookup — the old version cloned the whole element list per call.
     pub fn geometry(&mut self, id: &str) -> CoreResult<Geometry> {
         let element = self.element(id)?;
+        let EditorSession {
+            doc,
+            state,
+            resources,
+            ..
+        } = self;
+        Self::geometry_of(&element, &doc.data, &doc.root, state, resources)
+    }
+
+    /// Geometry from an element value alone, for walks that already hold the
+    /// list: no id lookup, so a scene-wide pass stays linear.
+    fn geometry_of(
+        element: &Map<String, Value>,
+        data: &Map<String, Value>,
+        root: &Path,
+        state: &Map<String, Value>,
+        resources: &mut DiskResources,
+    ) -> CoreResult<Geometry> {
         let zone = element.get("zone").and_then(Value::as_object).cloned();
         let native_locked = element.get("type").map(py_str).as_deref() == Some("image")
             && element
@@ -390,7 +478,7 @@ impl EditorSession {
                 });
             }
         }
-        let (rx, ry, rw, rh) = self.resolved_size(&element)?;
+        let (rx, ry, rw, rh) = Self::resolved_size_of(element, data, root, state, resources)?;
         Ok(Geometry {
             x: element.get("x").map_or(rx, |v| int_of(Some(v))),
             y: element.get("y").map_or(ry, |v| int_of(Some(v))),
@@ -467,7 +555,7 @@ impl EditorSession {
         if prepared.is_empty() {
             return Ok(false);
         }
-        let before = self.elements();
+        let before = self.elements().to_vec();
         let mut after = before.clone();
         for (id, changes) in &prepared {
             if let Some(element) = after
@@ -616,7 +704,7 @@ impl EditorSession {
 
     /// Record an externally applied element mutation as one undo step (Automation transactions).
     pub fn record_external_batch(&mut self, before: Vec<Value>, label: &str) -> bool {
-        let after = self.elements();
+        let after = self.elements().to_vec();
         if before == after {
             return false;
         }
@@ -1229,12 +1317,28 @@ pub fn smart_guides(
     let mx = [m.x, m.x + m.w / 2, m.x + m.w];
     let my = [m.y, m.y + m.h / 2, m.y + m.h];
     let (mut gx, mut gy) = (BTreeSet::new(), BTreeSet::new());
-    for element in session.elements() {
+    let EditorSession {
+        doc,
+        state,
+        resources,
+        ..
+    } = session;
+    let elements = doc
+        .data
+        .get("elements")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    for element in elements {
         let id = element.get("id").map(py_str).unwrap_or_default();
         if id == moving || element.get("hidden") == Some(&Value::Bool(true)) {
             continue;
         }
-        let Ok(g) = session.geometry(&id) else {
+        let Some(object) = element.as_object() else {
+            continue;
+        };
+        let Ok(g) = EditorSession::geometry_of(object, &doc.data, &doc.root, state, resources)
+        else {
             continue;
         };
         for a in mx {

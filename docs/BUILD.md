@@ -37,10 +37,13 @@ The same workflow also runs `cargo deny check` (licences, bans, sources, advisor
 cargo run --release -p mono-cli -- bench --project test_assets/projects/curing_lite/project.oled.json
 cargo build --release -p mono-desktop
 python tools/RUN_DESKTOP_BENCH.py --runs 3
+python tools/BENCH_DESIGNER_PROJECT.py --elements 1000
+python tools/RUN_DESKTOP_BENCH.py --runs 3 --project <project path printed above>
 ```
 
 - The first command measures the core budgets: encode+format, 50-screen exports and the durable-write baseline.
-- `RUN_DESKTOP_BENCH.py` measures stroke latency, theme switch, cold start from process spawn, and idle memory in the real window.
+- `RUN_DESKTOP_BENCH.py` measures stroke latency, theme switch, cold start from process spawn, and idle memory in the real window. With a project open it also drives the Designer's Inspector X field (`designer_edit_p95_ms`), times each refresh entry point (`panel_*_ms`) and the representative state matrix build. `panel_validation_worker_ms` is the pass the worker runs, `panel_state_edit_ms` and `panel_refresh_all_ms` are handlers `max_handler_ms` does not sample. The idle memory budget only applies to the committed fixture; other projects report it with `pass: null`.
+- `BENCH_DESIGNER_PROJECT.py` copies the fixture to a throwaway directory and appends N elements (and optionally K `digits` elements), so the Designer phase runs against a scene large enough for the difference to show. Nothing under `test_assets/` is written.
 - Budgets and the latest results are in `docs/rewrite/G4_EVIDENCE.md` §4.
 - In debug builds, a UI-thread watchdog prints every block longer than 16 ms to stderr.
 

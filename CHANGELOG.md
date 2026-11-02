@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Compatibility (contract changes)
+
+- **Scene members must stay inside the project root.** A project whose images, sequence directories, font headers or font packs use `../` or an absolute path outside the root validated and exported under 2.1.0; it now reports `ASSET_PATH_ESCAPE`, the export is blocked, and the scene no longer renders: the Designer shows a render failure for the whole scene, `mono simulate` exits 2 instead of 0, the Output Workbench's current-scene source fails, and the Automation API's `render.current`, its other rendering methods and the current-scene source of `export.bitmap_data` return `INVALID_REQUEST`. Move the file into the project and reference it relatively. The check is lexical: a link or junction inside the project that points outside it is not detected. On Windows an absolute member may differ from the root in ASCII case or use the `\\?\` prefix; an 8.3 alias or a linked spelling of the root is refused. Known limitation: in a case-sensitive Windows folder, such an absolute member can name a sibling whose name differs from the root only in ASCII case. Relative members, including a sequence's `dir` plus `pattern`, are compared exactly. A standalone scene's own `project_root` defines its root (`docs/SCENE_SCHEMA.md`).
+- **A blocked export's report now ends at the first blocking frame.** 2.1.0 listed every frame of the matrix; `validation_report.md`, `<zip>.validation.md` and the blocked dialog now cover the frames checked up to that point, and the report says how many of the matrix that was. This applies to the Automation API's `export.current`, `export.all` and `export.code_ai_handoff` too. Use `batch-validate` for the whole matrix.
+- `export_scene` now refuses a repeated frame name instead of keeping the last one. Selection through the CLI, the desktop app and the Automation API already produces unique names, so only direct library callers can see this.
+
+### Performance
+
+- A refused export no longer validates the rest of the state matrix. The gate stops at the first frame with a blocking finding and the report says how many frames were checked; a 1005-element, 560-state blocked export drops from 464 s to under 1 s and from 814 MB to about 9 MB private memory. Clean exports still validate every state before writing anything. `batch-validate` keeps evaluating the full matrix on purpose.
+- Large exports keep memory flat: `ui_contract.json` and `UI_SPEC.md` are streamed frame by frame through incremental atomic writes (temp file + fsync + rename) instead of keeping every frame's contract in memory. A clean 1000-element × 560-state export (233 MB of artefacts) peaks at about 18 MB private memory. A 10 000-element matrix used to abort at multi-GB private usage; blocked, it now refuses in under 0.5 s at about 53 MB. A clean 10 000-element export has not been measured.
+- A Designer edit no longer pays for every element twice. The canvas overlay and hit-testing read the rects the renderer already resolved instead of asking `geometry(id)` per element, which cloned the whole element list — and re-rendered text or digits elements on a scratch scene — once per element. On a 1005-element scene the canvas refresh drops from 375–419 ms to 9–11 ms and the worst edit handler from 445–492 ms to 20–29 ms; on a 50-digit scene the canvas refresh drops from 39–44 ms to 16–18 ms. Elements with a complete zone or explicit rect are unchanged; only renderer-sized elements take the new path. `EditorSession::geometry` now clones one element instead of the list (text and digits still render it on a scratch scene), and its scene-wide helper is shared with smart guides.
+- Validation runs on a worker thread for geometry, state and rule edits and for screen opens: the handler passes a snapshot and the 60 ms job tick applies only the newest result, so findings can lag one edit by up to about two passes plus two 60 ms ticks (roughly 130 ms on the fixture, 170 ms at 1005 elements, 290 ms on 50 digits), and sustained editing shows no new findings until it pauses. A superseded pass may still be finishing, but its result is dropped. A scripted `dump:findings` still waits for the pending result, so its answers do not change. On the 50-digit scene the synchronous pass was 131–151 ms of the edit handler; the handler now measures 16–23 ms across runs, still above the 16 ms budget.
+- The desktop bench measures the Designer edit path (`designer_edit_p95_ms` plus per-panel `panel_*_ms`, including the worker pass, a state edit and a full refresh), and the new `tools/BENCH_DESIGNER_PROJECT.py` builds throwaway large scenes for it. `docs/BUILD.md` and `docs/AI_HANDOFF.md` document both.
+
+### Fixed
+
+- Scene members can no longer read outside the project root. Image assets, sequence directories and joined `{n}`/`{d}` patterns, font headers and font packs are resolved with a containment check: `../outside.png`, absolute paths outside the root and `pattern` traversal are reported as `ASSET_PATH_ESCAPE` by validation and refused by the renderer with `E-CORE-PATH` instead of being opened. Font Lab no longer lists or opens a scene `font_pack` outside the project, and a font pack's fingerprint no longer reads a glyph asset outside the pack before the load rejects it.
+- A blocked export report now states that validation stopped at the first blocking frame and how many frames were checked, instead of implying the whole matrix was inspected.
+- The blocked-export dialog and status bar count only the frames that were checked, and now say so.
+
+### Internal
+
+- `mono_project::atomic::AtomicWriter` writes incrementally to a sibling temp file and only fsyncs and renames on `finish`; dropping it unfinished removes the temp file, so an aborted export leaves no partial contract or spec. Golden and reference frames are independent files, and batches already written stay on disk.
+- `mono_core::render::{member_path, resolve_member, joined_member}` are the single checked member resolvers; the renderer and the validator share them.
+- Budgets, attribution and the three out-of-scope measurements (stroke, evidence pack, cold start) are recorded in `docs/rewrite/G4_EVIDENCE.md` §4. The 1005-element stress scene (20–29 ms across runs) and the 50-digit scene (16–23 ms) still exceed the 16 ms budget per edit; the remaining floor is the framebuffer rebuild, the overlay model build and V1's whole-array undo snapshot.
+
 ## 2.1.0 - 2026-10-30
 
 ### Compatibility (contract changes)

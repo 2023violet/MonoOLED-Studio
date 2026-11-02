@@ -1,6 +1,6 @@
 //! Font Pack persistence: `fontpack.json` plus one 1-bit PNG per glyph (V1 `FontPack.save/load`).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use mono_core::font::{FontPack, GlyphMetrics};
 use mono_core::render::posix;
@@ -17,15 +17,26 @@ fn glyph_file(ch: char) -> String {
     format!("U+{:04X}.png", ch as u32)
 }
 
-/// Content fingerprint of the manifest and every referenced glyph file.
+/// A glyph asset inside the pack. Links are resolved like V1
+/// `.resolve().relative_to(root)`, and `None` means the asset leaves the pack.
+fn glyph_asset(root: &Path, asset: &str) -> Option<PathBuf> {
+    let resolved = crate::project::py_resolve(&root.join(asset));
+    resolved
+        .starts_with(crate::project::py_resolve(root))
+        .then_some(resolved)
+}
+
+/// Content fingerprint of the manifest and every referenced glyph file. An asset
+/// outside the pack is never read: `load_font_pack` is what reports it.
 pub fn fontpack_fingerprint(root: &Path) -> CoreResult<String> {
     let manifest = read_file(&root.join(MANIFEST))?;
     let mut combined = hex_digest(&manifest);
     if let Ok(Value::Object(data)) = serde_json::from_slice::<Value>(&manifest) {
         if let Some(Value::Object(glyphs)) = data.get("glyphs") {
             for meta in glyphs.values() {
-                if let Some(asset) = meta.get("asset").and_then(Value::as_str) {
-                    if let Ok(bytes) = std::fs::read(root.join(asset)) {
+                let asset = meta.get("asset").and_then(Value::as_str);
+                if let Some(path) = asset.and_then(|asset| glyph_asset(root, asset)) {
+                    if let Ok(bytes) = std::fs::read(path) {
                         combined.push_str(&hex_digest(&bytes));
                     }
                 }
@@ -90,11 +101,8 @@ pub fn load_font_pack(root: &Path) -> CoreResult<FontPack> {
                 .get("asset")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            // Resolve links like V1 `.resolve().relative_to(root)`.
-            let asset = crate::project::py_resolve(&root.join(asset_rel));
-            if !asset.starts_with(crate::project::py_resolve(root)) {
-                return Err(CoreError::invalid("glyph asset must stay inside font pack"));
-            }
+            let asset = glyph_asset(root, asset_rel)
+                .ok_or_else(|| CoreError::invalid("glyph asset must stay inside font pack"))?;
             if !asset.is_file() {
                 return Err(CoreError::invalid(format!(
                     "missing glyph asset: {asset_rel}"

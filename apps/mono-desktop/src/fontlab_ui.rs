@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use mono_core::CoreError;
-use mono_core::render::posix;
+use mono_core::render::{member_path, posix};
 use slint::Global;
 
 use crate::app::{App, Prompt, model, ss};
@@ -14,6 +14,12 @@ use crate::{FontModel, GlyphItem};
 impl App {
     fn fonts_root(&self) -> Option<PathBuf> {
         self.project_root().map(|r| r.join(".oled").join("fonts"))
+    }
+
+    /// The directory of a listed pack id. The list only holds members of the
+    /// project, and this keeps a scripted or stale id to the same rule.
+    pub(crate) fn font_pack_root(&self, id: &str) -> Result<PathBuf, CoreError> {
+        member_path(&self.project_root().unwrap_or_default(), Path::new(id))
     }
 
     /// Open (or create) the pack at `root` and show it in Font Lab.
@@ -185,7 +191,7 @@ impl App {
                 }
                 other => {
                     if let Some(rel) = other.strip_prefix("open:") {
-                        let root = self.project_root().unwrap_or_default().join(rel);
+                        let root = self.font_pack_root(rel)?;
                         self.open_font_pack(&root)?;
                     }
                 }

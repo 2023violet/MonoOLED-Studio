@@ -592,8 +592,7 @@ impl App {
                         pm.set_dialog(0);
                         return Ok(());
                     }
-                    let root = self.project_root().unwrap_or_default();
-                    let pack = load_font_pack(&root.join(&pack_id))?;
+                    let pack = load_font_pack(&self.font_pack_root(&pack_id)?)?;
                     let (x, y) = (i64::from(pm.get_text_x()), i64::from(pm.get_text_y()));
                     let (w, h) = insert_fontpack_text(
                         &mut self.pixel.doc,
@@ -879,15 +878,14 @@ impl App {
                 Ok(vec![bitmap_item(&name, &rows, &profile)?])
             }
             "font" => {
-                let root = self
-                    .project_root()
+                self.project_root()
                     .ok_or_else(|| CoreError::invalid(self.t("bench.no_project")))?;
                 let pack_id = self
                     .font_packs
                     .get(self.bench_font_index())
                     .cloned()
                     .ok_or_else(|| CoreError::invalid(self.t("pixel.font_missing")))?;
-                let pack = load_font_pack(&root.join(pack_id))?;
+                let pack = load_font_pack(&self.font_pack_root(&pack_id)?)?;
                 font_items(&pack, &self.bench.characters, &profile)
             }
             _ => {

@@ -2,24 +2,27 @@
 //! sync. Every UI callback goes through `App`; Slint models are rebuilt from
 //! the session after each change (the scene JSON stays the single truth).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use mono_core::CoreError;
 use mono_core::pyvalue::{py_int, py_str};
-use mono_core::render::posix;
+use mono_core::render::{member_path, posix};
 use mono_core::state::{
     IntegerPolicy, RELATION_OPERATORS, build_export_states, schema_from_scene,
     validate_state_schema,
 };
 use mono_project::editor::{
-    EditorSession, Selection, align_to, distribute, selection_metrics, smart_guides, snap_positions,
+    EditorSession, OverlayRect, Selection, align_to, distribute, overlay_rect, selection_metrics,
+    smart_guides, snap_positions,
 };
 use mono_project::export::{
     BlockedExport, EXPORT_BLOCKED, Finding, build_handoff_package, check_design_rules,
-    export_scene_with_report, matrix_report, preflight, validate_matrix, write_validation_report,
+    export_scene_with_report, matrix_report, preflight, validate_matrix, validate_scene,
+    write_validation_report,
 };
 use mono_project::project::{ProjectWorkspace, create_project};
+use mono_project::resources::DiskResources;
 use mono_project::scene_io::{SceneDoc, load_project_scene, load_scene};
 use serde_json::{Value, json};
 use slint::{Global, ModelRc, SharedString, VecModel};
@@ -75,6 +78,16 @@ pub struct App {
     drag: Option<Drag>,
     baseline_pixels: Vec<u8>,
     baseline_elements: Vec<Value>,
+    /// The last frame's resolved rects, index-aligned with the scene elements:
+    /// the overlay and hit-testing read these instead of a geometry lookup per
+    /// element (which clones the list, and re-renders text elements).
+    last_resolved: Vec<Value>,
+    /// Scheduling for the off-thread validation: the newest epoch wins, and a
+    /// result computed for a scene that is no longer open is dropped.
+    validation_epoch: u64,
+    validation_rx: Option<std::sync::mpsc::Receiver<(u64, Vec<Finding>)>>,
+    /// An edit arrived while a pass was running: validate again once it lands.
+    validation_dirty: bool,
     pub log: Vec<String>,
     pub assets: Vec<String>,
     pub font_packs: Vec<String>,
@@ -144,6 +157,10 @@ impl App {
             drag: None,
             baseline_pixels: Vec::new(),
             baseline_elements: Vec::new(),
+            last_resolved: Vec::new(),
+            validation_epoch: 0,
+            validation_rx: None,
+            validation_dirty: false,
             log: Vec::new(),
             assets: Vec::new(),
             font_packs: Vec::new(),
@@ -262,6 +279,10 @@ impl App {
             .cloned()
             .unwrap_or_default();
         self.session = Some(session);
+        // Anything the worker is still validating belongs to the old scene.
+        self.validation_epoch += 1;
+        self.validation_rx = None;
+        self.validation_dirty = false;
         self.selection.clear();
         self.drag = None;
         self.schema_draft = None;
@@ -350,8 +371,10 @@ impl App {
             .and_then(|s| s.scene().get("elements").and_then(Value::as_array).cloned())
         {
             for element in elements {
-                if let Some(rel) = element.get("font_pack").and_then(Value::as_str) {
-                    let path = root.join(rel);
+                let rel = element.get("font_pack").and_then(Value::as_str);
+                // A member outside the project is reported by validation; the
+                // scan must not walk it or offer it for opening.
+                if let Some(path) = rel.and_then(|rel| member_path(&root, Path::new(rel)).ok()) {
                     candidates.push(if path.is_dir() {
                         path
                     } else {
@@ -391,7 +414,7 @@ impl App {
         self.refresh_inspector();
         self.refresh_state_schema();
         self.refresh_design_rules();
-        self.refresh_validation();
+        self.schedule_validation();
         self.refresh_app();
     }
 
@@ -541,6 +564,7 @@ impl App {
         let Some(session) = self.session.as_mut() else {
             return;
         };
+        let mut resolved: Vec<Value> = Vec::new();
         match session.render() {
             Ok(result) => {
                 let fb = &result.framebuffer;
@@ -576,20 +600,23 @@ impl App {
                     .scene()
                     .get("elements")
                     .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
                 let id_of = |e: &Value| e.get("id").map(py_str).unwrap_or_default();
-                let before_ids: Vec<String> = self.baseline_elements.iter().map(id_of).collect();
-                let after_ids: Vec<String> = current.iter().map(id_of).collect();
-                let added = after_ids.iter().filter(|i| !before_ids.contains(i)).count();
-                let removed = before_ids.iter().filter(|i| !after_ids.contains(i)).count();
+                let before_ids: HashSet<String> =
+                    self.baseline_elements.iter().map(id_of).collect();
+                let after_ids: HashSet<String> = current.iter().map(id_of).collect();
+                let added = after_ids.difference(&before_ids).count();
+                let removed = before_ids.difference(&after_ids).count();
+                // One index of the baseline instead of a scan per element.
+                let before_by_id: HashMap<String, &Value> = self
+                    .baseline_elements
+                    .iter()
+                    .map(|b| (id_of(b), b))
+                    .collect();
                 let modified = current
                     .iter()
-                    .filter(|e| {
-                        self.baseline_elements
-                            .iter()
-                            .any(|b| id_of(b) == id_of(e) && b != *e)
-                    })
+                    .filter(|e| before_by_id.get(&id_of(e)).is_some_and(|b| *b != *e))
                     .count();
                 dm.set_diff_detail(ss(trf(
                     &lang,
@@ -600,6 +627,7 @@ impl App {
                         ("modified", modified.to_string()),
                     ],
                 )));
+                resolved = result.resolved_elements;
             }
             Err(error) => {
                 dm.set_framebuffer_summary(ss(format!(
@@ -609,34 +637,52 @@ impl App {
                 )));
             }
         }
-        // Editor-only overlays: element bounds, selection, primary marker.
-        let ids = session.element_ids();
-        let hidden: Vec<bool> = session
-            .scene()
-            .get("elements")
-            .and_then(Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .map(|e| e.get("hidden") == Some(&Value::Bool(true)))
-                    .collect()
-            })
-            .unwrap_or_default();
+        // Editor-only overlays: element bounds, selection, primary marker. The
+        // rects are this frame's resolved elements (one per scene element, in
+        // order), so nothing here needs an element or geometry lookup.
         let primary = self.selection.primary().map(str::to_string);
-        let mut boxes = Vec::new();
-        for (index, id) in ids.iter().enumerate() {
-            if let Ok(g) = session.geometry(id) {
-                boxes.push(OverlayBox {
-                    id: ss(id),
-                    x: g.x as i32,
-                    y: g.y as i32,
-                    w: g.w as i32,
-                    h: g.h as i32,
-                    selected: self.selection.contains(id),
-                    primary: primary.as_deref() == Some(id.as_str()),
-                    hidden: hidden.get(index).copied().unwrap_or(false),
-                });
-            }
+        let rows: Vec<(String, bool, OverlayRect)> = {
+            let elements = session
+                .scene()
+                .get("elements")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            elements
+                .iter()
+                .enumerate()
+                .map(|(index, element)| {
+                    (
+                        element.get("id").map(py_str).unwrap_or_default(),
+                        element.get("hidden") == Some(&Value::Bool(true)),
+                        overlay_rect(element, &resolved, index),
+                    )
+                })
+                .collect()
+        };
+        let mut boxes = Vec::with_capacity(rows.len());
+        for (id, hidden, rect) in rows {
+            // A hidden element's render entry carries its raw fields, which may
+            // be null; the geometry path still resolves those (few, not hot).
+            let (x, y, w, h) = match rect {
+                Some(rect) => rect,
+                None => match session.geometry(&id) {
+                    Ok(g) => (g.x, g.y, g.w, g.h),
+                    Err(_) => continue,
+                },
+            };
+            boxes.push(OverlayBox {
+                id: ss(&id),
+                x: x as i32,
+                y: y as i32,
+                w: w as i32,
+                h: h as i32,
+                selected: self.selection.contains(&id),
+                primary: primary.as_deref() == Some(id.as_str()),
+                hidden,
+            });
         }
+        self.last_resolved = resolved;
         dm.set_boxes(model(boxes));
         // Zones come from the same `design_rules.zones` map that produces
         // ELEMENT_OUTSIDE_ZONE, so the overlay and the finding cannot disagree.
@@ -1003,20 +1049,128 @@ impl App {
         }
         self.log_event("DESIGN_RULES");
         self.refresh_canvas();
-        self.refresh_validation();
+        self.schedule_validation();
         self.refresh_design_rules();
         Ok(())
     }
 
+    /// One validation on this thread, on the session's cached resources: the
+    /// bench's `panel_validation` row. Interface paths use `schedule_validation`.
+    /// It supersedes anything the worker still holds, so its epoch must be newer
+    /// and its receiver dropped.
     pub fn refresh_validation(&mut self) {
-        let Some(ui) = self.ui.upgrade() else { return };
-        let dm = DesignerModel::get(&ui);
+        self.validation_epoch += 1;
+        self.validation_rx = None;
+        self.validation_dirty = false;
         let rules = self.effective_rules();
         let Some(session) = self.session.as_mut() else {
             return;
         };
         let mut findings = session.validate();
         findings.extend(check_design_rules(session.scene(), &rules));
+        self.apply_findings(findings);
+    }
+
+    /// Validate a snapshot off the UI thread. A handler must not wait for a scene
+    /// render plus a content hash of every referenced asset; the job tick
+    /// applies the result, and only the newest epoch is kept. A drag can ask
+    /// faster than one pass completes, so a new pass starts only after the current
+    /// one lands: later edits move the epoch, and the tick validates the newest
+    /// scene. Only a result is ever waited for: a pass abandoned by a scene switch
+    /// may still be finishing next to the new one, and its result is dropped.
+    fn schedule_validation(&mut self) {
+        if self.session.is_none() {
+            return;
+        }
+        self.validation_epoch += 1;
+        self.validation_dirty = true;
+        if self.validation_rx.is_none() {
+            self.start_validation();
+        }
+    }
+
+    fn start_validation(&mut self) {
+        let Some(session) = self.session.as_ref() else {
+            self.validation_dirty = false;
+            return;
+        };
+        self.validation_dirty = false;
+        let scene = session.scene().clone();
+        let root = session.root().to_path_buf();
+        let state = session.state.clone();
+        let rules = self.effective_rules();
+        let epoch = self.validation_epoch;
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.validation_rx = Some(rx);
+        std::thread::spawn(move || {
+            let _ = tx.send((epoch, validate_snapshot(&scene, &root, &state, &rules)));
+        });
+    }
+
+    /// Apply a finished background validation if it is still the newest one,
+    /// then start the pass an edit asked for while this one was running.
+    pub fn poll_validation(&mut self) {
+        let Some(rx) = self.validation_rx.as_ref() else {
+            return;
+        };
+        let outcome = match rx.try_recv() {
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            other => other,
+        };
+        self.validation_rx = None;
+        match outcome {
+            Ok((epoch, findings)) if epoch == self.validation_epoch => {
+                self.apply_findings(findings);
+            }
+            Ok(_) => {}
+            // The worker died without an answer. Keep the receiver and no later
+            // edit could ever start a pass again.
+            Err(_) => self.log_event("VALIDATION_WORKER_LOST"),
+        }
+        if self.validation_dirty {
+            self.start_validation();
+        }
+    }
+
+    /// Scripted dumps read findings right after an edit, so they wait for the
+    /// pending validation instead of reporting the previous scene.
+    pub fn flush_validation(&mut self) {
+        loop {
+            let Some(rx) = self.validation_rx.take() else {
+                if self.validation_dirty {
+                    self.start_validation();
+                }
+                return;
+            };
+            match rx.recv() {
+                Ok((epoch, findings)) if epoch == self.validation_epoch => {
+                    self.apply_findings(findings);
+                }
+                Ok(_) => {}
+                Err(_) => self.log_event("VALIDATION_WORKER_LOST"),
+            }
+            if !self.validation_dirty {
+                return;
+            }
+            self.start_validation();
+        }
+    }
+
+    /// Nothing the worker still holds may land on the state left behind when a
+    /// session is dropped without a replacement.
+    pub(crate) fn drop_session(&mut self) {
+        self.session = None;
+        self.validation_epoch += 1;
+        self.validation_rx = None;
+        self.validation_dirty = false;
+    }
+
+    fn apply_findings(&mut self, findings: Vec<Finding>) {
+        let Some(ui) = self.ui.upgrade() else {
+            self.findings = findings;
+            return;
+        };
+        let dm = DesignerModel::get(&ui);
         let blockers = findings.iter().filter(|f| f.is_blocking()).count();
         let summary = trf(
             &self.lang,
@@ -1062,6 +1216,180 @@ impl App {
         self.findings = findings;
     }
 
+    // --------------------------------------------------------------- bench
+
+    /// Bench instrumentation: put the Designer back in front and select an
+    /// element, so `geometry_edited` has a target. False when the bench ran
+    /// without a project.
+    pub fn bench_designer_ready(&mut self, ui: &MainWindow) -> bool {
+        AppModel::get(ui).set_workspace(0);
+        self.workspace = 0;
+        if self
+            .session
+            .as_ref()
+            .is_none_or(|s| s.element_ids().is_empty())
+        {
+            // The fixture opens on an empty screen; the phase needs content.
+            let screens: Vec<String> = self
+                .project
+                .as_ref()
+                .map(|p| p.screens().into_iter().map(|s| s.id).collect())
+                .unwrap_or_default();
+            for id in screens {
+                if self.switch_screen(&id).is_ok()
+                    && self
+                        .session
+                        .as_ref()
+                        .is_some_and(|s| !s.element_ids().is_empty())
+                {
+                    break;
+                }
+            }
+            self.refresh_all();
+        }
+        let Some(id) = self
+            .session
+            .as_ref()
+            .and_then(|s| s.element_ids().into_iter().next())
+        else {
+            return false;
+        };
+        self.element_clicked(&id, false);
+        true
+    }
+
+    /// Bench instrumentation: median wall time of each refresh entry point, so
+    /// one edit's latency can be attributed to a panel instead of guessed at.
+    pub fn bench_panels(&mut self) -> Vec<(&'static str, f64)> {
+        const RUNS: usize = 5;
+        fn median(mut runs: Vec<f64>) -> f64 {
+            runs.sort_by(f64::total_cmp);
+            runs.get(runs.len() / 2).copied().unwrap_or(0.0)
+        }
+        /// A handler sample that pays for its own validation snapshot: a pass
+        /// left pending by the previous sample would make it skip the clone.
+        fn time_handler(app: &mut App, runs: usize, mut run: impl FnMut(&mut App)) -> f64 {
+            let mut samples = Vec::with_capacity(runs);
+            for _ in 0..runs {
+                app.flush_validation();
+                let started = std::time::Instant::now();
+                run(app);
+                samples.push(started.elapsed().as_secs_f64() * 1000.0);
+            }
+            median(samples)
+        }
+        fn time(runs: usize, mut run: impl FnMut()) -> f64 {
+            let mut samples = Vec::with_capacity(runs);
+            for _ in 0..runs {
+                let started = std::time::Instant::now();
+                run();
+                samples.push(started.elapsed().as_secs_f64() * 1000.0);
+            }
+            median(samples)
+        }
+        let target = self.selection.primary().map(str::to_string);
+        let mut next_x = 8i64;
+        let mut edit_x = 6;
+        let snapshot = self
+            .session
+            .as_ref()
+            .map(|s| (s.scene().clone(), s.root().to_path_buf(), s.state.clone()));
+        let rules = self.effective_rules();
+        // The first enum state with two values, for a real state edit.
+        let choice = snapshot.as_ref().and_then(|(scene, ..)| {
+            let states = scene.get("states").and_then(Value::as_object)?;
+            states.iter().find_map(|(name, spec)| {
+                let values = spec.get("values").and_then(Value::as_array)?;
+                let (first, second) = (values.first()?, values.get(1)?);
+                Some((name.clone(), py_str(first), py_str(second)))
+            })
+        });
+        let mut use_first = false;
+        let rows = vec![
+            ("navigator", time(RUNS, || self.refresh_navigator())),
+            ("canvas", time(RUNS, || self.refresh_canvas())),
+            ("inspector", time(RUNS, || self.refresh_inspector())),
+            ("schema", time(RUNS, || self.refresh_state_schema())),
+            ("rules", time(RUNS, || self.refresh_design_rules())),
+            ("validation", time(RUNS, || self.refresh_validation())),
+            // The worker's pass: a fresh resource cache, on this thread only so
+            // that it can be timed.
+            (
+                "validation_worker",
+                time(RUNS, || {
+                    if let Some((scene, root, state)) = &snapshot {
+                        let _ = validate_snapshot(scene, root, state, &rules);
+                    }
+                }),
+            ),
+            ("app", time(RUNS, || self.refresh_app())),
+            // The refresh body of a screen open or Agent refresh, on the UI thread.
+            (
+                "refresh_all",
+                time_handler(self, RUNS, |app| app.refresh_all_inner()),
+            ),
+            // A state edit, on the UI thread.
+            (
+                "state_edit",
+                time_handler(self, 3, |app| {
+                    if let Some((name, first, second)) = &choice {
+                        use_first = !use_first;
+                        app.state_edited(name, if use_first { first } else { second });
+                    }
+                }),
+            ),
+            // The core render alone, then the whole edit handler body: what the
+            // panel rows do not add up to is model-write and snapshot overhead.
+            (
+                "render",
+                time(RUNS, || {
+                    if let Some(session) = self.session.as_mut() {
+                        let _ = session.render();
+                    }
+                }),
+            ),
+            ("edit", time(3, || self.after_edit())),
+            // The same entry point the designer phase drives, undo snapshot
+            // included, to separate it from the refresh body above.
+            (
+                "geometry_edit",
+                time_handler(self, 3, |app| {
+                    // Alternate: an unchanged value skips the transaction.
+                    edit_x = if edit_x == 6 { 7 } else { 6 };
+                    app.geometry_edited("x", edit_x);
+                }),
+            ),
+            // Just the editor transaction (undo snapshot included), so the
+            // difference above splits into refresh body versus scene mutation.
+            (
+                "set_geometry",
+                time(3, || {
+                    // Alternate so every sample carries a real change, not the
+                    // early return an unchanged value takes.
+                    next_x = if next_x == 8 { 12 } else { 8 };
+                    if let (Some(session), Some(id)) = (self.session.as_mut(), target.as_deref()) {
+                        let _ = session.set_geometry(id, &[("x", next_x)], false);
+                    }
+                }),
+            ),
+        ];
+        // Nothing the rows above scheduled may run into the next bench phase.
+        self.flush_validation();
+        rows
+    }
+
+    /// Bench instrumentation: what `start_export` pays on the UI thread before
+    /// its worker starts — the representative state matrix of the open scene,
+    /// timed once (a dense scene can make this the largest block by far).
+    pub fn bench_matrix_ms(&mut self) -> Option<(f64, usize)> {
+        let scene = self.session.as_ref()?.scene().clone();
+        let started = std::time::Instant::now();
+        let states =
+            build_export_states(&scene, IntegerPolicy::Representative, 5000, false).ok()?;
+        let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+        Some((elapsed, states.len()))
+    }
+
     // --------------------------------------------------------------- editing
 
     fn after_edit(&mut self) {
@@ -1070,7 +1398,7 @@ impl App {
         self.refresh_inspector();
         self.refresh_state_schema();
         self.refresh_design_rules();
-        self.refresh_validation();
+        self.schedule_validation();
         self.refresh_app();
     }
 
@@ -1085,18 +1413,40 @@ impl App {
         self.refresh_inspector();
     }
 
+    /// Topmost element under the pointer, from the last frame's resolved rects
+    /// (the same rects the overlay draws). Hidden elements without coordinates
+    /// are the one case the render result leaves unresolved; those still take
+    /// the geometry path, so a click lands where it did before.
     fn hit_test(&mut self, x: f32, y: f32) -> Option<String> {
-        let session = self.session.as_mut()?;
-        let ids = session.element_ids();
-        for id in ids.iter().rev() {
-            if let Ok(g) = session.geometry(id) {
-                let (px, py) = (x as i64, y as i64);
-                if px >= g.x && py >= g.y && px < g.x + g.w.max(1) && py < g.y + g.h.max(1) {
-                    return Some(id.clone());
+        let (px, py) = (x as i64, y as i64);
+        let mut ids: Vec<String> = Vec::new();
+        let mut rects: Vec<OverlayRect> = Vec::new();
+        {
+            let resolved = &self.last_resolved;
+            let session = self.session.as_ref()?;
+            let elements = session
+                .scene()
+                .get("elements")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            for (index, element) in elements.iter().enumerate() {
+                ids.push(element.get("id").map(py_str).unwrap_or_default());
+                rects.push(overlay_rect(element, resolved, index));
+            }
+        }
+        if rects.iter().any(Option::is_none) {
+            if let Some(session) = self.session.as_mut() {
+                for (index, rect) in rects.iter_mut().enumerate() {
+                    if rect.is_none() {
+                        if let Ok(g) = session.geometry(&ids[index]) {
+                            *rect = Some((g.x, g.y, g.w, g.h));
+                        }
+                    }
                 }
             }
         }
-        None
+        topmost_at(&rects, px, py).map(|index| ids[index].clone())
     }
 
     pub fn canvas_pointer(&mut self, phase: &str, x: f32, y: f32, shift: bool, ctrl: bool) {
@@ -1255,7 +1605,7 @@ impl App {
         }
         self.refresh_canvas();
         self.refresh_inspector();
-        self.refresh_validation();
+        self.schedule_validation();
     }
 
     fn selected(&self) -> Vec<String> {
@@ -1818,6 +2168,30 @@ impl App {
     }
 }
 
+/// Index of the last, so topmost, rect containing the point. An empty rect still
+/// answers on its own corner pixel.
+fn topmost_at(rects: &[OverlayRect], px: i64, py: i64) -> Option<usize> {
+    rects.iter().rposition(|rect| {
+        rect.is_some_and(|(x, y, w, h)| {
+            px >= x && py >= y && px < x + w.max(1) && py < y + h.max(1)
+        })
+    })
+}
+
+/// One validation pass over a snapshot, as the worker runs it: a fresh resource
+/// cache, plus the design rules.
+fn validate_snapshot(
+    scene: &serde_json::Map<String, Value>,
+    root: &Path,
+    state: &mono_core::state::State,
+    rules: &Value,
+) -> Vec<Finding> {
+    let mut resources = DiskResources::default();
+    let mut findings = validate_scene(scene, root, Some(state), &mut resources);
+    findings.extend(check_design_rules(scene, rules));
+    findings
+}
+
 /// Outcome for a job the release gate refused: the UI opens the blocked dialog.
 pub(crate) fn blocked_outcome(
     lang: &str,
@@ -1843,10 +2217,11 @@ pub(crate) fn blocked_outcome(
     }
 }
 
-/// A job failed with `EXPORT_BLOCKED`. `export_scene` already validated the
-/// whole state set, so the findings are collected only here, to fill the dialog
-/// without validating every successful export twice. If the scene has since
-/// become exportable, the original error is what the user hears.
+/// A job failed with `EXPORT_BLOCKED`. The gate stops at the first blocking
+/// frame, and `preflight` stops there too, so the findings collected here to fill
+/// the dialog cover the same frames as the report. A successful export is not
+/// validated twice. If the scene has since become exportable, the original error
+/// is what the user hears.
 pub(crate) fn blocked_after_failure(
     scene: &serde_json::Map<String, serde_json::Value>,
     root: &Path,
@@ -2306,6 +2681,240 @@ mod tests {
 
     use super::undo_phrase;
     use crate::i18n::has_key;
+
+    /// The canvas redraw must read the frame it just rendered. One `geometry`
+    /// fallback is allowed (a render failure, or a hidden element whose render
+    /// entry has no rect); a loop over element ids asking `geometry` is the
+    /// O(n²) shape that made one edit of a 1005-element scene take 480 ms.
+    #[test]
+    fn the_canvas_redraw_does_not_look_up_geometry_per_element() {
+        let source = include_str!("app.rs");
+        let start = source.find("pub fn refresh_canvas(&mut self) {").unwrap();
+        let end = source[start..]
+            .find(
+                "
+    pub fn refresh_inspector",
+            )
+            .unwrap()
+            + start;
+        let body = &source[start..end];
+        assert!(
+            body.contains("resolved"),
+            "the overlay no longer reads the rects the frame resolved"
+        );
+        let calls = body.matches("geometry(").count();
+        assert!(
+            calls <= 1,
+            "refresh_canvas asks geometry() {calls} times; keep the one fallback"
+        );
+        assert!(
+            !body.contains("element_ids()"),
+            "refresh_canvas iterates ids again; that is the per-element geometry loop"
+        );
+    }
+
+    /// The overlay, the Inspector and a click share one rect: a complete zone
+    /// wins, then explicit coordinates, then the renderer's resolved rect under
+    /// the element's own fields. A text element in a zone is drawn and hit at the
+    /// zone, not at its glyph box.
+    #[test]
+    fn the_overlay_rect_follows_the_inspector_precedence() {
+        use super::overlay_rect;
+        use serde_json::json;
+
+        let zoned =
+            json!({"id": "label", "type": "text", "zone": {"x": 8, "y": 2, "w": 36, "h": 12}});
+        let explicit = json!({"id": "icon", "x": 10, "y": 4, "w": 6, "h": 8});
+        let resolved = json!([
+            {"id": "label", "x": 8, "y": 4, "w": 35, "h": 7},
+            {"id": "icon", "x": 1, "y": 1, "w": 1, "h": 1},
+            {"id": "hidden", "x": null, "y": null, "w": null, "h": null}
+        ]);
+        let resolved = resolved.as_array().unwrap();
+        assert_eq!(overlay_rect(&zoned, resolved, 0), Some((8, 2, 36, 12)));
+        assert_eq!(overlay_rect(&explicit, resolved, 1), Some((10, 4, 6, 8)));
+        let sized = json!({"id": "digits", "x": 4, "y": 6});
+        assert_eq!(overlay_rect(&sized, resolved, 0), Some((4, 6, 35, 7)));
+        let unsized_element = json!({"id": "digits"});
+        assert_eq!(
+            overlay_rect(&unsized_element, resolved, 0),
+            Some((8, 4, 35, 7))
+        );
+        let bare = json!({"id": "hidden", "hidden": true});
+        assert_eq!(overlay_rect(&bare, resolved, 2), None);
+    }
+
+    fn opened(name: &str) -> (super::App, std::path::PathBuf) {
+        let (mut app, root) = crate::guard::tests::app(name);
+        app.flush_validation();
+        (app, root)
+    }
+
+    fn draft_element() -> serde_json::Value {
+        serde_json::json!({"id": "draft", "type": "placeholder", "x": 0, "y": 0, "w": 8, "h": 8})
+    }
+
+    fn flags_draft(app: &super::App) -> bool {
+        app.findings.iter().any(|f| f.code == "DRAFT_PLACEHOLDER")
+    }
+
+    fn add_draft(app: &mut super::App) {
+        app.session
+            .as_mut()
+            .unwrap()
+            .add_elements(vec![draft_element()], "add")
+            .unwrap();
+    }
+
+    #[test]
+    fn a_scripted_dump_waits_for_the_scheduled_pass() {
+        let (mut app, root) = opened("validation-flush");
+        assert!(!flags_draft(&app));
+        add_draft(&mut app);
+        app.schedule_validation();
+        assert!(
+            app.validation_rx.is_some(),
+            "the pass did not go off-thread"
+        );
+        app.flush_validation();
+        assert!(flags_draft(&app), "{:?}", app.findings);
+        assert!(app.validation_rx.is_none());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn an_edit_during_a_pass_is_validated_after_it_lands() {
+        let (mut app, root) = opened("validation-dirty");
+        app.schedule_validation();
+        add_draft(&mut app);
+        app.schedule_validation();
+        assert!(app.validation_dirty);
+        app.flush_validation();
+        assert!(!app.validation_dirty);
+        assert!(flags_draft(&app), "{:?}", app.findings);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_result_from_an_older_epoch_is_dropped() {
+        let (mut app, root) = opened("validation-epoch");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let stale = super::Finding {
+            severity: "BLOCKER".into(),
+            code: "STALE".into(),
+            message: "old scene".into(),
+            element_id: None,
+        };
+        tx.send((app.validation_epoch, vec![stale])).unwrap();
+        app.validation_rx = Some(rx);
+        app.validation_epoch += 1;
+        app.poll_validation();
+        assert!(!app.findings.iter().any(|f| f.code == "STALE"));
+        assert!(app.validation_rx.is_none());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The old pass never answers here. Had the switch kept waiting for it, the
+    /// new scene's pass would only be marked dirty and could never start.
+    #[test]
+    fn a_screen_switch_abandons_the_pass_in_flight() {
+        let (mut app, root) = opened("validation-switch");
+        let (held_open, rx) = std::sync::mpsc::channel();
+        app.validation_rx = Some(rx);
+        app.switch_screen("123").unwrap();
+        assert!(!app.validation_dirty, "the new scene waits on the old pass");
+        app.flush_validation();
+        let scheduled = app.findings.clone();
+        app.refresh_validation();
+        assert_eq!(scheduled, app.findings);
+        drop(held_open);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_flush_ignores_a_result_from_an_older_epoch() {
+        let (mut app, root) = opened("validation-flush-epoch");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let stale = super::Finding {
+            severity: "BLOCKER".into(),
+            code: "STALE".into(),
+            message: "old scene".into(),
+            element_id: None,
+        };
+        tx.send((app.validation_epoch, vec![stale])).unwrap();
+        app.validation_rx = Some(rx);
+        app.validation_epoch += 1;
+        app.flush_validation();
+        assert!(!app.findings.iter().any(|f| f.code == "STALE"));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn the_topmost_rect_under_the_pointer_wins() {
+        use super::topmost_at;
+        let rects = [
+            Some((0, 0, 16, 16)),
+            None,
+            Some((8, 8, 16, 16)),
+            Some((40, 0, 0, 0)),
+        ];
+        assert_eq!(topmost_at(&rects, 10, 10), Some(2));
+        assert_eq!(topmost_at(&rects, 2, 2), Some(0));
+        assert_eq!(topmost_at(&rects, 16, 2), None);
+        assert_eq!(topmost_at(&rects, 40, 0), Some(3));
+        assert_eq!(topmost_at(&rects, 41, 0), None);
+    }
+
+    #[test]
+    fn a_lost_worker_does_not_stop_later_validation() {
+        let (mut app, root) = opened("validation-lost");
+        let (tx, rx) = std::sync::mpsc::channel();
+        drop(tx);
+        app.validation_rx = Some(rx);
+        app.poll_validation();
+        assert!(app.validation_rx.is_none(), "the dead receiver was kept");
+        add_draft(&mut app);
+        app.schedule_validation();
+        app.flush_validation();
+        assert!(flags_draft(&app), "{:?}", app.findings);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn every_edit_path_validates_off_the_ui_thread() {
+        let (mut app, root) = opened("validation-paths");
+        app.selection
+            .replace(&["hero_digits".to_string()], Some("hero_digits"));
+        app.geometry_edited("x", 7);
+        assert!(
+            app.validation_rx.is_some(),
+            "geometry edit validated in place"
+        );
+        app.flush_validation();
+        app.state_edited("mode", "HIGH");
+        assert!(app.validation_rx.is_some(), "state edit validated in place");
+        app.flush_validation();
+        let rules = app.effective_rules();
+        app.apply_rules(&rules).unwrap();
+        assert!(app.validation_rx.is_some(), "rule edit validated in place");
+        app.flush_validation();
+        app.refresh_all();
+        assert!(app.validation_rx.is_some(), "refresh validated in place");
+        app.flush_validation();
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn dropping_the_session_also_drops_the_pass_in_flight() {
+        let (mut app, root) = opened("validation-drop");
+        app.schedule_validation();
+        let epoch = app.validation_epoch;
+        app.drop_session();
+        assert!(app.session.is_none());
+        assert!(app.validation_epoch > epoch);
+        assert!(app.validation_rx.is_none());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     /// Every verb the editor and the automation bridge can push onto the undo
     /// stack is either translated or deliberately shown verbatim.

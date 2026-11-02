@@ -510,6 +510,8 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
         }
         // Scripted runs: what the validator currently reports.
         "dump:findings" => {
+            // Edits validate off-thread now; a dump must see their result.
+            app.borrow_mut().flush_validation();
             let dm = DesignerModel::get(ui);
             let codes: Vec<String> = dm
                 .get_findings()
@@ -593,6 +595,21 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
                     .as_ref()
                     .map(|s| s.doc.path.to_string_lossy().replace('\\', "/"))
                     .unwrap_or_default()
+            );
+        }
+        // Scripted runs: a real press and release on the Designer canvas.
+        other if other.starts_with("canvas-click:") => {
+            let mut parts = other["canvas-click:".len()..].splitn(2, ':');
+            let (x, y) = (parts.next().unwrap_or("0"), parts.next().unwrap_or("0"));
+            let (x, y) = (x.parse().unwrap_or(0.0), y.parse().unwrap_or(0.0));
+            let mut app = app.borrow_mut();
+            app.canvas_pointer("down", x, y, false, false);
+            app.canvas_pointer("up", x, y, false, false);
+        }
+        "dump:primary" => {
+            println!(
+                "SELFCHECK selection.primary={}",
+                app.borrow().selection.primary().unwrap_or("none")
             );
         }
         // Scripted runs: what the Inspector says about the current selection.
@@ -1186,6 +1203,7 @@ fn main() {
                 app.poll_font();
                 app.poll_agent();
                 app.poll_background();
+                app.poll_validation();
             }
         },
     );
