@@ -2303,6 +2303,8 @@ impl App {
                 }),
             ),
             ("app", time(RUNS, || self.refresh_app())),
+            // The Review workspace's render, code and element diff.
+            ("review", time(RUNS, || self.refresh_review())),
             // The refresh body of a screen open or Agent refresh, on the UI thread.
             (
                 "refresh_all",
