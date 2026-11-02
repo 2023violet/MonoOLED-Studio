@@ -28,6 +28,8 @@ The user approved this TASK on 2026-11-02 ("Yes, open TASK-016").
 
 The Designer's own diff (`refresh_canvas`) already indexes by id.
 
+The before-measurement (Result) showed that Review explains the 1005-element regression but only 16 of the 61 ms on 50 digits. The second cause, also from 2.3.0: `refresh_inspector` → `refresh_notes` → `note_rows` calls `compute_frame_evidence()`, which renders the whole scene again on every Inspector refresh, even right after `refresh_canvas` has stored that frame's evidence. Its doc comment says it should do so only "when the canvas has not done it". This affects every edit path, not only full refreshes (`panel_inspector_ms` 16.5–17.1 ms on 50 digits).
+
 ## Evidence
 
 - `apps/mono-desktop/src/app.rs`: `refresh_all_inner` calls `refresh_review`, and `refresh_review` diffs elements with `contains` / `any`.
@@ -39,8 +41,9 @@ The Designer's own diff (`refresh_canvas`) already indexes by id.
 1. Bench: add `panel_review_ms`, the Review refresh body on its own.
 2. `refresh_all_inner` refreshes Review only while the Review workspace (3) is open; entering it keeps refreshing it (`switch_workspace`).
 3. `refresh_review`'s element diff uses id sets and an id index, as `refresh_canvas` does; added / removed / modified lists and their order stay the same.
-4. A unit test pins the diff (added, removed, modified, order) against the previous pairwise definition.
-5. Re-measure the fixture, the 1005-element and the 50-digit scenes; update G4 §4 and `CHANGELOG.md` `Unreleased`.
+4. Where `refresh_canvas` runs immediately before `refresh_inspector` in the same call (`refresh_all_inner`, `after_edit`, `state_edited` and the other sites with that pair), the note rows reuse the canvas's evidence instead of rendering again. A bare `refresh_inspector` (selection change, headless tests) keeps recomputing.
+5. A unit test pins the diff (added, removed, modified, order) against the previous pairwise definition.
+6. Re-measure the fixture, the 1005-element and the 50-digit scenes; update G4 §4 and `CHANGELOG.md` `Unreleased`.
 
 ## Out of Scope
 

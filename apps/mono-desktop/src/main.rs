@@ -795,7 +795,7 @@ fn switch_workspace(app: &Rc<RefCell<App>>, ui: &MainWindow, index: i32) {
     } else if index == 2 {
         a.refresh_font();
         a.refresh_pixel();
-    } else if index == 3 {
+    } else if index == app::REVIEW_WORKSPACE {
         a.refresh_review();
         a.refresh_app();
     } else {

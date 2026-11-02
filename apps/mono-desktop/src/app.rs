@@ -181,6 +181,10 @@ pub struct App {
     pub note_draft: Option<NoteDraft>,
     /// Evidence for the frame currently on the canvas (annotation staleness).
     pub frame_evidence: Option<Evidence>,
+    /// True only while a refresh that has just run `refresh_canvas` refreshes
+    /// the Inspector, so the note rows reuse that frame instead of rendering
+    /// the scene a second time (`refresh_inspector_after_canvas`).
+    canvas_evidence_fresh: bool,
     /// Exported contract backing the Review evidence panel.
     pub contract: Option<Value>,
     pub contract_path: Option<PathBuf>,
@@ -289,6 +293,7 @@ impl App {
             presets: Vec::new(),
             note_draft: None,
             frame_evidence: None,
+            canvas_evidence_fresh: false,
             contract: None,
             contract_path: None,
             pending_contract: None,
@@ -682,8 +687,13 @@ impl App {
     fn refresh_all_inner(&mut self) {
         self.refresh_navigator();
         self.refresh_canvas();
-        self.refresh_review();
-        self.refresh_inspector();
+        // Review renders the scene again, builds its code and diffs every
+        // element; it is rebuilt here only while visible, and on entry
+        // (`switch_workspace`).
+        if self.workspace == REVIEW_WORKSPACE {
+            self.refresh_review();
+        }
+        self.refresh_inspector_after_canvas();
         self.refresh_presets();
         self.refresh_notes();
         self.refresh_state_schema();
@@ -1194,38 +1204,7 @@ impl App {
             self.t("review.no_changes")
         };
         rm.set_detail(ss(detail));
-        let id_of = |e: &Value| e.get("id").map(py_str).unwrap_or_default();
-        let label = |e: &Value| {
-            let id = id_of(e);
-            let kind = e.get("type").map(py_str).unwrap_or_default();
-            if kind.is_empty() {
-                id
-            } else {
-                format!("{id} · {kind}")
-            }
-        };
-        let before_ids: Vec<String> = self.baseline_elements.iter().map(id_of).collect();
-        let after_ids: Vec<String> = current_elements.iter().map(id_of).collect();
-        let added: Vec<String> = current_elements
-            .iter()
-            .filter(|e| !before_ids.contains(&id_of(e)))
-            .map(label)
-            .collect();
-        let removed: Vec<String> = self
-            .baseline_elements
-            .iter()
-            .filter(|e| !after_ids.contains(&id_of(e)))
-            .map(label)
-            .collect();
-        let modified: Vec<String> = current_elements
-            .iter()
-            .filter(|e| {
-                self.baseline_elements
-                    .iter()
-                    .any(|b| id_of(b) == id_of(e) && b != *e)
-            })
-            .map(label)
-            .collect();
+        let (added, removed, modified) = element_diff(&self.baseline_elements, current_elements);
         rm.set_added(model(added.into_iter().map(ss).collect()));
         rm.set_removed(model(removed.into_iter().map(ss).collect()));
         rm.set_modified(model(modified.into_iter().map(ss).collect()));
@@ -1654,6 +1633,14 @@ impl App {
         path.file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default()
+    }
+
+    /// `refresh_inspector` right after `refresh_canvas` in the same call: the
+    /// canvas just stored this frame's evidence, so the note rows reuse it.
+    fn refresh_inspector_after_canvas(&mut self) {
+        self.canvas_evidence_fresh = true;
+        self.refresh_inspector();
+        self.canvas_evidence_fresh = false;
     }
 
     pub fn refresh_inspector(&mut self) {
@@ -2377,7 +2364,7 @@ impl App {
     fn after_edit(&mut self) {
         self.refresh_navigator();
         self.refresh_canvas();
-        self.refresh_inspector();
+        self.refresh_inspector_after_canvas();
         self.refresh_state_schema();
         self.refresh_design_rules();
         self.schedule_validation();
@@ -2425,7 +2412,7 @@ impl App {
             return false;
         }
         self.refresh_canvas();
-        self.refresh_inspector();
+        self.refresh_inspector_after_canvas();
         true
     }
 
@@ -2503,6 +2490,7 @@ impl App {
 
     fn note_rows(&mut self) -> Vec<NoteItem> {
         if self.session.is_some()
+            && !(self.canvas_evidence_fresh && self.frame_evidence.is_some())
             && let Some(evidence) = self.compute_frame_evidence()
         {
             self.frame_evidence = Some(evidence);
@@ -2747,7 +2735,7 @@ impl App {
         }
         self.preview.absorb(log.take());
         self.refresh_canvas();
-        self.refresh_inspector();
+        self.refresh_inspector_after_canvas();
         self.refresh_validation();
         self.refresh_notes();
         Ok(())
@@ -2790,7 +2778,7 @@ impl App {
         }
         self.refresh_navigator();
         self.refresh_canvas();
-        self.refresh_inspector();
+        self.refresh_inspector_after_canvas();
     }
 
     /// Topmost element under the pointer, from the last frame's resolved rects
@@ -2984,7 +2972,7 @@ impl App {
             self.error(&e);
         }
         self.refresh_canvas();
-        self.refresh_inspector();
+        self.refresh_inspector_after_canvas();
         self.schedule_validation();
     }
 
@@ -4176,6 +4164,51 @@ fn edit_rules(draft: &mut Value, action: &str, row: &str, field: &str, value: &s
     true
 }
 
+/// `AppModel.workspace` index of the Review workspace.
+pub const REVIEW_WORKSPACE: i32 = 3;
+
+/// Review's element lists against the baseline: added and modified in scene
+/// order, removed in baseline order, each labelled `id · type`. Ids are
+/// indexed once, so a large scene costs O(n) instead of a scan per element.
+fn element_diff(before: &[Value], after: &[Value]) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let id_of = |e: &Value| e.get("id").map(py_str).unwrap_or_default();
+    let label = |id: &str, e: &Value| {
+        let kind = e.get("type").map(py_str).unwrap_or_default();
+        if kind.is_empty() {
+            id.to_string()
+        } else {
+            format!("{id} · {kind}")
+        }
+    };
+    let after_ids: Vec<String> = after.iter().map(id_of).collect();
+    let mut before_by_id: HashMap<String, Vec<&Value>> = HashMap::new();
+    let before_ids: Vec<String> = before
+        .iter()
+        .map(|b| {
+            let id = id_of(b);
+            before_by_id.entry(id.clone()).or_default().push(b);
+            id
+        })
+        .collect();
+    let after_set: HashSet<&str> = after_ids.iter().map(String::as_str).collect();
+    let mut added = Vec::new();
+    let mut modified = Vec::new();
+    for (id, e) in after_ids.iter().zip(after) {
+        match before_by_id.get(id) {
+            None => added.push(label(id, e)),
+            Some(olds) if olds.iter().any(|b| *b != e) => modified.push(label(id, e)),
+            Some(_) => {}
+        }
+    }
+    let removed = before_ids
+        .iter()
+        .zip(before)
+        .filter(|(id, _)| !after_set.contains(id.as_str()))
+        .map(|(id, b)| label(id, b))
+        .collect();
+    (added, removed, modified)
+}
+
 /// "Render failed: <reason>", as the status bar, the Review panel and the
 /// gallery card word a refused render.
 fn render_failed(lang: &str, message: &str) -> String {
@@ -4517,6 +4550,64 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The indexed diff must list exactly what the pairwise definition 2.3.0
+    /// shipped listed, in the same order, duplicate ids included.
+    #[test]
+    fn review_element_diff_matches_the_pairwise_definition() {
+        fn pairwise(before: &[Value], after: &[Value]) -> (Vec<String>, Vec<String>, Vec<String>) {
+            let id_of = |e: &Value| e.get("id").map(py_str).unwrap_or_default();
+            let label = |e: &Value| {
+                let id = id_of(e);
+                let kind = e.get("type").map(py_str).unwrap_or_default();
+                if kind.is_empty() {
+                    id
+                } else {
+                    format!("{id} · {kind}")
+                }
+            };
+            let before_ids: Vec<String> = before.iter().map(id_of).collect();
+            let after_ids: Vec<String> = after.iter().map(id_of).collect();
+            (
+                after
+                    .iter()
+                    .filter(|e| !before_ids.contains(&id_of(e)))
+                    .map(label)
+                    .collect(),
+                before
+                    .iter()
+                    .filter(|e| !after_ids.contains(&id_of(e)))
+                    .map(label)
+                    .collect(),
+                after
+                    .iter()
+                    .filter(|e| before.iter().any(|b| id_of(b) == id_of(e) && b != *e))
+                    .map(label)
+                    .collect(),
+            )
+        }
+        let before = vec![
+            json!({"id": "a", "type": "text", "x": 0}),
+            json!({"id": "b", "type": "image", "x": 1}),
+            json!({"id": "dup", "type": "text", "x": 2}),
+            json!({"id": "dup", "type": "text", "x": 3}),
+            json!({"id": "gone", "x": 4}),
+            json!({"type": "placeholder"}),
+        ];
+        let after = vec![
+            json!({"id": "new", "type": "digits"}),
+            json!({"id": "b", "type": "image", "x": 9}),
+            json!({"id": "a", "type": "text", "x": 0}),
+            json!({"id": "dup", "type": "text", "x": 2}),
+            json!({"type": "placeholder", "w": 1}),
+            json!({"id": "new2"}),
+        ];
+        let got = element_diff(&before, &after);
+        assert_eq!(got, pairwise(&before, &after));
+        assert_eq!(got.0, ["new · digits", "new2"]);
+        assert_eq!(got.1, ["gone"]);
+        assert_eq!(got.2, ["b · image", "dup · text", " · placeholder"]);
+    }
+
     /// A project at `<base>/project` whose main scene, on disk, holds an image
     /// member `../outside.png`. The file exists at `<base>/outside.png` and is a
     /// decodable image larger than the declared 1x1, so reading it would add an
@@ -4754,6 +4845,25 @@ mod tests {
         select(&mut app, "battery");
         app.geometry_edited("x", 20);
         assert!(app.note_rows()[0].stale);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Note rows render the frame themselves unless the canvas stored it in the
+    /// same refresh; then they reuse it instead of rendering the scene again.
+    #[test]
+    fn note_rows_reuse_the_canvas_frame_only_right_after_it() {
+        let (mut app, root) = project_app("note-reuse");
+        let sentinel = Evidence {
+            sha256: "canvas".into(),
+            ..Evidence::default()
+        };
+        app.frame_evidence = Some(sentinel.clone());
+        app.canvas_evidence_fresh = true;
+        app.note_rows();
+        assert_eq!(app.frame_evidence.as_ref().unwrap().sha256, "canvas");
+        app.canvas_evidence_fresh = false;
+        app.note_rows();
+        assert_eq!(app.frame_evidence.as_ref().unwrap().sha256.len(), 64);
         let _ = std::fs::remove_dir_all(&root);
     }
 
