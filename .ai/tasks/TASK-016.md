@@ -1,6 +1,6 @@
 # TASK-016 — Large-Scene Refresh Regression from the 2.3.0 Integration
 
-Status: APPROVED
+Status: VERIFY
 Review Status: PENDING (no independent review yet)
 
 ## Goal
@@ -86,4 +86,43 @@ Release build; `RUN_DESKTOP_BENCH.py --runs 3` on the three projects before and 
 
 ## Result
 
-(pending)
+Results come from the commands that were actually run on Windows 10 (release builds, `python tools/RUN_DESKTOP_BENCH.py --runs 3` on the fixture and on the `BENCH_DESIGNER_PROJECT.py` 1005-element and 50-digit projects from TASK-015).
+
+Failure evidence, on a build with only the new `panel_review_ms` row (commit "bench(desktop): time the Review refresh on its own"):
+
+- 1005 elements: `panel_review_ms` 261.9–295.9 ms of a 296.6–313.9 ms `panel_refresh_all`.
+- 50 digits: `panel_review_ms` 15.9–17.2 ms of 61.5–61.9 ms. The rest came from `panel_inspector_ms` 16.5–17.1 ms, which is one full render by `note_rows`.
+
+Changes:
+
+1. Review is rebuilt in `refresh_all_inner` only while `workspace == REVIEW_WORKSPACE` (3). `switch_workspace` still rebuilds it on entry, and the contract-adoption path still refreshes it.
+2. `element_diff` indexes ids. `review_element_diff_matches_the_pairwise_definition` compares it with the pairwise definition 2.3.0 shipped, including duplicate ids, missing ids and order.
+3. `refresh_inspector_after_canvas` lets the note rows reuse the evidence `refresh_canvas` has just stored. It is used at the six sites where the canvas refresh immediately precedes the Inspector refresh. A bare `refresh_inspector` and the headless tests still render (`note_rows_reuse_the_canvas_frame_only_right_after_it`).
+4. The first after-measurement still showed 29.8–32.3 ms for a 50-digit full refresh: `refresh_all_inner` called `refresh_notes()` a second time, outside the reuse bracket. That duplicate call was removed (the Inspector refreshes the notes).
+
+Final measurement:
+
+| Scene | `panel_refresh_all` | `max_handler` | Before the integration |
+|---|---|---|---|
+| 1005 elements | 11.8–15.0 ms | 19.5–24.1 ms | 11.1–13.4 ms; 20.5–23.1 ms |
+| 50 digits | 14.9–16.1 ms | 22.2–27.1 ms | 15.1–16.0 ms; 21.4–22.7 ms |
+| Fixture | 1.38–1.61 ms | 1.77–2.31 ms | — |
+
+- State and geometry edits are back in their pre-integration ranges.
+- The 16 ms handler budget is still missed on the two generated scenes, as before the integration.
+- The full figures are in `docs/rewrite/G4_EVIDENCE.md` §4 "整合回退的修复（TASK-016）", and the `CHANGELOG.md` `Unreleased` sentence is updated.
+
+Gates:
+
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: clean.
+- `cargo test --workspace --locked --no-fail-fast`: 28 groups, 304 passed, 0 failed.
+- `python -m pytest tools/tests -q`: 36 passed, 1 skipped.
+- `cargo deny check`: advisories, bans, licenses and sources ok.
+- `python tools/CHECK_GUI_TRUST.py --exe target/release/monooled-studio.exe`, on the final release build with `APPDATA` / `LOCALAPPDATA` / `XDG_CONFIG_HOME` in a fresh temporary directory: 17 of 17 PASS, exit 0.
+- `git diff origin/main -- fixtures/golden test_assets`: empty.
+
+Not verified:
+
+- macOS and Linux.
+- A manual GUI walk of the Review workspace after an edit made in another workspace. Entering Review goes through `switch_workspace`, which still rebuilds it, but no automated check opens Review after such an edit.
