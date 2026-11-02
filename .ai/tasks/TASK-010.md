@@ -2,8 +2,8 @@
 
 > Renumbered from TASK-004 on 2026-11-02 by TASK-014, when this line of work was integrated with `origin/main`, whose own TASK-004 to TASK-009 already used those numbers. The body below is unchanged: where it says TASK-004, TASK-005, TASK-006 or TASK-007 it means TASK-010, TASK-011, TASK-012 or TASK-013.
 
-Status: VERIFY
-Review Status: three independent slices run (see Review Status below)
+Status: DONE
+Review Status: PASS (final verdict 2026-11-02 after three review slices; see `### Final verdict`)
 
 ## Goal
 
@@ -244,3 +244,31 @@ TASK-005 were reviewed together). Six Important findings came back.
 The fixes shipped with `2.1.0`, split across code, checks and docs commits.
 Status stays `VERIFY`: `AGENTS.md` reserves `DONE` / `PASS` for an independent
 reviewer, and this record does not award it.
+
+### Final verdict (independent review, 2026-11-02)
+
+**PASS.** Checked against the integrated code on `integrate/2.4.0` (a35d425),
+not the pre-integration tree.
+
+- Re-run on `integrate/2.4.0` (a35d425) rather than taken from the recorded
+  results: `cargo test --locked -p mono-desktop` (171 passed), `-p mono-core`
+  (including the 3 `diff` tests), `-p mono-automation`, `-p mono-project` and
+  `-p mono-cli` (all passed, 0 failed); `python -m pytest tools/tests -q`
+  (36 passed, 1 skipped, including `test_version_consistency.py` and
+  `test_docs_match_code.py`). fmt, clippy and `cargo deny` were not re-run by
+  this review.
+- Release gate: all three C-header producers call `preflight` before writing:
+  desktop (`app.rs:3293`), CLI `cmd_c_header` (`mono-cli/src/main.rs:499`,
+  report at `<output>.validation.md`) and Automation `export.c_header`
+  (`dispatch.rs:1607`); the desktop export, handoff and thumbnail jobs use
+  `export_scene_with_report`.
+- Dirty truth: `EditorSession::is_dirty` compares against the saved snapshot in
+  place (`editor.rs:211`), ignoring `_`-prefixed runtime keys.
+- Viewing a screen: `switch_screen` (`guard.rs:194`) only sets `active_screen`
+  in memory; `set_active_screen` (`project.rs:484`) does not write.
+- Backdrop and Escape: `test_every_dialog_really_closes_on_the_backdrop` and the
+  overlay invariants pass.
+
+No new Critical or Important findings. The deliberately-not-changed items above
+stay accepted; the Output Workbench / `export.bitmap_data` gate boundary is
+still an open product decision (`AI_HANDOFF` 5.5).

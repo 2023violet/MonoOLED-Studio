@@ -6,7 +6,7 @@
 
 - Project: MonoOLED Studio
 - Product version: 2.3.0 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
-- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance. Released: 2.0.4 (TASK-004), 2.0.5 (TASK-005), 2.1.0 (TASK-006), 2.2.0/2.2.1 (TASK-007), 2.3.0 (TASK-008, TASK-009). A second line of work (TASK-010 to TASK-013) branched at 2.0.3, never shipped, and is being integrated onto 2.3.0 by TASK-014; its notes are the `Unreleased` section of `CHANGELOG.md`.
+- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance. Released (tagged): 2.2.0/2.2.1 (TASK-004 to TASK-007; the 2.0.4, 2.0.5 and 2.1.0 changelog versions were never tagged and first shipped in v2.2.0), 2.3.0 (TASK-008, TASK-009). A second line of work (TASK-010 to TASK-013) branched at 2.0.3, never shipped, and is being integrated onto 2.3.0 by TASK-014; its notes are the `Unreleased` section of `CHANGELOG.md`.
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
@@ -19,16 +19,17 @@
 - TASK-003 status: DONE
 - TASK-004 status: DONE (2.0.4 trust fixes T1–T8 plus review rework; all CI gates green)
 - TASK-005 status: DONE (2.0.5; T9 recent projects, T10 asset-to-Pixel, T11 atomic write-back; review PASS WITH MINOR NOTES)
-- TASK-006 status: VERIFY (2.1.0; T12–T17 professional workflow; Result recorded, two GUI-found defects fixed)
-- TASK-007 status: VERIFY (2.2.0; T18–T21 terminology, help/tooltips, new-project wizard, docs and version truth)
+- TASK-006 status: DONE (T12–T17 professional workflow, first shipped in v2.2.0; post-release independent review PASS 2026-11-02 with three Minor findings routed to a proposed follow-up fix task)
+- TASK-007 status: DONE (2.2.0; T18–T21 terminology, help/tooltips, new-project wizard, docs and version truth; post-release independent review PASS 2026-11-02)
 - TASK-008 status: DONE (CLI `--json`; independent review PASS WITH MINOR NOTES; folded into 2.3.0, not released separately)
 - TASK-009 status: DONE (2.3.0 T22–T28; independent re-review PASS after gallery invalidation, note refresh, sidecar protection and documentation corrections)
-- TASK-010 status: VERIFY (experience audit closeout, formerly TASK-004 on the unshipped line; three review slices recorded)
-- TASK-011 status: VERIFY (truthful controls, exposed engine, formerly TASK-005 on the unshipped line; three review slices recorded)
+- TASK-010 status: DONE (experience audit closeout, formerly TASK-004 on the unshipped line; three review slices, final independent review PASS 2026-11-02 on the integrated code)
+- TASK-011 status: VERIFY — REWORK REQUIRED (truthful controls, exposed engine, formerly TASK-005 on the unshipped line; final review 2026-11-02: a refused page rename drops the Designer session, `guard.rs:255`; fix scope in the TASK)
 - TASK-012 status: DONE (Designer edit-path performance, formerly TASK-006; scoped review PASS 2026-11-01)
 - TASK-013 status: DONE (stress findings: gate short-circuit, bounded export memory, member containment, formerly TASK-007; confirmation review PASS 2026-11-02)
 - TASK-014 status: VERIFY (integration of TASK-010 to TASK-013 onto 2.3.0; see `.ai/tasks/TASK-014.md`)
-- Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-009, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); PENDING for TASK-006/TASK-007 (subagent dispatch failed three times — two model-queue errors and one daily usage limit — so only inline self-review and implementer-side evidence are recorded); TASK-010/TASK-011 have review slices but no final verdict; TASK-014 not reviewed yet.
+- Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-006, TASK-007, TASK-009, TASK-010, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); REWORK REQUIRED (TASK-011); TASK-014 not reviewed yet. TASK-006/007 were reviewed after release (2026-11-02).
+- Proposed follow-up fix task (not yet numbered or approved), from the TASK-006/007 review: add `ASSET_PATH_ESCAPE` to `FINDING_CODES` with en/zh labels plus a test that every emitted finding code is listed; replace the tautological `palette_actions_are_dispatchable`; make the Designer drawer say there is no baseline instead of 100%; note in `CHANGELOG.md` that 2.0.4/2.0.5/2.1.0 were never tagged.
 - Active task: `.ai/tasks/TASK-014.md`
 - Next workflow action: an independent review of TASK-014. The open product decision TASK-014 names (whether the review pack belongs inside the release gate) and the release itself (the Compatibility changes rule out a patch version) are the user's. Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
 
