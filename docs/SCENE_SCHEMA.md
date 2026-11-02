@@ -40,7 +40,9 @@ An external Scene may declare a project root relative to its JSON file:
 }
 ```
 
-Without `project_root`, an external Scene uses its own directory as the project root. Asset paths are resolved relative to that root. The built-in Curing-Lite Scene continues to use the bundled repository root.
+Without `project_root`, an external Scene uses its own directory as the project root. Asset paths are resolved relative to that root. The built-in Curing-Lite Scene continues to use the bundled repository root. A Scene opened through a project manifest uses the project's root and cannot move it.
+
+Image assets, sequence and digit directories and patterns, font headers and font packs must resolve inside that root. Anything else is the blocking finding `ASSET_PATH_ESCAPE`, and the file is not opened. The check is lexical: a link inside the project that points outside it is not detected, and an 8.3 alias or linked spelling of the root is refused.
 
 ## Canvas
 

@@ -76,22 +76,17 @@ export global PixelModel {
     callback zoom-step(int);
     callback import-changed();
     callback dialog-accepted();
-    // Return keyboard focus to the workspace after a dialog closes inside Slint.
-    callback refocus();
+    callback dialog-dismissed();
 }
-
-export struct ProfileItem { id: string, name: string }
 
 export global OutputModel {
     in property <[string]> sources;
     in-out property <int> source: 0;
-    in property <[ProfileItem]> profiles;
     in property <[string]> profile-names;
     in-out property <int> profile: 0;
     in property <bool> project-profiles;
     in property <bool> profile-dirty;
     // 0 = builtin, 1 = saved in the project.
-    in property <int> profile-source: 0;
     in property <bool> profile-is-default;
     in property <string> profile-state-text;
     in property <PillTone> profile-state-tone: PillTone.neutral;
@@ -770,12 +765,13 @@ component DialogButtons inherits VerticalLayout {
     HorizontalLayout {
         alignment: end;
         spacing: 8px;
-        Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { PixelModel.dialog = 0; PixelModel.refocus(); } }
+        Button { text: I18n.tr(I18n.lang, "dialog.cancel"); clicked => { PixelModel.dialog-dismissed(); } }
         Button { text: root.accept-text; role: ButtonRole.primary; clicked => { PixelModel.dialog-accepted(); } }
     }
 }
 
 component ResizeDialog inherits Scrim {
+    dismissed => { PixelModel.dialog-dismissed(); }
     Dialog {
         height: 230px;
         VerticalLayout {
@@ -794,9 +790,11 @@ component ResizeDialog inherits Scrim {
             DialogButtons { accept-text: I18n.tr(I18n.lang, "pixel.resize"); }
         }
     }
+    init => { root.take-focus(); }
 }
 
 component ImportDialog inherits Scrim {
+    dismissed => { PixelModel.dialog-dismissed(); }
     Dialog {
         width: 560px;
         height: 470px;
@@ -831,9 +829,11 @@ component ImportDialog inherits Scrim {
             DialogButtons { accept-text: I18n.tr(I18n.lang, "pixel.import.apply"); }
         }
     }
+    init => { root.take-focus(); }
 }
 
 component TextDialog inherits Scrim {
+    dismissed => { PixelModel.dialog-dismissed(); }
     Dialog {
         height: 300px;
         VerticalLayout {
@@ -852,23 +852,13 @@ component TextDialog inherits Scrim {
             DialogButtons { accept-text: I18n.tr(I18n.lang, "dialog.ok"); }
         }
     }
+    init => { root.take-focus(); }
 }
 
 export component PixelDialogs inherits Rectangle {
-    scope := FocusScope {
-        key-pressed(event) => {
-            if (event.text == Key.Escape) {
-                PixelModel.dialog = 0;
-                PixelModel.refocus();
-                return accept;
-            }
-            return reject;
-        }
-        if PixelModel.dialog == 1: ResizeDialog { width: root.width; height: root.height; }
-        if PixelModel.dialog == 2: ImportDialog { width: root.width; height: root.height; }
-        if PixelModel.dialog == 3: TextDialog { width: root.width; height: root.height; }
-    }
-    init => { scope.focus(); }
+    if PixelModel.dialog == 1: ResizeDialog { width: root.width; height: root.height; }
+    if PixelModel.dialog == 2: ImportDialog { width: root.width; height: root.height; }
+    if PixelModel.dialog == 3: TextDialog { width: root.width; height: root.height; }
 }
 
 export component PixelView inherits VerticalLayout {
@@ -886,6 +876,9 @@ export component PixelView inherits VerticalLayout {
                     spacing: 10px;
                     SectionTitle { text: PixelModel.title; vertical-alignment: center; }
                     StatusPill { text: PixelModel.doc-w + " × " + PixelModel.doc-h; }
+                    // A project asset opened from the Designer is part of the project;
+                    // only a scratch or loose PNG is labelled standalone.
+                    if !PixelModel.asset-locked: Caption { text: I18n.tr(I18n.lang, "pixel.standalone"); vertical-alignment: center; wrap: no-wrap; }
                     Rectangle { horizontal-stretch: 1; }
                     Label { text: I18n.tr(I18n.lang, "pixel.zoom"); }
                     ComboBox {

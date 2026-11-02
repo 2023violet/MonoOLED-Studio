@@ -8,7 +8,7 @@
 
 Automation API 1.3 lets Code AI operate MonoOLED Studio by project/scene/state/pixel/font/output semantics rather than GUI coordinates. Canonical Renderer and the shared bitmap encoder remain the only pixel/export truth.
 
-API 1.3 is additive and retains API 1.2 methods and byte behavior. In particular, `export.c_header`, `export.current`, `export.all`, and Code AI handoff output are unchanged when no new parameters are supplied.
+API 1.3 is additive and retains API 1.2 methods and byte behavior. In particular, `export.c_header`, `export.current`, `export.all`, and Code AI handoff output are unchanged when no new parameters are supplied and the scene passes the release gate (see [Release gate](#release-gate)).
 
 ## Recommended blind-Agent bootstrap
 
@@ -88,6 +88,16 @@ Use Studio-owned export methods instead of reimplementing VLSB/C-header rules:
 - `export.font_data`
 - `export.font_pack`
 - `export.code_ai_handoff`
+
+### Release gate
+
+`export.current`, `export.all`, `export.c_header` and `export.code_ai_handoff` refuse to write files when validation reports a blocking finding (`BLOCKER` or `ERROR`) for the exported state(s). `export.c_header` honours the same gate as the other producers instead of rendering regardless of findings.
+
+A blocked call returns JSON-RPC error `INVALID_REQUEST` and writes no export artefact: no header, no `golden/` or `reference/` output, and no handoff ZIP. It does still write the blocking report — `validation_report.md` next to the intended output, or `<zip>.validation.md` for a handoff — because the refusal has to be readable after the call returns. `export.all` and `export.code_ai_handoff` validate states in matrix order and stop at the first blocking state; the report says how many states were checked (the gate is already decided). Clean matrices are still validated in full before anything is written. A directory an earlier successful export created is left as it was. Fix the findings (the validation report and `validate.*` methods name the element ids) and call again.
+
+A scene member that resolves outside the project root is a blocking finding (`ASSET_PATH_ESCAPE`), so `export.current`, `export.all`, `export.c_header` and `export.code_ai_handoff` refuse such a scene; a scene that exported under 2.1.0 with `../` or an outside absolute path now needs its files moved into the project. It also stops rendering: `render.current`, the other methods that render the scene, and the current-scene source of `export.bitmap_data` return `INVALID_REQUEST`. `export.font_data` and `export.font_pack` take no scene members and are unaffected.
+
+`export.bitmap_data` and the Output Workbench are **not** behind the gate: they can render the current scene into a file of their own. Changing that would alter API 1.3 behaviour and needs its own decision.
 
 ## Output profiles — API 1.3
 

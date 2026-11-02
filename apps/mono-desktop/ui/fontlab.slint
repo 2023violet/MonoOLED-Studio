@@ -2,7 +2,7 @@
 // (V1 `font_lab_qt.FontLabEditor`).
 import { ScrollView, LineEdit, SpinBox, ComboBox, CheckBox, ListView } from "std-widgets.slint";
 import { Theme, Metrics } from "theme.slint";
-import { I18n, Button, ButtonRole, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, ListRow } from "widgets.slint";
+import { I18n, Button, ButtonRole, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, ListRow, Scroll } from "widgets.slint";
 import { PixelModel, PixelCanvas, ToolRail } from "pixel.slint";
 
 export struct GlyphItem { text: string, code: string }
@@ -12,6 +12,7 @@ export global FontModel {
     in property <string> pack-title;
     in property <string> pack-state;
     in property <PillTone> pack-tone: PillTone.neutral;
+    in property <string> pack-path;
     in property <[GlyphItem]> glyphs;
     in property <int> current: -1;
     in property <string> characters;
@@ -22,6 +23,8 @@ export global FontModel {
     in property <int> baseline: 6;
     in property <int> advance: 6;
     in property <int> threshold: 128;
+    in property <int> offset-x: 0;
+    in property <int> offset-y: 0;
     in property <int> alignment: 1;
     in property <int> antialias: 0;
     in property <bool> busy;
@@ -43,17 +46,26 @@ component FormRow inherits HorizontalLayout {
 }
 
 export component FontLabView inherits HorizontalLayout {
+    // Kept from the original fix; the `visible` read below is a harmless
+    // leftover, not what makes the `changed` handler run (1.18 fires it anyway).
+    private property <int> glyph-current: FontModel.current;
+    changed glyph-current => {
+        glyphs.content-y = Scroll.into-view(glyph-current, Metrics.control-height + 4px,
+            glyphs.content-y, glyphs.visible-height, glyphs.content-height);
+    }
     spacing: 8px;
     property <int> preview-scale: 8;
     Panel {
-        width: 200px;
+        min-width: 200px;
+        preferred-width: 200px;
         VerticalLayout {
             padding: 10px;
             spacing: 8px;
             SectionTitle { text: I18n.tr(I18n.lang, "font.characters"); }
             if FontModel.glyphs.length == 0: Caption { text: FontModel.has-pack ? I18n.tr(I18n.lang, "font.selection.none") : I18n.tr(I18n.lang, "font.empty"); }
-            ListView {
+            glyphs := ListView {
                 vertical-stretch: 1;
+                visible: glyph-current >= -1;
                 for glyph[index] in FontModel.glyphs: ListRow {
                     text: glyph.text;
                     detail: glyph.code;
@@ -76,17 +88,20 @@ export component FontLabView inherits HorizontalLayout {
     if FontModel.has-pack: ToolRail { }
     Panel {
         horizontal-stretch: 1;
+        min-width: 240px;
         VerticalLayout {
             padding: 10px;
             spacing: 8px;
             HorizontalLayout {
                 spacing: 10px;
-                SectionTitle { text: FontModel.has-pack ? FontModel.pack-title : I18n.tr(I18n.lang, "font.title"); vertical-alignment: center; }
+                SectionTitle { text: FontModel.has-pack ? FontModel.pack-title : I18n.tr(I18n.lang, "font.title"); vertical-alignment: center; horizontal-stretch: 1; min-width: 0; overflow: elide; }
                 if FontModel.has-pack: StatusPill { text: FontModel.cell-w + " × " + FontModel.cell-h; }
                 if FontModel.has-pack: StatusPill { text: FontModel.pack-state; tone: FontModel.pack-tone; }
                 Rectangle { horizontal-stretch: 1; }
                 Button { text: I18n.tr(I18n.lang, "font.save_glyph"); role: ButtonRole.primary; enabled: FontModel.has-pack && !FontModel.busy; clicked => { FontModel.font-action("save"); } }
             }
+            // The pack path can be long: elide it instead of eating the columns.
+            if FontModel.has-pack: Caption { text: FontModel.pack-path; wrap: no-wrap; overflow: elide; }
             if FontModel.has-pack: Caption { text: I18n.tr(I18n.lang, "font.save_scope_hint"); }
             if FontModel.has-pack: HorizontalLayout {
                 spacing: 8px;
@@ -127,7 +142,8 @@ export component FontLabView inherits HorizontalLayout {
         }
     }
     Panel {
-        width: 340px;
+        min-width: 340px;
+        preferred-width: 340px;
         ScrollView {
             VerticalLayout {
                 padding: 10px;
@@ -171,6 +187,18 @@ export component FontLabView inherits HorizontalLayout {
                 FormRow {
                     label: I18n.tr(I18n.lang, "font.threshold");
                     SpinBox { value: FontModel.threshold; minimum: 0; maximum: 255; enabled: FontModel.font-path != "" && !FontModel.busy; edited(v) => { FontModel.edit("threshold", v); } }
+                }
+                // Offsets leave the exact built-in 5x7 path, so they need a TrueType
+                // source. They stay editable with no path set: a leftover offset is
+                // what makes a font file required, so disabling these rows with the
+                // path cleared would trap the form in a state that cannot generate.
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.offset_x");
+                    SpinBox { value: FontModel.offset-x; minimum: -64; maximum: 64; enabled: !FontModel.busy; edited(v) => { FontModel.edit("offset_x", v); } }
+                }
+                FormRow {
+                    label: I18n.tr(I18n.lang, "font.offset_y");
+                    SpinBox { value: FontModel.offset-y; minimum: -64; maximum: 64; enabled: !FontModel.busy; edited(v) => { FontModel.edit("offset_y", v); } }
                 }
                 FormRow {
                     label: I18n.tr(I18n.lang, "font.alignment");

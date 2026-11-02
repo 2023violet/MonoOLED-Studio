@@ -113,7 +113,7 @@ mono bridge --project path/to/project.oled.json --permission edit
 mono validate --project path/to/project.oled.json --json
 ```
 
-退出码保持不变：`0` 通过，`1` 有阻断项，`2` 参数或运行错误。带 `--json` 时错误也会以 JSON 打印到标准输出，同时保留标准错误上的 `ERROR:`/`FAIL:` 行。
+退出码保持不变：`0` 通过，`1` 校验发现阻断项，`2` 参数或运行错误；导出、交接或 C 头文件被发布门禁拒绝时也返回 `2`（`--json` 下错误码为 `E-EXPORT-BLOCKED`）。带 `--json` 时错误也会以 JSON 打印到标准输出，同时保留标准错误上的 `ERROR:`/`FAIL:` 行。
 
 ## 输出的确定性
 

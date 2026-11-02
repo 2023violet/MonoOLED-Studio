@@ -16,12 +16,14 @@ def workspace_version() -> str:
     return version.group(1)
 
 
-def test_slint_default_version_matches_cargo():
-    version = workspace_version()
-    text = (ROOT / 'apps' / 'mono-desktop' / 'ui' / 'main.slint').read_text(encoding='utf-8')
-    slint = re.search(r'version:\s*"([^"]+)"', text)
-    assert slint, 'AppModel has no default version'
-    assert slint.group(1) == version
+def test_about_version_comes_from_the_binary():
+    # The About dialog shows the version the binary was built as: the Slint
+    # property has no literal default, and startup sets it from Cargo.
+    ui = (ROOT / 'apps' / 'mono-desktop' / 'ui' / 'main.slint').read_text(encoding='utf-8')
+    assert re.search(r'in property <string> version;', ui), 'AppModel.version must have no literal default'
+    assert not re.search(r'version:\s*"[^"]*"', ui), 'a literal version default can drift from Cargo'
+    main = (ROOT / 'apps' / 'mono-desktop' / 'src' / 'main.rs').read_text(encoding='utf-8')
+    assert 'set_version(env!("CARGO_PKG_VERSION")' in main
 
 
 def test_current_state_records_product_version():

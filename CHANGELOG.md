@@ -1,5 +1,83 @@
 # Changelog
 
+## Unreleased
+
+This section is the 2026-10-30 to 2026-11-02 work (truthful controls, the export gate, Designer performance, project-root containment). It was developed on a line that branched at 2.0.3, never shipped, and is now integrated onto 2.3.0. Where both lines fixed the same defect, one implementation was kept; those items are listed under **Integration** instead of being announced twice.
+
+### Compatibility (contract changes)
+
+- **The release gate now covers every scene export.** A scene with a blocking finding can no longer be written as a C header through the desktop menu, `mono c-header`, or the Automation API's `export.c_header`. All three now behave like `export.current`/`export.all`: no export artefact is written, not even the `reference/` and `golden/` directories. The CLI prints `FAIL:` and exits 2 (with `--json`, one object with `"ok": false` and `E-EXPORT-BLOCKED`), the API returns `INVALID_REQUEST` naming every blocker, and the desktop opens a dialog that lists the blocking findings and can jump to each element. The desktop menu and `mono c-header` also save the blockers as `validation_report.md`; the API's `export.c_header` writes no report. Successful exports are byte-identical to 2.3.0. Still outside the gate, on purpose: the Output Workbench and `export.bitmap_data` can render the current scene into a file of their own (gating them would change API 1.3 behaviour and needs its own decision), and so can the review pack, which shows every frame's findings next to its code.
+- **Viewing a screen no longer rewrites the project.** Switching screens, including from the screen gallery, previously saved `project.oled.json` immediately; it now only changes the session. The active screen is persisted by the next explicit save, so after a restart a project reopens on the last *saved* screen. The Automation API's `project.open_screen` still writes, as documented for API compatibility.
+- **Scene members must stay inside the project root.** A project whose images, sequence directories, font headers or font packs use `../` or an absolute path outside the root validated and exported under 2.3.0; it now reports `ASSET_PATH_ESCAPE`, the export is blocked, and the scene no longer renders: the Designer shows a render failure for the whole scene, `mono simulate` exits 2 instead of 0, the screen gallery, the review evidence panel and the review pack cannot render it, the Output Workbench's current-scene source fails, and the Automation API's `render.current`, its other rendering methods and the current-scene source of `export.bitmap_data` return `INVALID_REQUEST`. Move the file into the project and reference it relatively. The check is lexical: a link or junction inside the project that points outside it is not detected. On Windows an absolute member may differ from the root in ASCII case or use the `\\?\` prefix; an 8.3 alias or a linked spelling of the root is refused. Known limitation: in a case-sensitive Windows folder, such an absolute member can name a sibling whose name differs from the root only in ASCII case. Relative members, including a sequence's `dir` plus `pattern`, are compared exactly. A standalone scene's own `project_root` defines its root (`docs/SCENE_SCHEMA.md`).
+- **A blocked export's report now ends at the first blocking frame.** 2.3.0 listed every frame of the matrix; `validation_report.md`, `<zip>.validation.md` and the blocked dialog now cover the frames checked up to that point, and the report says how many of the matrix that was. This applies to the Automation API's `export.current`, `export.all` and `export.code_ai_handoff` too. Use `batch-validate` for the whole matrix.
+- `export_scene` now refuses a repeated frame name instead of keeping the last one. Selection through the CLI, the desktop app and the Automation API already produces unique names, so only direct library callers can see this.
+
+### Added
+
+- Inspector → **Schema** (State schema) edits the scene's state variables (type, initial value, range or value list) and the relations between them, showing the engine's own validation while you type. An accepted edit is one undo step and re-seeds the preview at once.
+- Inspector → **Rules** (Design rules) edits the project's required elements, zones and baseline groups. Findings follow immediately, without reopening the project. These live in `project.oled.json` and are written as you edit them, so the title's `•` does not track that file; the panel names what it wrote.
+- The Navigator renames a page. **Rename** moves the scene file with it and re-opens it under the new id.
+- The canvas toolbar's **Zones** toggle (and the `canvas.zones` preference) draws the project's design zones over the canvas, in the same editor-only layer as the grid and bounds.
+- The status bar shows what a running background job is doing (`Export · 12/40`) and carries a **Cancel** control; the Edit menu names what the next undo reverts ("Undo: move battery").
+- Font Lab can offset the glyphs horizontally and vertically. The generator always supported `GenerateOptions::offset`; no control could set it.
+
+### Performance
+
+- A refused export no longer validates the rest of the state matrix. The gate stops at the first frame with a blocking finding and the report says how many frames were checked; a 1005-element, 560-state blocked export drops from 464 s to under 1 s and from 814 MB to about 9 MB private memory. Clean exports still validate every state before writing anything. `batch-validate` keeps evaluating the full matrix on purpose.
+- Large exports keep memory flat: `ui_contract.json` and `UI_SPEC.md` are streamed frame by frame through incremental atomic writes (temp file + fsync + rename) instead of keeping every frame's contract in memory. A clean 1000-element × 560-state export (233 MB of artefacts) peaks at about 18 MB private memory. A 10 000-element matrix used to abort at multi-GB private usage; blocked, it now refuses in under 0.5 s at about 53 MB. A clean 10 000-element export has not been measured.
+- A Designer edit no longer pays for every element twice. The canvas overlay and hit-testing read the rects the renderer already resolved instead of asking `geometry(id)` per element, which cloned the whole element list — and re-rendered text or digits elements on a scratch scene — once per element. On a 1005-element scene the canvas refresh drops from 375–419 ms to 9–11 ms and the worst edit handler from 445–492 ms to 20–29 ms; on a 50-digit scene the canvas refresh drops from 39–44 ms to 16–18 ms. Elements with a complete zone or explicit rect are unchanged; only renderer-sized elements take the new path. `EditorSession::geometry` now clones one element instead of the list (text and digits still render it on a scratch scene), and its scene-wide helper is shared with smart guides.
+- Validation runs on a worker thread for geometry, state and rule edits and for screen opens: the handler passes a snapshot and the 60 ms job tick applies only the newest result, so findings can lag one edit by up to about two passes plus two 60 ms ticks (roughly 130 ms on the fixture, 170 ms at 1005 elements, 290 ms on 50 digits), and sustained editing shows no new findings until it pauses. A superseded pass may still be finishing, but its result is dropped. A scripted `dump:findings` still waits for the pending result, so its answers do not change. On the 50-digit scene the synchronous pass was 131–151 ms of the edit handler; the handler now measures 16–23 ms across runs, still above the 16 ms budget.
+- All figures in this section were measured before the integration with 2.3.0 and have not been re-run on it.
+- The desktop bench measures the Designer edit path (`designer_edit_p95_ms` plus per-panel `panel_*_ms`, including the worker pass, a state edit and a full refresh), and the new `tools/BENCH_DESIGNER_PROJECT.py` builds throwaway large scenes for it. `docs/BUILD.md` and `docs/AI_HANDOFF.md` document both.
+
+### Fixed
+
+- Scene members can no longer read outside the project root. Image assets, sequence directories and joined `{n}`/`{d}` patterns, font headers and font packs are resolved with a containment check: `../outside.png`, absolute paths outside the root and `pattern` traversal are reported as `ASSET_PATH_ESCAPE` by validation and refused by the renderer with `E-CORE-PATH` instead of being opened. Font Lab no longer lists or opens a scene `font_pack` outside the project, and a font pack's fingerprint no longer reads a glyph asset outside the pack before the load rejects it.
+- Keyboard shortcuts (for example `Ctrl+S`) keep working after a dialog closes: the dialogs live inside the shortcut scope, so closing one no longer leaves the window without a focus owner. No chord or bare tool key fires behind a modal, including the new-project, annotation and gallery overlays.
+- Every dialog closes with Esc or a click on the dimmed backdrop; the Pixel import dialog also releases its converted image instead of leaking it.
+- Preference text fields commit on Enter and are debounced otherwise; a hand-edited nested shortcut key still resolves next to the flat ones. A failed preferences write no longer clears the pending flag, so the value the row shows is retried instead of silently lost.
+- One element now yields one diagnostic per distinct problem (a single out-of-bounds placeholder no longer reports twice), and a blocked handoff keeps its report at `<zip>.validation.md` instead of pointing at a deleted temporary directory. The thumbnail wall writes its report to `.oled/validation_report.md`. A blocked report states that validation stopped at the first blocking frame and how many frames were checked; the blocked dialog and status bar count only those frames.
+- Automation's `export.c_header` refuses with every blocking finding, not only the first one.
+- Batch validation uses the same representative state set and design rules as export and handoff, so the panel and the batch report agree.
+- The Navigator scrolls to the selected page, element or glyph; a selection made from the canvas or with the arrow keys is no longer hidden below the fold.
+- Font Lab keeps all three columns at the minimum window width (the generator column is no longer clipped by a long pack path, which now elides).
+- Design commands without a document report that instead of silently doing nothing, and adding a screen without a project says so.
+- The View menu shows check marks, About links to the repository and documentation and shows the version the binary was built as, and the status bar no longer keeps the previous project's message.
+- The canvas overlay switches (grid, bounds, rulers, zones) are restored when a project opens, not only after you touch one.
+- The State schema and Design rules panels refresh on every edit path, including the ones that go through undo and redo.
+- The Output Workbench's scan-mode names, its empty-source error and its truncated-preview note were hardcoded Chinese and ignored the language setting; so was the status bar's "Pixel Truth" line. All are translated now, and the workbench now reports a real render failure instead of blaming a missing project.
+- The user manual described a marquee (rubber-band) selection the canvas does not implement; it now says pressing empty canvas clears the selection, and documents the rename, zones, schema and design-rules entries.
+- `AGENTS.md` claimed that opening a screen writes the project manifest back. It does not (see Compatibility above).
+- Font Lab: clearing the font file disabled the two offset rows, so an offset you had already set could not be cleared and every later generation failed while blaming the characters for needing a TrueType font. The rows stay editable, and the engine now says when it is the offset that left the built-in path.
+- A glyph offset outside ±64 px is refused by the generator instead of overflowing its own arithmetic, which the Automation API's `font.generate` could reach directly (the Font Lab form already clamped).
+
+### Removed
+
+- Controls that had never been wired: the multi-document tab model (`AppModel.tabs`, `struct DocTab`), `AppModel.toast`, and the `appearance.reduced_motion` and `performance.overlay` preferences, which were stored, shown in Settings, and read by nothing. The `appearance.color_theme` default is gone too: no row showed it and nothing read it.
+- The Preferences rows for drag preview, validation timing and asset-cache size. Nothing read those values either; they stay in an existing `preferences.json` as inert leftovers.
+- Model properties that no view read (`DesignerModel.selection-count`, `OutputModel.profile-source`, `OutputModel.profiles`) and translation keys that no view or controller asked for. Both language tables now hold the same 699 keys in the same order.
+
+### Integration (2.3.0 and the 2026-10-30 line fixed the same thing)
+
+- Undo back to the saved scene: `EditorSession` keeps the saved-snapshot comparison (`is_dirty()`), which also marks a restored autosave as unsaved. 2.3.0's fingerprint counter on the session is gone. Pixel documents keep 2.3.0's own save point.
+- The unsaved-changes prompt keeps 2.3.0's wording per document (scene, Pixel, Font Lab, several).
+- Shortcuts come from 2.3.0's command registry; a chord that another command already uses is still refused.
+- The Inspector keeps 2.3.0's playback and annotation tab next to the new Schema and Rules tabs.
+- The Pixel Studio header labels a document "Standalone PNG · not part of the project" only when it is not a project asset opened from the Designer.
+- Opening a multi-screen project still names its blockers in the status bar, once the worker's validation result arrives.
+
+### Security
+
+- `pulldown-cmark` 0.13.6 (via Slint's markdown support) fixes RUSTSEC-2026-0414 and RUSTSEC-2026-0433, exponential event growth and quadratic parsing with `ENABLE_WIKILINKS`. The option is off by default here; the lockfile is bumped so `cargo deny` stays clean.
+
+### Internal
+
+- `mono_project::atomic::AtomicWriter` writes incrementally to a sibling temp file and only fsyncs and renames on `finish`; dropping it unfinished removes the temp file, so an aborted export leaves no partial contract or spec. Golden and reference frames are independent files, and batches already written stay on disk.
+- `mono_core::render::{member_path, resolve_member, joined_member}` are the single checked member resolvers; the renderer and the validator share them.
+- Four scans fail the build when a control stops telling the truth. Every property and callback of the six model globals is used on both sides of the Slint bridge. Every preference row reaches an accessor outside its own row table. `strings.json` is exactly paired in content and order, duplicate-free and orphan-free, with no user-facing copy bypassing it. `tools/tests/test_docs_match_code.py` pins the manual's claims to the code that proves them. `tools/CHECK_GUI_TRUST.py` runs end-to-end cases against the real binary, and a source test keeps every overlay, including the ones 2.3.0 added, inside the shortcut scope.
+- The scripted `later:` and `select-later:` hooks skip their step while a nested dialog holds the app state, instead of panicking on the second borrow.
+- Budgets, attribution and the three out-of-scope measurements (stroke, evidence pack, cold start) are recorded in `docs/rewrite/G4_EVIDENCE.md` §4. The 1005-element stress scene (20–29 ms across runs) and the 50-digit scene (16–23 ms) still exceed the 16 ms budget per edit; the remaining floor is the framebuffer rebuild, the overlay model build and V1's whole-array undo snapshot.
+
 ## 2.3.0 - 2026-10-28
 
 This release turns the static preview into a device-level verification and review

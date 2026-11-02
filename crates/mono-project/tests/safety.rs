@@ -1,14 +1,17 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Rust-only hardening tests from the G1 agent review (no V1 corpus equivalent).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use mono_core::FrameBuffer;
-use mono_core::render::render_scene;
+use mono_core::render::{PATH_ESCAPE, joined_member, member_path, render_scene};
 use mono_core::state::{State, eval_do};
+use mono_project::editor::EditorSession;
 use mono_project::export::validate_scene;
+use mono_project::fontpack_io::{fontpack_fingerprint, load_font_pack};
 use mono_project::image_io::decode_image;
 use mono_project::resources::DiskResources;
+use mono_project::scene_io::load_scene;
 use serde_json::{Map, Value, json};
 
 fn bmp_header(width: u32, height: u32, bpp: u16) -> Vec<u8> {
@@ -112,6 +115,369 @@ fn validator_reports_out_of_bounds_for_extreme_coordinates() {
         findings.iter().any(|f| f.code == "OUT_OF_BOUNDS"),
         "{findings:?}"
     );
+}
+
+#[test]
+fn scene_members_cannot_escape_the_project_root() {
+    let base = std::env::temp_dir().join(format!("mono-escape-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    // A decodable 2x2 image declared as 1x1. Reading it would add a size finding,
+    // so the absence of one below proves the file was never opened.
+    let outside = base.join("outside.bmp");
+    let mut bmp = bmp_header(2, 2, 24);
+    bmp.extend([0; 16]);
+    std::fs::write(&outside, &bmp).unwrap();
+    std::fs::write(root.join("inside.bmp"), &bmp).unwrap();
+    let inside: Map<String, Value> = serde_json::from_value(json!({
+        "canvas": {"w": 8, "h": 8},
+        "states": {},
+        "elements": [{
+            "id": "probe", "type": "image", "asset": "inside.bmp",
+            "x": 0, "y": 0, "w": 1, "h": 1
+        }]
+    }))
+    .unwrap();
+    let control = validate_scene(&inside, &root, None, &mut DiskResources::new());
+    assert!(
+        control.iter().any(|f| f.code == "ASSET_SIZE_MISMATCH"),
+        "the same file inside the root must decode and mismatch: {control:?}"
+    );
+
+    let mut element = json!({
+        "id": "probe", "type": "image", "asset": "../outside.bmp",
+        "x": 0, "y": 0, "w": 1, "h": 1
+    });
+    let scene: Map<String, Value> = serde_json::from_value(json!({
+        "canvas": {"w": 8, "h": 8},
+        "states": {},
+        "elements": [element.clone()]
+    }))
+    .unwrap();
+    let findings = validate_scene(&scene, &root, None, &mut DiskResources::new());
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.code == "ASSET_PATH_ESCAPE" && f.is_blocking()),
+        "{findings:?}"
+    );
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.code == "ASSET_SIZE_MISMATCH" || f.code == "NON_BINARY_ASSET"),
+        "an escaping asset must not be opened: {findings:?}"
+    );
+    let error = render_scene(&scene, &root, &State::new(), &mut DiskResources::new()).unwrap_err();
+    assert_eq!(error.code, PATH_ESCAPE);
+
+    element["asset"] = json!(outside.to_string_lossy());
+    let scene: Map<String, Value> = serde_json::from_value(json!({
+        "canvas": {"w": 8, "h": 8},
+        "states": {},
+        "elements": [element]
+    }))
+    .unwrap();
+    let findings = validate_scene(&scene, &root, None, &mut DiskResources::new());
+    assert!(
+        findings.iter().any(|f| f.code == "ASSET_PATH_ESCAPE"),
+        "{findings:?}"
+    );
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// `outside` is a decodable 2x2 image declared as 1x1 by every scene below, so a
+/// size finding would mean it was opened.
+fn assert_escape_is_refused_unopened(element: Value, root: &Path) {
+    let scene: Map<String, Value> = serde_json::from_value(json!({
+        "canvas": {"w": 8, "h": 8},
+        "states": {"n": {"type": "int", "min": 0, "max": 0, "init": 0}},
+        "elements": [element]
+    }))
+    .unwrap();
+    let findings = validate_scene(&scene, root, None, &mut DiskResources::new());
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.code == "ASSET_PATH_ESCAPE" && f.is_blocking()),
+        "{findings:?}"
+    );
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.code == "ASSET_SIZE_MISMATCH" || f.code == "NON_BINARY_ASSET"),
+        "an escaping member must not be opened: {findings:?}"
+    );
+    let state: State = serde_json::from_value(json!({"n": 0})).unwrap();
+    let error = render_scene(&scene, root, &state, &mut DiskResources::new());
+    assert_eq!(error.unwrap_err().code, PATH_ESCAPE);
+}
+
+#[test]
+fn sequence_and_digit_members_cannot_escape_the_project_root() {
+    let base = std::env::temp_dir().join(format!("mono-pattern-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("project");
+    std::fs::create_dir_all(root.join("assets")).unwrap();
+    std::fs::create_dir_all(base.join("outside")).unwrap();
+    let mut bmp = bmp_header(2, 2, 24);
+    bmp.extend([0; 16]);
+    std::fs::write(base.join("outside.bmp"), &bmp).unwrap();
+    for n in 0..10 {
+        std::fs::write(base.join("outside").join(format!("d{n}.bmp")), &bmp).unwrap();
+    }
+
+    let sequence = |dir: &str, pattern: &str| {
+        json!({
+            "id": "seq", "type": "image_seq", "dir": dir, "pattern": pattern,
+            "bind": "n", "count": 1, "x": 0, "y": 0, "w": 1, "h": 1
+        })
+    };
+    let digits = |dir: &str, pattern: &str| {
+        json!({
+            "id": "digits", "type": "digits", "dir": dir, "pattern": pattern,
+            "digit_w": 1, "digit_h": 1, "bind": "n", "x": 0, "y": 0
+        })
+    };
+    for element in [
+        sequence("assets", "../../outside.bmp"),
+        sequence("../outside", "d{n}.bmp"),
+        digits("assets", "../../outside/d{d}.bmp"),
+        digits("../outside", "d{d}.bmp"),
+    ] {
+        assert_escape_is_refused_unopened(element, &root);
+    }
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn font_members_cannot_escape_the_project_root() {
+    let base = std::env::temp_dir().join(format!("mono-font-escape-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    for element in [
+        json!({"id": "header", "type": "text", "text": "A",
+               "font_header": "../outside.h", "x": 0, "y": 0}),
+        json!({"id": "pack", "type": "bitmap_text", "text": "A",
+               "font_pack": "../outside-pack", "x": 0, "y": 0}),
+    ] {
+        let scene: Map<String, Value> = serde_json::from_value(json!({
+            "canvas": {"w": 8, "h": 8},
+            "states": {},
+            "elements": [element]
+        }))
+        .unwrap();
+        let findings = validate_scene(&scene, &root, None, &mut DiskResources::new());
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.code == "ASSET_PATH_ESCAPE" && f.is_blocking()),
+            "{findings:?}"
+        );
+        let error =
+            render_scene(&scene, &root, &State::new(), &mut DiskResources::new()).unwrap_err();
+        assert_eq!(error.code, PATH_ESCAPE);
+    }
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// The fingerprint runs before the load, so it must apply the same containment:
+/// a file outside the pack may not influence it, which means it was not read.
+#[test]
+fn a_font_pack_fingerprint_never_reads_outside_the_pack() {
+    let base = std::env::temp_dir().join(format!("mono-pack-print-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let pack = base.join("project").join("pack");
+    std::fs::create_dir_all(&pack).unwrap();
+    let outside = base.join("outside.bin");
+    std::fs::write(&outside, b"one").unwrap();
+    std::fs::write(pack.join("inside.bin"), b"one").unwrap();
+    std::fs::write(
+        pack.join("fontpack.json"),
+        json!({
+            "schema": 1, "name": "x", "cell": {"w": 5, "h": 8},
+            "glyphs": {
+                "A": {"asset": "../../outside.bin"},
+                "B": {"asset": "inside.bin"}
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let first = fontpack_fingerprint(&pack).unwrap();
+    std::fs::write(&outside, b"two").unwrap();
+    assert_eq!(
+        fontpack_fingerprint(&pack).unwrap(),
+        first,
+        "the fingerprint followed a glyph asset outside the pack"
+    );
+    std::fs::write(pack.join("inside.bin"), b"two").unwrap();
+    assert_ne!(fontpack_fingerprint(&pack).unwrap(), first);
+    assert!(load_font_pack(&pack).is_err());
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn an_unanchored_root_still_contains_its_members() {
+    let root = Path::new(".");
+    assert_eq!(
+        member_path(root, Path::new("assets/a.png")).unwrap(),
+        Path::new("assets/a.png")
+    );
+    for climbing in ["../a.png", "../../a.png", "assets/../../a.png"] {
+        assert_eq!(
+            member_path(root, Path::new(climbing)).unwrap_err().code,
+            PATH_ESCAPE,
+            "{climbing}"
+        );
+    }
+    let absolute = std::env::temp_dir().join("a.png");
+    assert_eq!(member_path(root, &absolute).unwrap_err().code, PATH_ESCAPE);
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_containment_ignores_case_and_the_verbatim_prefix() {
+    let root = Path::new(r"C:\Project\Scene");
+    for inside in [
+        r"C:\PROJECT\SCENE\a.png",
+        r"c:\project\scene\assets\a.png",
+        r"\\?\C:\Project\Scene\a.png",
+    ] {
+        assert!(member_path(root, Path::new(inside)).is_ok(), "{inside}");
+    }
+    for outside in [
+        r"C:\Project\Scene2\a.png",
+        r"C:\Project\a.png",
+        r"\\?\C:\Project\a.png",
+        r"D:\Project\Scene\a.png",
+    ] {
+        assert_eq!(
+            member_path(root, Path::new(outside)).unwrap_err().code,
+            PATH_ESCAPE,
+            "{outside}"
+        );
+    }
+}
+
+/// NTFS names are not Unicode-folded: `\u{212A}it` (KELVIN SIGN) and `kit` are two
+/// directories, though `to_lowercase` makes them equal. A relative member keeps
+/// the root's own spelling, so a sibling can never compare as the root.
+#[cfg(windows)]
+#[test]
+fn windows_containment_does_not_fold_unicode_or_relative_members() {
+    let root = Path::new(r"C:\ws\kit");
+    for outside in [
+        "../\u{212A}it/secret.png",
+        r"C:\ws\\u{212A}it\secret.png",
+        r"C:\ws\KIT\..\\u{212A}it\secret.png",
+        "../KIT/a.png",
+    ] {
+        assert_eq!(
+            member_path(root, Path::new(outside)).unwrap_err().code,
+            PATH_ESCAPE,
+            "{outside}"
+        );
+    }
+}
+
+/// A `dir` and its `pattern` are one relative member: they keep the root's own
+/// spelling, so a climb back in through another case is a climb out, as it is for
+/// `image`. A folder can be case-sensitive, so `KIT` may be a sibling of `kit`.
+#[cfg(windows)]
+#[test]
+fn windows_sequence_members_are_compared_exactly_like_other_relative_members() {
+    let base = std::env::temp_dir().join(format!("mono-seq-case-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let root = base.join("kit");
+    std::fs::create_dir_all(root.join("assets/sub")).unwrap();
+    let mut bmp = bmp_header(2, 2, 24);
+    bmp.extend([0; 16]);
+    std::fs::write(root.join("assets/sub/0.bmp"), &bmp).unwrap();
+    for d in 0..10 {
+        std::fs::write(root.join(format!("assets/sub/d{d}.bmp")), &bmp).unwrap();
+    }
+
+    assert_escape_is_refused_unopened(
+        json!({"id": "seq", "type": "image_seq", "dir": "assets",
+               "pattern": "../../KIT/assets/sub/{n}.bmp",
+               "bind": "n", "count": 1, "x": 0, "y": 0, "w": 1, "h": 1}),
+        &root,
+    );
+    assert_escape_is_refused_unopened(
+        json!({"id": "digits", "type": "digits", "dir": "assets",
+               "pattern": "../../KIT/assets/sub/d{d}.bmp",
+               "digit_w": 1, "digit_h": 1, "bind": "n", "x": 0, "y": 0}),
+        &root,
+    );
+
+    // The Inspector's geometry resolves the sequence on its own path. No `w`/`h`
+    // here: an explicit rect would answer without touching the member.
+    let path = root.join("scene.json");
+    std::fs::write(
+        &path,
+        json!({
+            "canvas": {"w": 8, "h": 8},
+            "states": {"n": {"type": "int", "min": 0, "max": 0, "init": 0}},
+            "elements": [{"id": "seq", "type": "image_seq", "dir": "assets",
+                          "pattern": "../../KIT/assets/sub/{n}.bmp",
+                          "bind": "n", "count": 1, "x": 0, "y": 0}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let doc = load_scene(&path, Some(&root)).unwrap();
+    let mut session = EditorSession::new(doc).unwrap();
+    assert_eq!(session.geometry("seq").unwrap_err().code, PATH_ESCAPE);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// The `dir` is checked on its own: a pattern cannot bring an escaped `dir` back in.
+#[test]
+fn a_pattern_cannot_rescue_a_dir_outside_the_project() {
+    let root = Path::new("/ws/kit");
+    assert!(joined_member(root, "assets", "sub/0.png").is_ok());
+    assert_eq!(
+        joined_member(root, "../other", "../kit/a.png")
+            .unwrap_err()
+            .code,
+        PATH_ESCAPE
+    );
+}
+
+/// Nothing is joined when there is nothing to draw, so the `dir` has to be refused
+/// before the loop: an escape stays visible while the value or count is empty. The
+/// validator's own render would report it too, but without the element to jump to.
+#[test]
+fn an_escaped_dir_is_refused_even_when_no_file_is_joined() {
+    let root = Path::new("/ws/kit");
+    let scene: Map<String, Value> = serde_json::from_value(json!({
+        "canvas": {"w": 8, "h": 8},
+        "states": {"n": {"type": "int", "min": 0, "max": 0, "init": 0}},
+        "elements": [{"id": "seq", "type": "image_seq", "dir": "../outside",
+                      "pattern": "{n}.bmp", "bind": "n", "count": 0, "x": 0, "y": 0}]
+    }))
+    .unwrap();
+    let findings = validate_scene(&scene, root, None, &mut DiskResources::new());
+    assert!(
+        findings.iter().any(|f| f.code == "ASSET_PATH_ESCAPE"
+            && f.is_blocking()
+            && f.element_id.as_deref() == Some("seq")),
+        "{findings:?}"
+    );
+
+    let scene: Map<String, Value> = serde_json::from_value(json!({
+        "canvas": {"w": 8, "h": 8},
+        "elements": [{"id": "digits", "type": "digits", "dir": "../outside",
+                      "pattern": "{d}.bmp", "digit_w": 1, "digit_h": 1,
+                      "bind": "n", "x": 0, "y": 0}]
+    }))
+    .unwrap();
+    let state: State = serde_json::from_value(json!({"n": ""})).unwrap();
+    let error = render_scene(&scene, root, &state, &mut DiskResources::new());
+    assert_eq!(error.unwrap_err().code, PATH_ESCAPE);
 }
 
 #[test]

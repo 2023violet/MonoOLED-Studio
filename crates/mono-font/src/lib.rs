@@ -162,6 +162,12 @@ pub fn rasterize_characters_with_progress(
     if !matches!(options.antialias_scale, 1 | 2 | 4) {
         return Err(CoreError::invalid("antialias_scale must be 1, 2, or 4"));
     }
+    // The offsets are multiplied by the supersample scale and added to the
+    // baseline below, so an unbounded value overflows instead of drawing.
+    // Font Lab's form clamps to the same range; this is every caller's guard.
+    if options.offset.0.abs() > 64 || options.offset.1.abs() > 64 {
+        return Err(CoreError::invalid("offset must be between -64 and 64"));
+    }
     pack.set_metrics(None, None)?;
     let mut chars: Vec<char> = Vec::new();
     for c in characters.chars() {
@@ -197,10 +203,14 @@ pub fn rasterize_characters_with_progress(
         return Ok(chars);
     }
     let Some(font) = font else {
-        return Err(CoreError::new(
-            "E-FONT-FILE",
-            "a TrueType font is required for characters outside the built-in OLED font",
-        ));
+        // An offset also leaves the built-in path, and blaming the characters
+        // would send the user hunting for a font file they already have.
+        let message = if (ox, oy) != (0, 0) {
+            "a TrueType font is required because the built-in OLED font carries no glyph offset"
+        } else {
+            "a TrueType font is required for characters outside the built-in OLED font"
+        };
+        return Err(CoreError::new("E-FONT-FILE", message));
     };
     let fitted = fit_font_size_for_cell(
         font,
@@ -459,5 +469,34 @@ mod centered_tests {
         assert!(render_centered_cells("A", None, 12, (12, 12), 128).is_err());
         assert!(render_centered_cells("", None, 12, (12, 16), 128).is_err());
         assert!(render_centered_cells("A", None, 12, (12, 16), 256).is_err());
+    }
+
+    #[test]
+    fn an_out_of_range_offset_is_refused_before_the_arithmetic() {
+        // `offset.0 * antialias_scale` would overflow a debug build's i64.
+        let mut pack = FontPack::with_recommended("t", (12, 16)).unwrap();
+        let options = GenerateOptions {
+            offset: (i64::MAX, 0),
+            ..GenerateOptions::default()
+        };
+        let error = rasterize_characters(&mut pack, "A", None, &options).unwrap_err();
+        assert_eq!(error.message, "offset must be between -64 and 64");
+    }
+
+    #[test]
+    fn an_offset_without_a_font_blames_the_offset() {
+        // A non-zero offset leaves the built-in 5x7 path, so "characters outside
+        // the built-in OLED font" would send the user to look for a font file.
+        let mut pack = FontPack::with_recommended("t", (5, 8)).unwrap();
+        let options = GenerateOptions {
+            offset: (3, 0),
+            ..GenerateOptions::default()
+        };
+        let error = rasterize_characters(&mut pack, "A", None, &options).unwrap_err();
+        assert_eq!(error.code, "E-FONT-FILE");
+        assert!(
+            error.message.contains("no glyph offset"),
+            "wrong cause: {error}"
+        );
     }
 }

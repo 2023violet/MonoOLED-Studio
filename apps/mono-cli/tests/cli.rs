@@ -270,3 +270,55 @@ fn review_pack_rejects_an_unknown_schema_version() {
     assert!(!output.exists());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// A scene the release gate refuses (`../outside.png` escapes the project) in
+/// a throwaway copy of the fixture's scene, standalone with its own root.
+fn escaping_scene(tag: &str) -> (std::path::PathBuf, String) {
+    let root = std::env::temp_dir().join(format!("mono-cli-gate-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let scene = serde_json::json!({
+        "schema_version": 1,
+        "project_root": ".",
+        "canvas": {"w": 128, "h": 32},
+        "states": {},
+        "elements": [{"id": "logo", "type": "image", "asset": "../outside.png", "x": 0, "y": 0}]
+    });
+    let path = root.join("scene.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&scene).unwrap()).unwrap();
+    (root, path.to_string_lossy().into_owned())
+}
+
+#[test]
+fn a_blocked_export_stays_one_json_object_with_exit_two() {
+    let (root, scene) = escaping_scene("export");
+    let output = root.join("out").to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run(&["export", "--scene", &scene, "--output", &output, "--json"]);
+    assert_eq!(code, 2, "stdout: {stdout} stderr: {stderr}");
+    let value = json_of(&stdout);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["exit_code"], 2);
+    assert_eq!(value["error"]["code"], "E-EXPORT-BLOCKED");
+    assert!(
+        !root.join("out/golden").exists(),
+        "a refused export writes no artefact"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn validate_json_reports_an_escaping_member_as_blocking() {
+    let (root, scene) = escaping_scene("validate");
+    let (code, stdout, stderr) = run(&["validate", "--scene", &scene, "--json"]);
+    // 1: the scene was validated and has a blocking finding (2 is a usage error).
+    assert_eq!(code, 1, "stderr: {stderr}");
+    let value = json_of(&stdout);
+    let findings = value["findings"].as_array().expect("findings array");
+    assert!(
+        findings
+            .iter()
+            .any(|f| f["code"] == "ASSET_PATH_ESCAPE" && f["blocking"] == true),
+        "{value}"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

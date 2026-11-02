@@ -17,10 +17,10 @@ use slint::Global;
 
 use crate::app::{App, Prompt, model, ss};
 use crate::canvas::{image_from_pixels, image_with_colors};
-use crate::i18n::trf;
+use crate::i18n::{tr, trf};
 use crate::pixel::{PixelOrigin, PixelStudio, ZOOMS, default_symbol, load_import_source};
 use crate::workbench::{MODES, SOURCES, bitmap_item, font_items, merged_profiles};
-use crate::{OutputModel, PillTone, PixelModel, ProfileItem};
+use crate::{OutputModel, PillTone, PixelModel};
 
 pub const ANCHORS: [&str; 9] = [
     "top-left",
@@ -595,6 +595,14 @@ impl App {
         }
     }
 
+    /// Cancel / Escape: close the dialog and drop any half-built import state.
+    pub fn pixel_dialog_dismissed(&mut self) {
+        self.import = None;
+        if let Some(ui) = self.ui.upgrade() {
+            PixelModel::get(&ui).set_dialog(0);
+        }
+    }
+
     pub fn pixel_dialog_accepted(&mut self) {
         let Some(ui) = self.ui.upgrade() else { return };
         let pm = PixelModel::get(&ui);
@@ -638,8 +646,7 @@ impl App {
                         pm.set_dialog(0);
                         return Ok(());
                     }
-                    let root = self.project_root().unwrap_or_default();
-                    let pack = load_font_pack(&root.join(&pack_id))?;
+                    let pack = load_font_pack(&self.font_pack_root(&pack_id)?)?;
                     let (x, y) = (i64::from(pm.get_text_x()), i64::from(pm.get_text_y()));
                     let (w, h) = insert_fontpack_text(
                         &mut self.pixel.doc,
@@ -780,7 +787,6 @@ impl App {
         let merged = merged_profiles(&saved);
         let in_project = saved.iter().any(|(id, _)| *id == b.profile_id);
         om.set_profile_dirty(b.profile_dirty);
-        om.set_profile_source(i32::from(in_project));
         om.set_profile_is_default(active == b.profile_id);
         om.set_profile_state_text(ss(if b.profile_dirty {
             self.t("bench.profile_state.draft")
@@ -796,15 +802,6 @@ impl App {
         } else {
             PillTone::Neutral
         });
-        om.set_profiles(model(
-            merged
-                .iter()
-                .map(|(id, p)| ProfileItem {
-                    id: ss(id),
-                    name: ss(&p.name),
-                })
-                .collect(),
-        ));
         om.set_profile_names(model(merged.iter().map(|(_, p)| ss(&p.name)).collect()));
         om.set_profile(
             merged
@@ -814,7 +811,12 @@ impl App {
         );
         om.set_project_profiles(self.project.is_some());
         om.set_font_packs(model(self.font_packs.iter().map(ss).collect()));
-        om.set_modes(model(MODES.iter().map(|(label, _, _)| ss(label)).collect()));
+        om.set_modes(model(
+            MODES
+                .iter()
+                .map(|(key, _, _)| ss(tr(&self.lang, key)))
+                .collect(),
+        ));
         om.set_mode(b.mode_index() as i32);
         let pick = |key: &str, first: &str| i32::from(b.field(key) != first);
         om.set_bit_order(pick("encoding.bit_order", "msb_first"));
@@ -852,7 +854,9 @@ impl App {
                 .collect(),
         ));
         om.set_message(ss(&b.message));
-        om.set_lines(model(b.display_text().split('\n').map(ss).collect()));
+        om.set_lines(model(
+            b.display_text(&self.lang).split('\n').map(ss).collect(),
+        ));
     }
 
     fn bench_apply(&mut self) {
@@ -996,22 +1000,21 @@ impl App {
                     .as_ref()
                     .map(mono_project::project::ProjectWorkspace::active_screen)
                     .unwrap_or_else(|| "scene".into());
-                let Some(fb) = self.current_framebuffer() else {
-                    return Err(CoreError::invalid(self.t("bench.no_project")));
-                };
+                // `current_framebuffer` already distinguishes "no document" from a
+                // render failure; relabelling both as one would hide the real cause.
+                let fb = self.current_framebuffer()?;
                 let rows: Vec<Vec<u8>> = fb.rows().map(<[u8]>::to_vec).collect();
                 Ok(vec![bitmap_item(&name, &rows, &profile)?])
             }
             "font" => {
-                let root = self
-                    .project_root()
+                self.project_root()
                     .ok_or_else(|| CoreError::invalid(self.t("bench.no_project")))?;
                 let pack_id = self
                     .font_packs
                     .get(self.bench_font_index())
                     .cloned()
                     .ok_or_else(|| CoreError::invalid(self.t("pixel.font_missing")))?;
-                let pack = load_font_pack(&root.join(pack_id))?;
+                let pack = load_font_pack(&self.font_pack_root(&pack_id)?)?;
                 font_items(&pack, &self.bench.characters, &profile)
             }
             _ => {
@@ -1037,9 +1040,10 @@ impl App {
     }
 
     pub fn bench_generate(&mut self) {
+        let lang = self.lang.clone();
         let result = self.bench_items().and_then(|items| {
             let symbol = items.first().map(|i| i.name.clone()).unwrap_or_default();
-            self.bench.generate(&items, &symbol)
+            self.bench.generate(&lang, &items, &symbol)
         });
         match result {
             Ok(()) => self.bench.message.clear(),

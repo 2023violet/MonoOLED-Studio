@@ -1,0 +1,166 @@
+# TASK-014 — Integrate the Unshipped 2026-10-30 Line onto 2.3.0
+
+Status: VERIFY
+Review Status: PENDING (no independent review yet)
+
+## Goal
+
+Bring the unshipped line (TASK-010 to TASK-013, formerly numbered TASK-004 to TASK-007 on that line) onto `origin/main` at 2.3.0, so that one history carries both. Where both lines fixed the same defect, keep one implementation. Keep every gate green. Do not ship, tag or push.
+
+## Background
+
+Both lines branched at `v2.0.3` and both started from the 2026-10-24 experience report.
+
+- `origin/main` released 2.0.4, 2.0.5, 2.1.0, 2.2.0, 2.2.1 and 2.3.0, with its own TASK-004 to TASK-009.
+- The local line made eight commits (truthful controls, the export gate, Designer performance, project-root containment). Its "2.1.0" version bump was never tagged or pushed.
+
+The user reviewed an inventory of the two lines on 2026-11-02 and approved this plan ("按这个方案做"):
+
+- `origin/main` is the base;
+- the local line's 2.1.0 release commit is not shipped, and its notes become `Unreleased`;
+- duplicate fixes are reconciled one by one;
+- the local tasks are renumbered to TASK-010 to TASK-013;
+- TASK-006/TASK-007's missing independent review stays a separate item;
+- the version, push and tag are the user's.
+
+## Current Problem
+
+A trial merge (`git merge-tree`) left 26 files in conflict, the largest being:
+
+- `app.rs`: about 1960 lines;
+- `strings.json`: 34 hunks;
+- `main.rs`, `main.slint`, `i18n.rs` and `prefs_ui.rs`.
+
+The four `.ai/tasks/TASK-004..007.md` files were added on both sides with different content. The two version numbers collide (two different "2.1.0" releases).
+
+Some semantic conflicts merged without any text conflict:
+
+- the release gate and member containment met paths 2.3.0 added (review pack, gallery, review panel, CLI `--json`);
+- "Pixel Studio is standalone" met 2.3.0's asset-origin documents;
+- the removed Inspector Play button met 2.3.0's real playback;
+- synchronous validation on open met the worker-thread validation.
+
+## Evidence
+
+- Merge on branch `integrate/2.4.0` from `origin/main` (merge commit, no rebase), local `main` merged in.
+- Before the fixes below, `cargo test -p mono-desktop` had 7 failures, all caught by the unshipped line's scans:
+  - dead model bindings;
+  - unread preference rows;
+  - orphaned and missing translation keys;
+  - a scan anchor 2.3.0 had renamed;
+  - 2.3.0's open-project blocker test assuming synchronous validation.
+- `python -m pytest tools/tests`: 2.3.0's version test required a literal version default in `main.slint`, which the unshipped line had removed on purpose.
+- `cargo deny check`: RUSTSEC-2026-0433 against `pulldown-cmark` 0.13.5. It is published since and also fails on both parent lines.
+
+## Required Changes (as done)
+
+1. `.ai`:
+   - `origin/main`'s TASK-004..009 kept as they are.
+   - Local tasks saved as TASK-010..013, each with a renumbering note; their bodies are unchanged.
+   - References renamed in `.ai/DECISIONS.md`, `docs/rewrite/G4_EVIDENCE.md` and `tools/CHECK_GUI_TRUST.py`.
+2. Version stays 2.3.0. `CHANGELOG.md` gets one `Unreleased` section; 2.3.0 and older entries are untouched.
+3. Dirty state:
+   - `EditorSession` keeps the local saved-snapshot design (`is_dirty()`, `mark_clean()`, `mark_dirty()` for a restored autosave).
+   - 2.3.0's `saved_fingerprint` / `sync_dirty` / `mark_saved` on the session are removed, and its callers and tests use the snapshot API.
+   - `PixelDocument` keeps 2.3.0's own save point.
+4. Unsaved prompt keeps 2.3.0's per-document keys (`unsaved_context`). The local `DirtyDoc` / `unsaved_message` duplicate and its keys are removed.
+5. Shortcuts: 2.3.0's command registry, plus the local nested-key fallback in `Preferences::get`. The local modal guard in `run_shortcut` now also covers 2.3.0's new-project, note and gallery overlays.
+6. Dialogs:
+   - The local focus model: overlays inside `shortcuts := FocusScope`, `Scrim` owns Escape, and `overlay-open` restores focus. It covers 2.3.0's overlays too.
+   - The Prompt, Picker, About, Preferences and Pixel dialogs use the local `Scrim` versions; the Picker uses 2.3.0's `PickerItem` rows.
+   - 2.3.0's own `refocus` wiring remains for its new dialogs, and its Pixel `refocus` callback is removed.
+   - The local `@markdown` Tooltip children are removed, so 2.3.0's tooltip popups are the only ones.
+7. Views:
+   - 2.3.0's welcome page replaces the local `EmptyState`, together with the `has-document` / `recent-project` properties and the `open-recent` action.
+   - 2.3.0's Review workspace replaces "review mode = Designer".
+   - The Inspector has six tabs: properties, state, canvas, schema, rules and notes; notes moved from index 3 to 5.
+   - 2.3.0's Play / Step / Reset are kept.
+8. Validation:
+   - The local worker-thread validation is kept.
+   - 2.3.0's open-project blocker hint is deferred: `blocker_hint` is set on open and emitted by `apply_findings` once the worker's result lands.
+   - The test calls `flush_validation()` before it reads the findings.
+9. Export jobs:
+   - The local blocked-export dialog is combined with 2.3.0's contract adoption. A blocked job clears `pending_contract`, so a stale `ui_contract.json` is never adopted.
+   - The review-pack job sets `blocked: None`.
+10. Preferences: dropped `appearance.reduced_motion`, `appearance.color_theme`, `performance.drag_preview` / `validation_mode` / `asset_cache_mb` / `overlay`, because nothing reads them; kept 2.3.0's `startup.recent_projects`.
+11. Dead bindings removed: `DesignerModel.selection-count` and `OutputModel.profile-source` (2.3.0 set both and no view read them).
+12. `strings.json`:
+    - Three-way merge by key: local deletions apply only where 2.3.0 had not changed the key, and keys still referenced by code are restored.
+    - Unused keys are pruned, and `pref.shortcut.view.gallery` is added.
+    - `finding.` and `notes.kind.` are added to the orphan scan's constructed prefixes, because `finding_label` and the annotation kind build them.
+    - Both tables hold 699 keys in sorted order.
+13. Pixel Studio shows "Standalone PNG · not part of the project" only when `!PixelModel.asset-locked`.
+14. `tools/tests/test_version_consistency.py`: the literal-default check is replaced by one that asserts no literal default and `set_version(env!("CARGO_PKG_VERSION"))`.
+15. `pulldown-cmark` 0.13.6 (`cargo update -p pulldown-cmark --precise 0.13.6`).
+16. Two CLI tests for the new seams:
+    - a gate-blocked `export --json` returns one object, exit 2, `E-EXPORT-BLOCKED`, and writes no artefact;
+    - `validate --json` reports `ASSET_PATH_ESCAPE` as blocking (exit 1).
+    - `README.md` now says a gate refusal exits 2.
+
+## Out of Scope
+
+- A release, version bump, tag, push or PR.
+- TASK-006/TASK-007's independent review.
+- Re-measuring the TASK-012/TASK-013 performance figures on the integrated tree.
+- Gating the Output Workbench, `export.bitmap_data` or the review pack.
+- Any change to `fixtures/golden/`.
+
+## Protected Existing Work
+
+- Every 2.3.0 release entry, tag and evidence file.
+- The renumbered task bodies.
+- `fixtures/golden/` and `test_assets/`.
+
+## Constraints
+
+- `AGENTS.md` gates on three platforms.
+- No push, tag, rebase, stash or clean without explicit instruction.
+- The implementer stops at VERIFY.
+
+## Allowed Files / Expected Area
+
+The whole merge diff. Beyond conflict resolution, the touched files were:
+
+- `apps/mono-cli/tests/cli.rs`;
+- `tools/tests/test_version_consistency.py`;
+- `README.md`;
+- `Cargo.lock` (pulldown-cmark);
+- `.ai/DECISIONS.md`, `docs/rewrite/G4_EVIDENCE.md` and `tools/CHECK_GUI_TRUST.py` (task-number renames only).
+
+## Acceptance Criteria
+
+1. No conflict markers; one history containing both lines.
+2. fmt, clippy `-D warnings`, `cargo test --workspace --locked`, pytest on `tools/tests` and `cargo deny check` all pass.
+3. `CHECK_GUI_TRUST.py` passes against a release build of the integrated tree.
+4. Every duplicate fix has exactly one implementation, named in `CHANGELOG.md` under Integration.
+5. Golden corpus unchanged.
+
+## Verification Plan
+
+Run the five CI gates on the integrated tree, build release, run `tools/CHECK_GUI_TRUST.py --exe target/release/monooled-studio.exe` with `APPDATA` / `LOCALAPPDATA` / `XDG_CONFIG_HOME` pointed at temporary directories, then check `git diff origin/main -- fixtures/golden` is empty.
+
+## Deliverables
+
+- The merge on `integrate/2.4.0` (not pushed).
+- `CHANGELOG.md` `Unreleased`.
+- This record and `.ai/CURRENT_STATE.md`.
+
+## Result
+
+Results, from the commands that were actually run on Windows 10:
+
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: clean.
+- `cargo test --workspace --locked --no-fail-fast` on the final tree: 28 groups, 300 passed, 0 failed.
+- `python -m pytest tools/tests -q`: 36 passed, 1 skipped.
+- `cargo deny check`: advisories, bans, licenses and sources ok.
+- `tools/CHECK_GUI_TRUST.py --exe target/release/monooled-studio.exe` against a release build of the final tree, with `APPDATA` / `LOCALAPPDATA` / `XDG_CONFIG_HOME` in a temporary directory: 17 of 17 PASS. Its Inspector check covers tabs 0 to 4. A separate screenshot at the minimum size (1166×800) on a fixture copy showed all six tab labels readable and the notes tab (5) opening.
+- `git diff origin/main -- fixtures/golden test_assets`: empty.
+
+Open product question for the user: the 2.3.0 review pack writes every frame's C header and hex into an HTML page whatever its blocking findings. It is not inside the release gate. ADR-006 names the Output Workbench and `export.bitmap_data` as deliberate exceptions, but the review pack did not exist when that decision was made. Member containment does apply to it, because it renders through the checked renderer.
+
+Not verified:
+
+- macOS and Linux;
+- the performance budgets on the integrated tree;
+- the gallery and review panel with an escaping member (their render goes through the same renderer, but no test exercises them).

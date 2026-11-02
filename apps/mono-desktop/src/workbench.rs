@@ -6,6 +6,7 @@
 //! profile the formatter would reject; a rejected edit leaves the last valid
 //! profile in place.
 
+use crate::i18n::tr;
 use mono_core::bitmap::MonoBitmap;
 use mono_core::encoding::encode_bitmap;
 use mono_core::font::FontPack;
@@ -16,12 +17,13 @@ use serde_json::Value;
 
 pub const SOURCES: [&str; 5] = ["canvas", "selection", "scene", "font", "image"];
 
-/// V1 `_MODE_VALUES`: (label key, bit_axis, group_order).
+/// V1 `_MODE_VALUES`: (label key, bit_axis, group_order). The label is an i18n
+/// key, resolved by the panel; the persisted identity is the axis/order pair.
 pub const MODES: [(&str, &str, &str); 4] = [
-    ("逐行式", "horizontal", "row_major"),
-    ("行列式", "horizontal", "column_major"),
-    ("逐列式", "vertical", "column_major"),
-    ("列行式（SSD1306 VLSB）", "vertical", "row_major"),
+    ("bench.mode.row_by_row", "horizontal", "row_major"),
+    ("bench.mode.rows_columns", "horizontal", "column_major"),
+    ("bench.mode.column_by_column", "vertical", "column_major"),
+    ("bench.mode.columns_rows", "vertical", "row_major"),
 ];
 
 /// Builtins followed by project profiles; a project id replaces the builtin in place.
@@ -123,9 +125,11 @@ impl Workbench {
         Ok(())
     }
 
-    pub fn generate(&mut self, items: &[OutputItem], symbol: &str) -> CoreResult<()> {
+    /// Generate for `items`. `lang` localises the errors that the panel shows
+    /// verbatim in its message line.
+    pub fn generate(&mut self, lang: &str, items: &[OutputItem], symbol: &str) -> CoreResult<()> {
         if items.is_empty() {
-            return Err(CoreError::invalid("当前来源没有可输出内容"));
+            return Err(CoreError::invalid(tr(lang, "bench.empty_source")));
         }
         let formatted = format_output(items, &self.profile.text, symbol, DEFAULT_PREVIEW_LIMIT)?;
         self.last = Some(formatted);
@@ -133,13 +137,13 @@ impl Workbench {
     }
 
     /// Text shown in the output panel (V1 `_generation_completed`).
-    pub fn display_text(&self) -> String {
+    pub fn display_text(&self, lang: &str) -> String {
         let Some(out) = &self.last else {
             return String::new();
         };
         let mut text = out.preview_text.clone();
         if out.preview_truncated {
-            text.push_str("\n\n[预览已截断；保存仍会写入完整结果]");
+            text.push_str(&format!("\n\n{}", tr(lang, "bench.truncated")));
         }
         if text.is_empty() && !out.data.is_empty() {
             text = hex_spaced(&out.data);
@@ -251,6 +255,7 @@ pub fn font_items(
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+    use crate::i18n::has_key;
 
     #[test]
     fn rejected_edit_keeps_last_valid_profile() {
@@ -285,11 +290,14 @@ mod tests {
         let mut bench = Workbench::default();
         let rows = vec![vec![1u8; 8]; 8];
         let item = bitmap_item("logo", &rows, &bench.profile).unwrap();
-        bench.generate(&[item], "logo").unwrap();
-        assert!(bench.display_text().contains("0xFF") || bench.display_text().contains("0xff"));
+        bench.generate("en_US", &[item], "logo").unwrap();
+        assert!(
+            bench.display_text("en_US").contains("0xFF")
+                || bench.display_text("en_US").contains("0xff")
+        );
         bench.set_field("text.container", "binary").unwrap();
         let item = bitmap_item("logo", &rows, &bench.profile).unwrap();
-        bench.generate(&[item], "logo").unwrap();
+        bench.generate("en_US", &[item], "logo").unwrap();
         assert!(bench.is_binary());
         assert_eq!(bench.copy_text().unwrap(), "ff ff ff ff ff ff ff ff");
         assert_eq!(bench.save_payload().unwrap().0, vec![0xff; 8]);
@@ -298,7 +306,39 @@ mod tests {
     #[test]
     fn empty_source_is_rejected() {
         let mut bench = Workbench::default();
-        assert!(bench.generate(&[], "x").is_err());
+        assert!(bench.generate("en_US", &[], "x").is_err());
+    }
+
+    /// The workbench messages are the last user-visible text that used to be
+    /// hardcoded Chinese: every one of them resolves in both languages.
+    #[test]
+    fn workbench_copy_is_translated() {
+        for key in [
+            "bench.empty_source",
+            "bench.truncated",
+            "bench.mode.row_by_row",
+            "bench.mode.rows_columns",
+            "bench.mode.column_by_column",
+            "bench.mode.columns_rows",
+        ] {
+            assert!(has_key(key), "missing i18n key: {key}");
+        }
+        let mut bench = Workbench::default();
+        let err = bench.generate("zh_CN", &[], "x").unwrap_err();
+        assert_eq!(err.message, tr("zh_CN", "bench.empty_source"));
+        bench.last = Some(FormattedOutput {
+            data: Vec::new(),
+            text: String::new(),
+            preview_text: "x".into(),
+            preview_truncated: true,
+            index: Vec::new(),
+            sidecar_text: String::new(),
+        });
+        assert!(
+            bench
+                .display_text("zh_CN")
+                .ends_with(&tr("zh_CN", "bench.truncated"))
+        );
     }
 
     #[test]

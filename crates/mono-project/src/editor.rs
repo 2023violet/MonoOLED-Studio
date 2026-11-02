@@ -5,14 +5,16 @@
 //! step; a pointer drag coalesces into a single step until `end_coalesced_edit`.
 
 use std::collections::BTreeSet;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use mono_core::pyvalue::{is_py_int, py_int, py_str};
-use mono_core::render::{RenderResult, Resources, normalize_path, posix, render_scene, resolve};
+use mono_core::render::{
+    RenderResult, Resources, joined_member, posix, render_scene, resolve_member,
+};
 use mono_core::runtime::{RuntimeLog, SceneRuntime};
-use mono_core::state::{State, init_state, subst, when_match};
+use mono_core::state::{
+    State, apply_state_schema, init_state, schema_from_scene, subst, when_match,
+};
 use mono_core::{CoreError, CoreResult};
 use serde_json::{Map, Value, json};
 
@@ -23,6 +25,66 @@ use crate::resources::{DiskResources, hex_digest, read_file};
 use crate::scene_io::SceneDoc;
 
 pub const MAX_HISTORY: usize = 500;
+
+/// `(x, y, w, h)` for one element, or `None` where the render left it null.
+pub type OverlayRect = Option<(i64, i64, i64, i64)>;
+
+/// The rect the Inspector reports, the overlay draws and a click must hit, without
+/// a geometry lookup: `resolved` is the frame's resolved elements, index-aligned
+/// with the scene. A complete `zone` wins, then a complete explicit rect, then the
+/// renderer's rect with the element's own fields on top, as `geometry` does:
+/// "complete" means the four keys exist, whatever they hold.
+pub fn overlay_rect(element: &Value, resolved: &[Value], index: usize) -> OverlayRect {
+    let declared = |map: &Map<String, Value>| {
+        ["x", "y", "w", "h"]
+            .iter()
+            .all(|key| map.contains_key(*key))
+            .then(|| {
+                (
+                    int_of(map.get("x")),
+                    int_of(map.get("y")),
+                    int_of(map.get("w")),
+                    int_of(map.get("h")),
+                )
+            })
+    };
+    let rendered = |map: &Map<String, Value>| {
+        let edge = |key: &str| map.get(key).and_then(Value::as_i64);
+        match (edge("x"), edge("y"), edge("w"), edge("h")) {
+            (Some(x), Some(y), Some(w), Some(h)) => Some((x, y, w, h)),
+            _ => None,
+        }
+    };
+    let object = element.as_object();
+    object
+        .and_then(|o| match o.get("zone").and_then(Value::as_object) {
+            Some(zone) => declared(zone),
+            None => declared(o),
+        })
+        .or_else(|| {
+            let (x, y, w, h) = resolved
+                .get(index)
+                .and_then(Value::as_object)
+                .and_then(rendered)?;
+            let position = |key: &str, base: i64| {
+                object
+                    .and_then(|o| o.get(key))
+                    .map_or(base, |v| int_of(Some(v)))
+            };
+            let size = |key: &str, base: i64| {
+                object
+                    .and_then(|o| o.get(key))
+                    .filter(|v| !v.is_null())
+                    .map_or(base, |v| int_of(Some(v)))
+            };
+            Some((
+                position("x", x),
+                position("y", y),
+                size("w", w),
+                size("h", h),
+            ))
+        })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Editable {
@@ -61,28 +123,26 @@ pub struct EditorSession {
     pub state: State,
     pub elapsed: i64,
     pub resources: DiskResources,
-    pub dirty: bool,
+    /// The scene as last written to disk; `is_dirty` compares against it so
+    /// undo back to the saved state is honestly clean.
+    saved: Map<String, Value>,
+    /// Content restored from a recovery snapshot is unsaved even though it was
+    /// just loaded into the session.
+    force_dirty: bool,
     disk_fingerprint: Option<String>,
-    saved_fingerprint: u64,
     undo: Vec<Command>,
     redo: Vec<Command>,
     coalesce_open: bool,
     max_history: usize,
 }
 
-/// Hash of the persisted scene shape (runtime-only `_` keys excluded).
-fn scene_fingerprint(data: &Map<String, Value>) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    let persisted: Map<String, Value> = data
-        .iter()
+/// Runtime-only keys (`_asset_dirs`, …) never reach the file, so they must not
+/// participate in the dirty comparison either.
+fn persisted(data: &Map<String, Value>) -> Map<String, Value> {
+    data.iter()
         .filter(|(k, _)| !k.starts_with('_'))
         .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    match serde_json::to_vec(&persisted) {
-        Ok(bytes) => hasher.write(&bytes),
-        Err(_) => persisted.len().hash(&mut hasher),
-    }
-    hasher.finish()
+        .collect()
 }
 
 fn key_error(message: impl Into<String>) -> CoreError {
@@ -111,34 +171,20 @@ impl EditorSession {
     pub fn new(doc: SceneDoc) -> CoreResult<Self> {
         let state = SceneRuntime::new(&doc.data, None)?.state;
         let disk_fingerprint = std::fs::read(&doc.path).ok().map(|b| hex_digest(&b));
-        let saved_fingerprint = scene_fingerprint(&doc.data);
+        let saved = persisted(&doc.data);
         Ok(Self {
             doc,
             state,
             elapsed: 0,
             resources: DiskResources::new(),
-            dirty: false,
+            saved,
+            force_dirty: false,
             disk_fingerprint,
-            saved_fingerprint,
             undo: Vec::new(),
             redo: Vec::new(),
             coalesce_open: false,
             max_history: MAX_HISTORY,
         })
-    }
-
-    /// Re-derive `dirty` from content equality with the last save point.
-    pub fn sync_dirty(&mut self) {
-        self.dirty = scene_fingerprint(&self.doc.data) != self.saved_fingerprint;
-    }
-
-    pub fn mark_saved(&mut self) {
-        self.saved_fingerprint = scene_fingerprint(&self.doc.data);
-        self.dirty = false;
-    }
-
-    pub fn mark_clean(&mut self) {
-        self.mark_saved();
     }
 
     /// V1 `reset_scene`: rebind this session to another scene. History,
@@ -147,16 +193,46 @@ impl EditorSession {
     pub fn reset_scene(&mut self, doc: SceneDoc) -> CoreResult<()> {
         let state = SceneRuntime::new(&doc.data, None)?.state;
         self.disk_fingerprint = std::fs::read(&doc.path).ok().map(|b| hex_digest(&b));
+        self.saved = persisted(&doc.data);
+        self.force_dirty = false;
         self.doc = doc;
         self.state = state;
         self.elapsed = 0;
         self.resources = DiskResources::new();
-        self.saved_fingerprint = scene_fingerprint(&self.doc.data);
-        self.dirty = false;
         self.undo.clear();
         self.redo.clear();
         self.coalesce_open = false;
         Ok(())
+    }
+
+    /// True when the scene differs from what is on disk. Runtime-only `_` keys
+    /// are ignored, so undo back to the last save reports clean again.
+    /// Compared in place: this runs on every refresh, including drag frames.
+    pub fn is_dirty(&self) -> bool {
+        if self.force_dirty {
+            return true;
+        }
+        let live = self
+            .doc
+            .data
+            .iter()
+            .filter(|(key, _)| !key.starts_with('_'))
+            .count();
+        live != self.saved.len()
+            || self.doc.data.iter().any(|(key, value)| {
+                !key.starts_with('_') && self.saved.get(key).is_none_or(|saved| saved != value)
+            })
+    }
+
+    /// Treat the current scene as the saved baseline (Automation writes).
+    pub fn mark_clean(&mut self) {
+        self.saved = persisted(&self.doc.data);
+        self.force_dirty = false;
+    }
+
+    /// Loaded content that is not on disk (recovery snapshots).
+    pub fn mark_dirty(&mut self) {
+        self.force_dirty = true;
     }
 
     /// Preference `performance.undo_history`; trims existing history to fit.
@@ -189,13 +265,13 @@ impl EditorSession {
         !self.redo.is_empty()
     }
 
-    fn elements(&self) -> Vec<Value> {
+    fn elements(&self) -> &[Value] {
         self.doc
             .data
             .get("elements")
             .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     fn set_elements(&mut self, items: Vec<Value>) {
@@ -211,7 +287,7 @@ impl EditorSession {
 
     pub fn element(&self, id: &str) -> CoreResult<Map<String, Value>> {
         self.elements()
-            .into_iter()
+            .iter()
             .find(|e| e.get("id").map(py_str).as_deref() == Some(id))
             .and_then(|e| e.as_object().cloned())
             .ok_or_else(|| key_error(format!("unknown element id: {id}")))
@@ -231,14 +307,13 @@ impl EditorSession {
         label: &str,
         mutate: impl FnOnce(&mut Vec<Value>) -> CoreResult<()>,
     ) -> CoreResult<bool> {
-        let before = self.elements();
+        let before = self.elements().to_vec();
         let mut working = before.clone();
         mutate(&mut working)?;
         if working == before {
             return Ok(false);
         }
         self.set_elements(working.clone());
-        self.sync_dirty();
         self.push_undo(Command::Elements {
             label: label.into(),
             before,
@@ -249,12 +324,21 @@ impl EditorSession {
         Ok(true)
     }
 
-    fn resolved_size(&mut self, element: &Map<String, Value>) -> CoreResult<(i64, i64, i64, i64)> {
+    /// Geometry inputs from an element value alone. An associated function so a
+    /// whole-scene walk can call it with disjoint field borrows instead of one
+    /// id lookup (and one list clone) per element.
+    fn resolved_size_of(
+        element: &Map<String, Value>,
+        data: &Map<String, Value>,
+        root: &Path,
+        state: &Map<String, Value>,
+        resources: &mut DiskResources,
+    ) -> CoreResult<(i64, i64, i64, i64)> {
         let id = element.get("id").map(py_str).unwrap_or_default();
         let hidden = element
             .get("hidden")
             .is_some_and(|v| v == &Value::Bool(true))
-            || !when_match(element.get("visible_when"), &self.state)?;
+            || !when_match(element.get("visible_when"), state)?;
         let zone = element.get("zone").cloned().unwrap_or(json!({}));
         let pick = |k: &str| {
             element
@@ -267,7 +351,6 @@ impl EditorSession {
             return Ok((pick("x"), pick("y"), pick("w"), pick("h")));
         }
         let kind = element.get("type").map(py_str).unwrap_or_default();
-        let root = self.doc.root.clone();
         let x = int_of(element.get("x"));
         let y = int_of(element.get("y"));
         match kind.as_str() {
@@ -277,28 +360,23 @@ impl EditorSession {
                     let lower = element
                         .get("var_lower")
                         .is_some_and(|v| v == &Value::Bool(true));
-                    resolve(
-                        &root,
+                    resolve_member(
+                        root,
                         &subst(
                             &py_str(element.get("asset").ok_or_else(|| key_error("asset"))?),
-                            &self.state,
+                            state,
                             lower,
                         )?,
-                    )
+                    )?
                 } else {
                     let bind = py_str(element.get("bind").ok_or_else(|| key_error("bind"))?);
-                    let value = int_of(self.state.get(&bind));
+                    let value = int_of(state.get(&bind));
                     let file = py_str(element.get("pattern").ok_or_else(|| key_error("pattern"))?)
                         .replace("{n}", &value.to_string());
-                    normalize_path(
-                        &resolve(
-                            &root,
-                            &py_str(element.get("dir").ok_or_else(|| key_error("dir"))?),
-                        )
-                        .join(file),
-                    )
+                    let dir = py_str(element.get("dir").ok_or_else(|| key_error("dir"))?);
+                    joined_member(root, &dir, &file)?
                 };
-                let asset = self.resources.bitmap(&py_resolve(&path))?;
+                let asset = resources.bitmap(&py_resolve(&path))?;
                 Ok((
                     x,
                     y,
@@ -312,9 +390,13 @@ impl EditorSession {
             }
             "digits" | "text" | "bitmap_text" => {
                 // Width/height follow the renderer; render just this element on a scratch canvas.
-                let mut scene = self.doc.data.clone();
+                let mut scene: Map<String, Value> = data
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != "elements")
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect();
                 scene.insert("elements".into(), json!([Value::Object(element.clone())]));
-                let result = render_scene(&scene, &root, &self.state, &mut self.resources)?;
+                let result = render_scene(&scene, root, state, resources)?;
                 let item = result
                     .resolved_elements
                     .first()
@@ -333,9 +415,28 @@ impl EditorSession {
         }
     }
 
-    /// V1 `geometry`.
+    /// V1 `geometry`: the id-addressed wrapper. Only that one element is cloned
+    /// for the lookup — the old version cloned the whole element list per call.
     pub fn geometry(&mut self, id: &str) -> CoreResult<Geometry> {
         let element = self.element(id)?;
+        let EditorSession {
+            doc,
+            state,
+            resources,
+            ..
+        } = self;
+        Self::geometry_of(&element, &doc.data, &doc.root, state, resources)
+    }
+
+    /// Geometry from an element value alone, for walks that already hold the
+    /// list: no id lookup, so a scene-wide pass stays linear.
+    fn geometry_of(
+        element: &Map<String, Value>,
+        data: &Map<String, Value>,
+        root: &Path,
+        state: &Map<String, Value>,
+        resources: &mut DiskResources,
+    ) -> CoreResult<Geometry> {
         let zone = element.get("zone").and_then(Value::as_object).cloned();
         let native_locked = element.get("type").map(py_str).as_deref() == Some("image")
             && element
@@ -377,7 +478,7 @@ impl EditorSession {
                 });
             }
         }
-        let (rx, ry, rw, rh) = self.resolved_size(&element)?;
+        let (rx, ry, rw, rh) = Self::resolved_size_of(element, data, root, state, resources)?;
         Ok(Geometry {
             x: element.get("x").map_or(rx, |v| int_of(Some(v))),
             y: element.get("y").map_or(ry, |v| int_of(Some(v))),
@@ -454,7 +555,7 @@ impl EditorSession {
         if prepared.is_empty() {
             return Ok(false);
         }
-        let before = self.elements();
+        let before = self.elements().to_vec();
         let mut after = before.clone();
         for (id, changes) in &prepared {
             if let Some(element) = after
@@ -470,7 +571,6 @@ impl EditorSession {
             return Ok(false);
         }
         self.set_elements(after.clone());
-        self.sync_dirty();
         self.redo.clear();
         let coalesced = coalesce
             && self.coalesce_open
@@ -562,14 +662,18 @@ impl EditorSession {
                 } else {
                     before.clone()
                 };
-                self.state = init_state(&self.doc.data);
-                if let Ok(runtime) = SceneRuntime::new(&self.doc.data, None) {
-                    self.state = runtime.state;
-                }
+                self.reseed_state();
                 self.resources = DiskResources::new();
             }
         }
-        self.sync_dirty();
+    }
+
+    /// Re-seed the preview state after the scene's `states` changed.
+    fn reseed_state(&mut self) {
+        self.state = init_state(&self.doc.data);
+        if let Ok(runtime) = SceneRuntime::new(&self.doc.data, None) {
+            self.state = runtime.state;
+        }
     }
 
     pub fn undo(&mut self) -> bool {
@@ -600,7 +704,7 @@ impl EditorSession {
 
     /// Record an externally applied element mutation as one undo step (Automation transactions).
     pub fn record_external_batch(&mut self, before: Vec<Value>, label: &str) -> bool {
-        let after = self.elements();
+        let after = self.elements().to_vec();
         if before == after {
             return false;
         }
@@ -610,7 +714,6 @@ impl EditorSession {
             after,
         });
         self.redo.clear();
-        self.sync_dirty();
         self.coalesce_open = false;
         true
     }
@@ -627,9 +730,21 @@ impl EditorSession {
             after,
         });
         self.redo.clear();
-        self.sync_dirty();
         self.coalesce_open = false;
         true
+    }
+
+    /// Replace the scene's state schema (`states` plus `state_relations`) with a
+    /// normalized one as a single undo step, and re-seed the preview state.
+    /// False when the schema already says this, so no empty undo step appears.
+    pub fn set_state_schema(&mut self, schema: &Value) -> bool {
+        if &schema_from_scene(&self.doc.data) == schema {
+            return false;
+        }
+        let before = self.doc.data.clone();
+        apply_state_schema(&mut self.doc.data, schema);
+        self.reseed_state();
+        self.record_external_scene(before, "state_schema")
     }
 
     pub fn add_elements(&mut self, elements: Vec<Value>, label: &str) -> CoreResult<Vec<String>> {
@@ -911,7 +1026,6 @@ impl EditorSession {
         canvas["h"] = json!(height);
         let storage = self.doc.data.entry("storage").or_insert_with(|| json!({}));
         storage["bytes_per_frame"] = json!(width * (height / 8));
-        self.sync_dirty();
         Ok(())
     }
 
@@ -1019,7 +1133,7 @@ impl EditorSession {
             .collect();
         atomic_write_json(&self.doc.path, &Value::Object(data))?;
         self.disk_fingerprint = std::fs::read(&self.doc.path).ok().map(|b| hex_digest(&b));
-        self.mark_saved();
+        self.mark_clean();
         Ok(self.doc.path.clone())
     }
 
@@ -1243,12 +1357,28 @@ pub fn smart_guides(
     let mx = [m.x, m.x + m.w / 2, m.x + m.w];
     let my = [m.y, m.y + m.h / 2, m.y + m.h];
     let (mut gx, mut gy) = (BTreeSet::new(), BTreeSet::new());
-    for element in session.elements() {
+    let EditorSession {
+        doc,
+        state,
+        resources,
+        ..
+    } = session;
+    let elements = doc
+        .data
+        .get("elements")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    for element in elements {
         let id = element.get("id").map(py_str).unwrap_or_default();
         if id == moving || element.get("hidden") == Some(&Value::Bool(true)) {
             continue;
         }
-        let Ok(g) = session.geometry(&id) else {
+        let Some(object) = element.as_object() else {
+            continue;
+        };
+        let Ok(g) = EditorSession::geometry_of(object, &doc.data, &doc.root, state, resources)
+        else {
             continue;
         };
         for a in mx {
@@ -1339,11 +1469,11 @@ mod tests {
     fn undo_to_saved_scene_is_clean() {
         let doc = temp_scene("undo");
         let mut session = EditorSession::new(doc).unwrap();
-        assert!(!session.dirty);
+        assert!(!session.is_dirty());
         move_a(&mut session);
-        assert!(session.dirty);
+        assert!(session.is_dirty());
         assert!(session.undo());
-        assert!(!session.dirty);
+        assert!(!session.is_dirty());
     }
 
     #[test]
@@ -1351,24 +1481,24 @@ mod tests {
         let doc = temp_scene("redo");
         let mut session = EditorSession::new(doc).unwrap();
         move_a(&mut session);
-        session.mark_saved();
-        assert!(!session.dirty);
+        session.mark_clean();
+        assert!(!session.is_dirty());
         assert!(session.undo());
-        assert!(session.dirty);
+        assert!(session.is_dirty());
         assert!(session.redo());
-        assert!(!session.dirty);
+        assert!(!session.is_dirty());
     }
 
     #[test]
     fn external_record_marks_dirty() {
         let doc = temp_scene("external");
         let mut session = EditorSession::new(doc).unwrap();
-        let before = session.elements();
+        let before = session.elements().to_vec();
         let mut changed = before.clone();
         changed[0]["x"] = json!(3);
         session.set_elements(changed);
         assert!(session.record_external_batch(before, "agent"));
-        assert!(session.dirty);
+        assert!(session.is_dirty());
     }
 
     #[test]
@@ -1379,7 +1509,7 @@ mod tests {
         move_a(&mut session);
         std::fs::write(&path, b"{\"external\":true}").unwrap();
         assert!(session.save().is_err());
-        assert!(session.dirty);
+        assert!(session.is_dirty());
     }
 
     #[test]
@@ -1388,7 +1518,7 @@ mod tests {
         let mut session = EditorSession::new(doc).unwrap();
         move_a(&mut session);
         session.save().unwrap();
-        assert!(!session.dirty);
+        assert!(!session.is_dirty());
     }
 
     #[test]
@@ -1396,9 +1526,9 @@ mod tests {
         let doc = temp_scene("reset");
         let mut session = EditorSession::new(doc).unwrap();
         move_a(&mut session);
-        assert!(session.dirty);
+        assert!(session.is_dirty());
         let other = temp_scene("reset-other");
         session.reset_scene(other).unwrap();
-        assert!(!session.dirty);
+        assert!(!session.is_dirty());
     }
 }

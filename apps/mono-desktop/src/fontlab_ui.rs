@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use mono_core::CoreError;
-use mono_core::render::posix;
+use mono_core::render::{member_path, posix};
 use slint::Global;
 
 use crate::app::{App, Prompt, model, ss};
@@ -20,6 +20,12 @@ pub fn preview_colors(studio: &crate::pixel::PixelStudio) -> Vec<slint::Rgba8Pix
 impl App {
     fn fonts_root(&self) -> Option<PathBuf> {
         self.project_root().map(|r| r.join(".oled").join("fonts"))
+    }
+
+    /// The directory of a listed pack id. The list only holds members of the
+    /// project, and this keeps a scripted or stale id to the same rule.
+    pub(crate) fn font_pack_root(&self, id: &str) -> Result<PathBuf, CoreError> {
+        member_path(&self.project_root().unwrap_or_default(), Path::new(id))
     }
 
     /// Open (or create) the pack at `root` and show it in Font Lab.
@@ -62,10 +68,11 @@ impl App {
             .and_then(|r| font.root.strip_prefix(r).ok().map(posix))
             .unwrap_or_else(|| posix(&font.root));
         fm.set_pack_title(ss(format!(
-            "{} — {rel}{}",
+            "{}{}",
             font.pack.name,
             if font.dirty() { " ●" } else { "" }
         )));
+        fm.set_pack_path(ss(&rel));
         let chars = font.characters();
         fm.set_glyphs(model(
             chars
@@ -90,6 +97,8 @@ impl App {
         fm.set_baseline(f.baseline as i32);
         fm.set_advance(f.advance as i32);
         fm.set_threshold(f.threshold as i32);
+        fm.set_offset_x(f.offset_x as i32);
+        fm.set_offset_y(f.offset_y as i32);
         fm.set_alignment(f.alignment);
         fm.set_antialias(i32::from(f.antialias == 2));
         fm.set_busy(font.running());
@@ -205,7 +214,7 @@ impl App {
                 }
                 other => {
                     if let Some(rel) = other.strip_prefix("open:") {
-                        let root = self.project_root().unwrap_or_default().join(rel);
+                        let root = self.font_pack_root(rel)?;
                         self.open_font_pack(&root)?;
                     }
                 }

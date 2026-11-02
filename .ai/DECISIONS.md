@@ -33,3 +33,27 @@ HEAD、工作区 dirty/clean、暂存项、未跟踪文件、本地与远端同�
 - 证据分级：`MEASURED`、`DOCUMENTED`、`HYPOTHESIS`、`NOT_VERIFIED`。机器结果不代替真人测试。
 
 本 ADR 不授予任何代理额外权限；操作授权以用户在当次会话中的明确指示为准。
+
+## ADR-006 — The release gate covers every scene export producer; viewing a screen never writes
+
+用户于 2026-10-29 在体验审计修复计划确认时批准这两项契约变更（TASK-010，原编号 TASK-004，全量 12 个工作包）：
+
+- D1 导出闸门统一：只要场景存在阻断项，桌面 C Header 导出、`mono c-header` 与
+  Automation `export.c_header` 一律不写文件，行为与 `export.current` / `export.all`
+  一致——CLI 打印 `FAIL:` 并 exit 2，API 返回 `INVALID_REQUEST`，桌面弹出可跳转到
+  具体元素的阻断对话框。成功导出的字节输出与 2.0.3 保持一致。
+- D2 观察不写盘：切换/查看页面只改内存会话，`project.oled.json` 由下一次显式保存
+  落盘，因此重启后落在"最后保存的页面"而非"最后看过的页面"。Automation
+  `project.open_screen` 仍写盘，以保持 API 兼容。
+
+**Why:** 审计中这两点被反复验证为"说一套做一套"——阻断提示写着 must be replaced
+before export 而 C Header 照写不误，配置里的 `Ctrl+S` 与只读浏览都会立刻改写项目文件。
+
+**How to apply:** 新增任何导出生产者必须复用 `mono_project::export::preflight` 与
+`BlockedExport`，不得自行判定阻断；任何只读浏览路径（打开、切换、预览）不得写项目
+文件，除非契约文档已明确记录该写入。
+
+**边界（不是疏漏）：** 闸门覆盖的是"场景导出"。Output Workbench 与 Automation
+`export.bitmap_data` 可以把当前场景渲染成各自的文件而不走 `preflight`，纳入它们会
+改变 API 1.3 的行为，需要单独决策；`docs/AI_HANDOFF.md` §5.5 与 `CHANGELOG.md` 记录
+同一边界。

@@ -105,7 +105,7 @@ cargo test --workspace --locked
 - `main.rs`：负责启动参数、窗口接线、快捷键路由和定时器。定时器包括作业轮询（60 ms）和自动保存（5 s）。菜单、命令面板和快捷键统一由 `commands.rs` 的注册表驱动，新增命令只改注册表加一个分发分支。
   - 启动参数：`--screenshot`、`--action`、`--screen`、`--window-size`、`--bench`、`--lang`、`--theme`、`--workspace`、`--version`。
 - `app.rs`：`App` 状态，以及 Designer 的绑定与刷新；差异评审（基线/当前帧、bbox、元素增删改）与最近项目列表也在这里计算。
-- `guard.rs`：未保存修改保护，覆盖 Designer、Pixel 和 Font Lab，询问保存、放弃或取消。
+- `guard.rs`：未保存修改保护，覆盖 Designer、Pixel 和 Font Lab，询问保存、放弃或取消；提示按文档逐个点名。标题的 `•` 只代表项目场景（`EditorSession::is_dirty`，与保存快照比较），Pixel/Font 的脏点留在各自面板头部。
 - `pixel.rs` / `pixel_ui.rs`：Pixel Studio。文档带来源（Scratch / PNG / 项目资产）；项目资产可原子写回并做外部修改检查。
 - `display.rs` / `canvas.rs`：显示颜色与像素边框；`auto` 调色板从主题派生。
 - `fontlab.rs` / `fontlab_ui.rs`：Font Lab，在后台线程生成字形；预览条显示真实白亮黑底 1-bit 效果。
@@ -126,6 +126,8 @@ cargo test --workspace --locked
 
 API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.all` 和 Code AI 交接包的行为不能在没有版本升级和兼容方案的情况下静默改变。事务提交只改变内存状态，写盘需要显式保存。
 
+发布闸门（ADR-006，2026-10-29 确认）：场景导出生产者共用 `mono_project::export::preflight` 与 `BlockedExport`——`export_scene` 自带闸门，桌面/CLI/Automation 的 C Header 在渲染前先 preflight。场景存在阻断项时一律不写任何东西（包括 `reference/`、`golden/` 目录）：CLI 打印 `FAIL:` 并 exit 2，API 返回 `INVALID_REQUEST`，桌面打开可跳转到具体元素的阻断对话框；成功导出的字节输出保持不变。交接包的阻断报告写在 `<zip>.validation.md`，临时工作目录删除后仍可读。闸门目前**不覆盖** Output Workbench 与 `export.bitmap_data`：两者可以把当前场景渲染成自己的文件，纳入闸门会改变 API 1.3 的行为，需要单独决策。
+
 ### 5.6 两种"AI 交接"不要混淆
 
 - 本文档：给仓库维护者或开发 AI 的导航与约束。
@@ -137,6 +139,7 @@ API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.al
 
 - 顶层 `schema_version` 保持 `1`；输出工作台使用可选的 `output_workbench.schema = 1`。
 - 旧项目缺少输出配置时，打开项目不得仅为补默认值而改写项目文件。
+- 切换或查看页面只改内存会话，`project.oled.json` 由下一次显式保存落盘（ADR-006）；因此重启后落在"最后保存的页面"，不是"最后看过的页面"。Automation 的 `project.open_screen` 仍写盘，以保持 API 兼容。
 - 配置保存失败时，恢复上一份有效的内存状态。
 - 输出配置 ID 只能使用小写 ASCII 字母、数字、`_`、`-`，最长 64 字符。
 - 项目成员路径必须解析在项目根目录内。
@@ -202,7 +205,7 @@ API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.al
 - Automation：`cargo test -p mono-automation`（含回放）
 - 桌面逻辑：`cargo test -p mono-desktop`
 - 界面外观：`monooled-studio <项目副本> --screen <id> --action <...> --screenshot out.png`。必须在临时偏好目录和项目副本上运行，并查看截图。
-- 交互性能：`python tools/RUN_DESKTOP_BENCH.py --runs 3`，需要 release 构建。
+- 交互性能：`python tools/RUN_DESKTOP_BENCH.py --runs 3`，需要 release 构建；大场景用 `python tools/BENCH_DESIGNER_PROJECT.py --elements 1000` 生成临时项目副本，再把打印出的路径传给 `--project`。
 - 工具与治理：`python -m pytest tools/tests -q`
 
 ### 8.2 完整门禁
@@ -236,7 +239,7 @@ API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.al
 ## 10. 已知风险与证据缺口
 
 - **取模名称与硬件事实错配**：黄金数组只能证明编码公式自洽。没有目标驱动的已知正确数组和实际上屏结果，不能声称某个预设适配某块硬件。
-- **性能预算**：2.0 有四项预算记录为未达标，见 G4 证据 §4。自 2.0.2 起，导出全部、交接包、批量校验和缩略图墙在后台任务中执行（状态栏进度，可取消）；长同步 Automation 调用也移出 UI 线程。
+- **性能预算**：2.0 有四项预算记录为未达标，见 G4 证据 §4。导出全部、交接包、批量校验和缩略图墙在 worker 线程上执行，进度与取消入口在状态栏；debug 构建的 watchdog 仍会报告超预算的阻塞。
 - **平台覆盖**：
   - 真人在 macOS 和 Linux 桌面上的使用、Linux 的 GL 渲染器、Intel Mac 与 Linux arm64 都未验证。
   - macOS 应用没有开发者签名，也未公证。

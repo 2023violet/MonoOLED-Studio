@@ -32,7 +32,7 @@ cargo run -p mono-cli -- validate --project test_assets/projects/curing_lite/pro
 - `fixtures/golden/` 是 1.x 冻结的黄金语料，不得为了让测试通过而改写；重新生成要从 `v1-final` 检出，并在重写证据中写明原因。
 - 按改动选择最小充分测试、兼容性红线、发布纪律：见 [docs/AI_HANDOFF.md](docs/AI_HANDOFF.md)（开发交接真源，优先级高于本文件的摘要）。
 - 行为变更先建立失败证据；只读诊断不授权修复；推送、打标签、发布只在用户明确要求时执行。
-- GUI 运行与截图时，把 `APPDATA` / `LOCALAPPDATA` / `XDG_CONFIG_HOME` 指向临时目录，并在 `test_assets` 的副本上操作（打开 Screen 会写回项目清单）。
+- GUI 运行与截图时，把 `APPDATA` / `LOCALAPPDATA` / `XDG_CONFIG_HOME` 指向临时目录，并在 `test_assets` 的副本上操作。切换页面与查看字库不写盘；结构性清单操作（新建/复制/重命名/删除页面、改资源目录、改设计规则）即时写 `project.oled.json`，不受场景 `•` 脏标记跟踪。
 
 ## 目录与约定
 

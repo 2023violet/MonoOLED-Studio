@@ -11,7 +11,7 @@ pub fn defaults() -> Value {
         "schema_version": 1,
         "language": "zh_CN",
         "startup": {"reopen_last_project": false, "last_project": "", "recent_projects": []},
-        "appearance": {"theme_mode": "light", "color_theme": "monooled-light", "density": "comfortable", "ui_scale": "100%", "reduced_motion": false},
+        "appearance": {"theme_mode": "light", "density": "comfortable", "ui_scale": "100%"},
         "input": {"wheel_action": "zoom", "middle_drag": "pan", "space_drag": "pan"},
         "canvas": {"grid": true, "bounds": true, "rulers": true, "zones": false, "snap": 0},
         "pixel_studio": {"left_button": "draw", "right_button": "erase", "brush_size": 1, "stroke_interpolation": true, "pixel_grid": true, "actual_preview": true, "rulers": true,
@@ -20,7 +20,7 @@ pub fn defaults() -> Value {
             "canvas_background": "#000000", "grid_color": "#495028", "pixel_fill": "#FFFFFF", "pixel_border": "#FFFF00",
             "output_font": "", "output_font_size": 14},
         "autosave": {"enabled": true, "interval_minutes": 3, "snapshots": 10, "prompt_recovery": true},
-        "performance": {"drag_preview": "fast", "validation_mode": "edit_complete", "undo_history": 200, "asset_cache_mb": 512, "overlay": false},
+        "performance": {"undo_history": 200},
         "shortcuts": crate::commands::default_shortcuts()
     })
 }
@@ -99,9 +99,6 @@ fn valid(key: &str, value: &Value) -> bool {
         "autosave.interval_minutes" => int_range(1, 60),
         "autosave.snapshots" => int_range(1, 100),
         "performance.undo_history" => int_range(10, 2000),
-        "performance.asset_cache_mb" => int_range(32, 4096),
-        "performance.validation_mode" => one_of(&["edit_complete", "idle", "continuous"]),
-        "performance.drag_preview" => one_of(&["fast", "exact"]),
         "startup.recent_projects" => value
             .as_array()
             .is_some_and(|values| values.iter().all(Value::is_string)),
@@ -194,15 +191,12 @@ impl Preferences {
     }
 
     pub fn get(&self, key: &str) -> Value {
-        // `shortcuts.*` is a flat namespace (the command id may itself contain
-        // dots), unlike the dotted JSON paths used by every other preference.
-        if let Some(command) = key.strip_prefix("shortcuts.") {
-            return self
-                .data
-                .get("shortcuts")
-                .and_then(|shortcuts| shortcuts.get(command))
-                .cloned()
-                .unwrap_or(Value::Null);
+        // Shortcuts are stored flat under `shortcuts` (`"project.save": "Ctrl+S"`);
+        // older hand-edited files may have nested them instead.
+        if let Some(command) = key.strip_prefix("shortcuts.")
+            && let Some(value) = self.data.get("shortcuts").and_then(|s| s.get(command))
+        {
+            return value.clone();
         }
         self.data
             .pointer(&format!("/{}", key.replace('.', "/")))
@@ -347,5 +341,33 @@ mod tests {
         let prefs = Preferences::load_from(path);
         assert_eq!(prefs.get("startup.recent_projects"), json!([]));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn loaded(raw: &str) -> Preferences {
+        let dir =
+            std::env::temp_dir().join(format!("mono-prefs-{}-{}", std::process::id(), raw.len()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("preferences.json");
+        std::fs::write(&path, raw).unwrap();
+        Preferences::load_from(path)
+    }
+
+    #[test]
+    fn flat_shortcuts_are_readable_and_nested_keys_still_resolve() {
+        let flat = loaded(r#"{"shortcuts": {"project.save": "Ctrl+K"}}"#);
+        assert_eq!(flat.str("shortcuts.project.save"), "Ctrl+K");
+
+        // A hand-edited nested key that has no flat default still resolves.
+        let nested = loaded(r#"{"shortcuts": {"custom": {"thing": "Ctrl+9"}}}"#);
+        assert_eq!(nested.str("shortcuts.custom.thing"), "Ctrl+9");
+    }
+
+    #[test]
+    fn set_keeps_shortcuts_flat() {
+        let mut prefs = loaded("{}");
+        assert!(prefs.set("shortcuts.designer.undo", json!("Alt+Z")));
+        assert_eq!(prefs.data["shortcuts"]["designer.undo"], "Alt+Z");
+        assert_eq!(prefs.str("shortcuts.designer.undo"), "Alt+Z");
     }
 }

@@ -8,12 +8,14 @@ use std::path::{Path, PathBuf};
 use mono_core::c_header::framebuffer_to_c_header;
 use mono_core::font::{builtin_glyph_rows, has_builtin_glyph};
 use mono_core::pyvalue::{is_py_int, py_in, py_int, py_repr, py_str};
-use mono_core::render::{Resources, normalize_path, posix, render_scene, resolve};
+use mono_core::render::{
+    PATH_ESCAPE, Resources, joined_member, posix, render_scene, resolve_member,
+};
 use mono_core::state::{IntegerPolicy, State, build_state_matrix, case_name, init_state, subst};
 use mono_core::{CoreError, CoreResult};
 use serde_json::{Map, Value, json};
 
-use crate::atomic::{atomic_write, atomic_write_many, python_json};
+use crate::atomic::{AtomicWriter, atomic_write, atomic_write_many, python_json};
 use crate::image_io::{decode_image, encode_bitmap_png, encode_rgba_png};
 use crate::project::{py_resolve, resolve_under_root};
 use crate::resources::{DiskResources, hex_digest, read_file};
@@ -178,7 +180,7 @@ fn enum_template_paths(
 ) -> CoreResult<Vec<PathBuf>> {
     let keys = template_keys(template);
     if keys.is_empty() {
-        return Ok(vec![py_resolve(&resolve(root, template))]);
+        return Ok(vec![resolve_member(root, template)?]);
     }
     let states = scene
         .get("states")
@@ -211,7 +213,7 @@ fn enum_template_paths(
         for (i, key) in keys.iter().enumerate() {
             local.insert(key.clone(), domains[i][idx[i]].clone());
         }
-        paths.push(py_resolve(&resolve(root, &subst(template, &local, lower)?)));
+        paths.push(resolve_member(root, &subst(template, &local, lower)?)?);
         let mut p = domains.len();
         loop {
             if p == 0 {
@@ -557,11 +559,12 @@ pub fn validate_scene(
                         ));
                     }
                     let pattern = py_str(get("pattern").ok_or_else(|| missing_key("pattern"))?);
-                    let dir = resolve(root, &py_str(get("dir").ok_or_else(|| missing_key("dir"))?));
+                    let dir = py_str(get("dir").ok_or_else(|| missing_key("dir"))?);
+                    // Checked here too: a count of 0 never reaches the loop.
+                    resolve_member(root, &dir)?;
                     for n in 0..count.max(0) {
-                        let path = py_resolve(&normalize_path(
-                            &dir.join(pattern.replace("{n}", &n.to_string())),
-                        ));
+                        let path =
+                            joined_member(root, &dir, &pattern.replace("{n}", &n.to_string()))?;
                         validate_bitmap_path(
                             &mut findings,
                             &path,
@@ -576,11 +579,11 @@ pub fn validate_scene(
                 }
                 "digits" => {
                     let pattern = py_str(get("pattern").ok_or_else(|| missing_key("pattern"))?);
-                    let dir = resolve(root, &py_str(get("dir").ok_or_else(|| missing_key("dir"))?));
+                    let dir = py_str(get("dir").ok_or_else(|| missing_key("dir"))?);
+                    resolve_member(root, &dir)?;
                     for d in '0'..='9' {
-                        let path = py_resolve(&normalize_path(
-                            &dir.join(pattern.replace("{d}", &d.to_string())),
-                        ));
+                        let path =
+                            joined_member(root, &dir, &pattern.replace("{d}", &d.to_string()))?;
                         validate_bitmap_path(
                             &mut findings,
                             &path,
@@ -594,10 +597,10 @@ pub fn validate_scene(
                     }
                 }
                 "text" => {
-                    let header = py_resolve(&resolve(
+                    let header = resolve_member(
                         root,
                         &py_str(get("font_header").ok_or_else(|| missing_key("font_header"))?),
-                    ));
+                    )?;
                     if !header.exists() {
                         findings.push(Finding::new(
                             "BLOCKER",
@@ -615,10 +618,10 @@ pub fn validate_scene(
                     }
                 }
                 "bitmap_text" => {
-                    let pack_root = py_resolve(&resolve(
+                    let pack_root = resolve_member(
                         root,
                         &py_str(get("font_pack").ok_or_else(|| missing_key("font_pack"))?),
-                    ));
+                    )?;
                     if !pack_root.join("fontpack.json").exists() {
                         findings.push(Finding::new(
                             "BLOCKER",
@@ -661,13 +664,22 @@ pub fn validate_scene(
             Ok(())
         })();
         if let Err(error) = result {
-            let key = error.message.trim_matches('\'').to_string();
-            findings.push(Finding::new(
-                "BLOCKER",
-                "UNRESOLVED_VARIABLE",
-                format!("{eid}: unresolved template/state {key}"),
-                Some(&eid),
-            ));
+            if error.code == PATH_ESCAPE {
+                findings.push(Finding::new(
+                    "BLOCKER",
+                    "ASSET_PATH_ESCAPE",
+                    format!("{eid}: {}", error.message),
+                    Some(&eid),
+                ));
+            } else {
+                let key = error.message.trim_matches('\'').to_string();
+                findings.push(Finding::new(
+                    "BLOCKER",
+                    "UNRESOLVED_VARIABLE",
+                    format!("{eid}: unresolved template/state {key}"),
+                    Some(&eid),
+                ));
+            }
         }
     }
     match render_scene(scene, root, &state, resources) {
@@ -695,6 +707,18 @@ pub fn validate_scene(
                 }
             }
         }
+        // A member path that the renderer refuses was already reported per
+        // element; do not add a second copy under a different code.
+        Err(error) if error.code == PATH_ESCAPE => {
+            if !findings.iter().any(|f| f.code == "ASSET_PATH_ESCAPE") {
+                findings.push(Finding::new(
+                    "BLOCKER",
+                    "ASSET_PATH_ESCAPE",
+                    error.message,
+                    None,
+                ));
+            }
+        }
         Err(error) => findings.push(Finding::new(
             "BLOCKER",
             "RENDER_FAILED",
@@ -702,6 +726,19 @@ pub fn validate_scene(
             None,
         )),
     }
+    // The declared-geometry and post-render passes inspect the same box, so a
+    // single element can be reported twice. Keep the first (declared) report;
+    // findings whose message differs (e.g. text measured wider than declared)
+    // stay distinct.
+    let mut seen: BTreeSet<(String, String, Option<String>, String)> = BTreeSet::new();
+    findings.retain(|f| {
+        seen.insert((
+            f.severity.clone(),
+            f.code.clone(),
+            f.element_id.clone(),
+            f.message.clone(),
+        ))
+    });
     findings
 }
 
@@ -993,7 +1030,9 @@ fn cell(value: Option<&Value>) -> String {
     value.map(py_str).unwrap_or_default()
 }
 
-fn markdown_spec(scene: &Map<String, Value>, frames: &BTreeMap<String, Value>) -> String {
+/// The part of `UI_SPEC.md` that only depends on the scene (through the scene
+/// element table). The per-frame sections are appended one at a time.
+fn markdown_spec_header(scene: &Map<String, Value>) -> String {
     let product = scene
         .get("product")
         .map(py_str)
@@ -1059,59 +1098,138 @@ fn markdown_spec(scene: &Map<String, Value>, frames: &BTreeMap<String, Value>) -
         ));
     }
     lines.push(String::new());
-    for (frame_name, frame) in frames {
-        let mut state: Vec<(&String, &Value)> =
-            frame["state"].as_object().into_iter().flatten().collect();
-        state.sort_by(|a, b| a.0.cmp(b.0));
-        lines.extend([
-            format!("## {}", frame_name.to_uppercase()),
-            String::new(),
-            format!(
-                "State: `{}`",
-                state
-                    .iter()
-                    .map(|(k, v)| format!("{k}={}", py_str(v)))
+    lines.join("\n")
+}
+
+/// One `## FRAME` section of `UI_SPEC.md`; ends with a blank line so the caller
+/// can separate sections with a single newline.
+fn markdown_spec_frame(frame_name: &str, frame: &Value) -> String {
+    let mut state: Vec<(&String, &Value)> =
+        frame["state"].as_object().into_iter().flatten().collect();
+    state.sort_by(|a, b| a.0.cmp(b.0));
+    let mut lines = vec![
+        format!("## {}", frame_name.to_uppercase()),
+        String::new(),
+        format!(
+            "State: `{}`",
+            state
+                .iter()
+                .map(|(k, v)| format!("{k}={}", py_str(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        String::new(),
+        format!("Golden BIN: `golden/{frame_name}.bin`  "),
+        format!("Reference PNG: `reference/{frame_name}.png`  "),
+        format!("SHA-256: `{}`", py_str(&frame["golden_sha256"])),
+        String::new(),
+        "| ID | Type | X | Y | W | H | Asset / Text |".into(),
+        "|---|---|---:|---:|---:|---:|---|".into(),
+    ];
+    for item in frame["elements"].as_array().into_iter().flatten() {
+        if item["visible"] != Value::Bool(true) {
+            continue;
+        }
+        let asset_or_text = item
+            .get("text")
+            .filter(|v| truthy(v))
+            .map(py_str)
+            .unwrap_or_else(|| {
+                item.get("assets")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .map(py_str)
                     .collect::<Vec<_>>()
                     .join(", ")
-            ),
-            String::new(),
-            format!("Golden BIN: `golden/{frame_name}.bin`  "),
-            format!("Reference PNG: `reference/{frame_name}.png`  "),
-            format!("SHA-256: `{}`", py_str(&frame["golden_sha256"])),
-            String::new(),
-            "| ID | Type | X | Y | W | H | Asset / Text |".into(),
-            "|---|---|---:|---:|---:|---:|---|".into(),
-        ]);
-        for item in frame["elements"].as_array().into_iter().flatten() {
-            if item["visible"] != Value::Bool(true) {
-                continue;
-            }
-            let asset_or_text = item
-                .get("text")
-                .filter(|v| truthy(v))
-                .map(py_str)
-                .unwrap_or_else(|| {
-                    item.get("assets")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                        .map(py_str)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                });
-            lines.push(format!(
-                "| {} | {} | {} | {} | {} | {} | {asset_or_text} |",
-                py_str(&item["id"]),
-                py_str(&item["type"]),
-                cell(item.get("x")),
-                cell(item.get("y")),
-                cell(item.get("w")),
-                cell(item.get("h"))
-            ));
-        }
-        lines.push(String::new());
+            });
+        lines.push(format!(
+            "| {} | {} | {} | {} | {} | {} | {asset_or_text} |",
+            py_str(&item["id"]),
+            py_str(&item["type"]),
+            cell(item.get("x")),
+            cell(item.get("y")),
+            cell(item.get("w")),
+            cell(item.get("h"))
+        ));
     }
-    format!("{}\n", lines.join("\n").trim_end())
+    lines.push(String::new());
+    lines.join("\n")
+}
+
+/// Indent every line after the first, matching how `json.dumps(indent=2)`
+/// renders a value nested one level deeper.
+fn indented_json(value: &Value, spaces: usize) -> CoreResult<String> {
+    let text = python_json(&sorted_value(value))?;
+    let pad = " ".repeat(spaces);
+    let mut out = String::with_capacity(text.len() + spaces * 8);
+    for (index, line) in text.split('\n').enumerate() {
+        if index > 0 {
+            out.push('\n');
+            out.push_str(&pad);
+        }
+        out.push_str(line);
+    }
+    Ok(out)
+}
+
+fn write_contract_prefix(
+    writer: &mut AtomicWriter,
+    width: i64,
+    height: i64,
+    bytes: usize,
+) -> CoreResult<()> {
+    let coordinate = json!({
+        "origin": "top-left", "x_direction": "right", "y_direction": "down",
+        "bounds": "[x, x+w) × [y, y+h)", "integer_coordinates": true
+    });
+    let framebuffer = json!({
+        "width": width, "height": height, "bytes": bytes, "layout": "VLSB page-major",
+        "byte_offset": "(y // 8) * width + x", "bit": "1 << (y % 8)", "polarity": "1 = lit"
+    });
+    writer.write_all(b"{\n  \"coordinate_contract\": ")?;
+    writer.write_all(indented_json(&coordinate, 2)?.as_bytes())?;
+    writer.write_all(b",\n  \"framebuffer_contract\": ")?;
+    writer.write_all(indented_json(&framebuffer, 2)?.as_bytes())?;
+    writer.write_all(b",\n  \"frames\": {")
+}
+
+fn write_contract_frame(
+    writer: &mut AtomicWriter,
+    name: &str,
+    frame: &Value,
+    first: bool,
+) -> CoreResult<()> {
+    if !first {
+        writer.write_all(b",")?;
+    }
+    let key = python_json(&Value::from(name))?;
+    writer.write_all(format!("\n    {key}: ").as_bytes())?;
+    writer.write_all(indented_json(frame, 4)?.as_bytes())
+}
+
+fn write_contract_suffix(
+    writer: &mut AtomicWriter,
+    scene: &Map<String, Value>,
+    frames_written: bool,
+) -> CoreResult<()> {
+    let scene_input: Map<String, Value> = scene
+        .iter()
+        .filter(|(k, _)| !k.starts_with('_'))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let product = scene.get("product").cloned().unwrap_or(Value::Null);
+    // A non-empty frames object is still open; an empty one is already complete
+    // and only needs its closing brace on the same line.
+    writer.write_all(if frames_written {
+        b"\n  },\n  \"product\": ".as_slice()
+    } else {
+        b"},\n  \"product\": ".as_slice()
+    })?;
+    writer.write_all(indented_json(&product, 2)?.as_bytes())?;
+    writer.write_all(b",\n  \"scene\": ")?;
+    writer.write_all(indented_json(&Value::Object(scene_input), 2)?.as_bytes())?;
+    writer.write_all(b",\n  \"schema_version\": 1\n}\n")
 }
 
 fn truthy(value: &Value) -> bool {
@@ -1126,12 +1244,24 @@ fn truthy(value: &Value) -> bool {
 }
 
 fn validation_markdown(all: &BTreeMap<String, Vec<Finding>>) -> String {
+    validation_markdown_with(all, None)
+}
+
+/// `stopped` is the matrix size when the gate short-circuited at the first
+/// blocking frame; the header then says so instead of implying a full matrix.
+fn validation_markdown_with(
+    all: &BTreeMap<String, Vec<Finding>>,
+    stopped: Option<usize>,
+) -> String {
     let total: usize = all.values().map(Vec::len).sum();
     let blockers: usize = all.values().flatten().filter(|f| f.is_blocking()).count();
+    let scope = stopped
+        .map(|cases| format!(" of **{cases}** (stopped at the first blocking frame)"))
+        .unwrap_or_default();
     let mut lines = vec![
         "# OLED UI Validation Report".to_string(),
         String::new(),
-        format!("- Frames checked: **{}**", all.len()),
+        format!("- Frames checked: **{}**{scope}", all.len()),
         format!("- Findings: **{total}**"),
         format!("- Blocking findings: **{blockers}**"),
         String::new(),
@@ -1165,11 +1295,63 @@ pub fn frame_png(rows: &[Vec<u8>], width: usize, height: usize) -> CoreResult<Ve
     encode_bitmap_png(width, height, rows)
 }
 
+#[derive(Debug)]
 pub struct ExportSummary {
     pub output_dir: PathBuf,
     pub frame_count: usize,
     pub frame_hashes: BTreeMap<String, String>,
     pub findings: BTreeMap<String, Vec<Finding>>,
+}
+
+/// Export refused by the release gate. `findings` is keyed by frame name in
+/// matrix order; `report` is the written markdown report, when one survives.
+#[derive(Debug, Clone, Default)]
+pub struct BlockedExport {
+    pub findings: BTreeMap<String, Vec<Finding>>,
+    pub report: Option<PathBuf>,
+}
+
+impl BlockedExport {
+    pub fn has_blockers(findings: &BTreeMap<String, Vec<Finding>>) -> bool {
+        findings.values().flatten().any(Finding::is_blocking)
+    }
+}
+
+/// Validate states without writing anything. The scene exporters run this
+/// before emitting a file: `export_scene` gates itself, and the desktop, CLI and
+/// Automation C-header producers call it first. Validation stops at the first
+/// state with a blocking finding: the gate is already decided, and a refused
+/// export must not pay for the rest of the matrix. Clean scenes are still
+/// validated in full. It does **not** cover the Output Workbench
+/// (`apps/mono-desktop/src/workbench.rs`) or `export.bitmap_data`, which can
+/// render the live scene into a file of their own; adding them is a contract
+/// change for the Automation API, not a bugfix.
+pub fn preflight(
+    scene: &Map<String, Value>,
+    root: &Path,
+    states: &[(String, State)],
+) -> CoreResult<BTreeMap<String, Vec<Finding>>> {
+    let mut resources = DiskResources::frozen();
+    let mut all = BTreeMap::new();
+    for (name, state) in states {
+        let findings = validate_scene(scene, root, Some(state), &mut resources);
+        let blocked = has_blockers(&findings);
+        all.insert(name.clone(), findings);
+        if blocked {
+            break;
+        }
+    }
+    Ok(all)
+}
+
+pub fn write_validation_report(
+    path: &Path,
+    all: &BTreeMap<String, Vec<Finding>>,
+) -> CoreResult<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| crate::resources::io_error(parent, &e))?;
+    }
+    atomic_write(path, validation_markdown(all).as_bytes())
 }
 
 fn prune(directory: &Path, suffix: &str, keep: &BTreeSet<String>) {
@@ -1208,50 +1390,77 @@ pub fn export_scene(
     states: &[(String, State)],
     progress: Progress<'_>,
 ) -> CoreResult<ExportSummary> {
+    export_scene_with_report(scene, root, output_dir, states, None, progress)
+}
+
+/// `export_scene` with an explicit blocking-report location. Handoff packages
+/// write the report next to the ZIP because their staging directory is
+/// temporary and deleted right after the run.
+pub fn export_scene_with_report(
+    scene: &Map<String, Value>,
+    root: &Path,
+    output_dir: &Path,
+    states: &[(String, State)],
+    report: Option<&Path>,
+    progress: Progress<'_>,
+) -> CoreResult<ExportSummary> {
     let mut folded: BTreeMap<String, String> = BTreeMap::new();
     for (name, _) in states {
         let safe = validate_frame_name(name)?;
         let key = safe.to_lowercase();
         if let Some(previous) = folded.get(&key) {
-            if previous != &safe {
+            // The contract is written frame by frame, so a repeated name would
+            // become a repeated JSON key instead of overwriting the first frame.
+            if previous == &safe {
                 return Err(CoreError::invalid(format!(
-                    "frame name collision on Windows: {} vs {}",
-                    py_repr(&Value::from(previous.as_str())),
+                    "duplicate frame name: {}",
                     py_repr(&Value::from(safe.as_str()))
                 )));
             }
+            return Err(CoreError::invalid(format!(
+                "frame name collision on Windows: {} vs {}",
+                py_repr(&Value::from(previous.as_str())),
+                py_repr(&Value::from(safe.as_str()))
+            )));
         }
         folded.insert(key, safe);
     }
     let reference_dir = output_dir.join("reference");
     let golden_dir = output_dir.join("golden");
-    for dir in [&reference_dir, &golden_dir] {
-        std::fs::create_dir_all(dir).map_err(|e| crate::resources::io_error(dir, &e))?;
-    }
     let mut resources = DiskResources::frozen();
     let total_steps = (states.len() * 2).max(1);
     let mut all: BTreeMap<String, Vec<Finding>> = BTreeMap::new();
+    let mut stopped = false;
     for (index, (name, state)) in states.iter().enumerate() {
-        all.insert(
-            name.clone(),
-            validate_scene(scene, root, Some(state), &mut resources),
-        );
+        let findings = validate_scene(scene, root, Some(state), &mut resources);
+        let blocked = has_blockers(&findings);
+        all.insert(name.clone(), findings);
         if !progress("export.validation", index + 1, total_steps) {
             return Err(CoreError::new(CANCELLED, "operation cancelled"));
         }
+        if blocked {
+            // The gate is decided by the first blocking frame; proving the rest
+            // of the matrix is also blocked would only delay the report.
+            stopped = true;
+            break;
+        }
     }
-    if all.values().any(|f| has_blockers(f)) {
+    if stopped {
+        let report = report
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| output_dir.join("validation_report.md"));
         atomic_write(
-            &output_dir.join("validation_report.md"),
-            validation_markdown(&all).as_bytes(),
+            &report,
+            validation_markdown_with(&all, Some(states.len())).as_bytes(),
         )?;
         return Err(CoreError::new(
             EXPORT_BLOCKED,
-            format!(
-                "export blocked; see {}",
-                display(&output_dir.join("validation_report.md"))
-            ),
+            format!("export blocked; see {}", display(&report)),
         ));
+    }
+    // Only after the gate: a refused export must not leave directories behind.
+    for dir in [&reference_dir, &golden_dir] {
+        std::fs::create_dir_all(dir).map_err(|e| crate::resources::io_error(dir, &e))?;
     }
     let canvas = scene.get("canvas").cloned().unwrap_or(json!({}));
     let (width, height) = (
@@ -1259,11 +1468,18 @@ pub fn export_scene(
         py_int(&canvas["h"]).unwrap_or(0),
     );
     let expected = width.max(0).saturating_mul(height.max(0) / 8) as usize;
-    let mut frames: BTreeMap<String, Value> = BTreeMap::new();
     let mut hashes = BTreeMap::new();
     let mut used: BTreeSet<PathBuf> = BTreeSet::new();
     let mut sorted: Vec<&(String, State)> = states.iter().collect();
     sorted.sort_by(|a, b| a.0.chars().cmp(b.0.chars()));
+    // `ui_contract.json` and `UI_SPEC.md` are O(states × elements). Both are
+    // streamed frame by frame, so neither holds the whole matrix. What stays in
+    // memory is per-frame bookkeeping: the hashes and the entries of `all`, which
+    // are empty here because `validate_scene` only reports blockers.
+    let mut contract = AtomicWriter::create(&output_dir.join("ui_contract.json"))?;
+    write_contract_prefix(&mut contract, width, height, expected)?;
+    let mut spec = AtomicWriter::create(&output_dir.join("UI_SPEC.md"))?;
+    spec.write_all(markdown_spec_header(scene).as_bytes())?;
     // Every file is an independent atomic write; batching only overlaps fsyncs.
     let mut pending: Vec<(PathBuf, Vec<u8>)> = Vec::new();
     for (render_index, (name, state)) in sorted.iter().enumerate() {
@@ -1300,14 +1516,17 @@ pub fn export_scene(
             .iter()
             .map(|v| usize::from(*v))
             .sum();
-        frames.insert(name.clone(), json!({
+        let frame = json!({
             "state": Value::Object(sorted_state.into_iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
             "golden": format!("golden/{name}.bin"),
             "reference": format!("reference/{name}.png"),
             "golden_sha256": digest,
             "lit_pixels": lit,
             "elements": result.resolved_elements.iter().map(|item| element_contract(item, root)).collect::<Vec<_>>(),
-        }));
+        });
+        write_contract_frame(&mut contract, name, &frame, render_index == 0)?;
+        spec.write_all(b"\n")?;
+        spec.write_all(markdown_spec_frame(name, &frame).as_bytes())?;
         if !progress(
             "export.render",
             states.len() + render_index + 1,
@@ -1316,23 +1535,9 @@ pub fn export_scene(
             return Err(CoreError::new(CANCELLED, "operation cancelled"));
         }
     }
-    let scene_input: Map<String, Value> = scene
-        .iter()
-        .filter(|(k, _)| !k.starts_with('_'))
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    let contract = json!({
-        "schema_version": 1,
-        "product": scene.get("product").cloned().unwrap_or(Value::Null),
-        "coordinate_contract": {"origin": "top-left", "x_direction": "right", "y_direction": "down", "bounds": "[x, x+w) × [y, y+h)", "integer_coordinates": true},
-        "framebuffer_contract": {"width": width, "height": height, "bytes": expected, "layout": "VLSB page-major", "byte_offset": "(y // 8) * width + x", "bit": "1 << (y % 8)", "polarity": "1 = lit"},
-        "scene": scene_input,
-        "frames": Value::Object(frames.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
-    });
-    pending.push((
-        output_dir.join("ui_contract.json"),
-        sorted_json_bytes(&contract)?,
-    ));
+    write_contract_suffix(&mut contract, scene, !sorted.is_empty())?;
+    contract.finish()?;
+    spec.finish()?;
     let mut used_sorted: Vec<PathBuf> = used.into_iter().collect();
     used_sorted.sort_by_key(|p| relative(p, root));
     let mut assets = Vec::new();
@@ -1342,10 +1547,6 @@ pub fn export_scene(
     pending.push((
         output_dir.join("asset_manifest.json"),
         sorted_json_bytes(&json!({"schema_version": 1, "assets": assets}))?,
-    ));
-    pending.push((
-        output_dir.join("UI_SPEC.md"),
-        markdown_spec(scene, &frames).into_bytes(),
     ));
     pending.push((
         output_dir.join("validation_report.md"),
@@ -1365,7 +1566,7 @@ pub fn export_scene(
     );
     Ok(ExportSummary {
         output_dir: output_dir.to_path_buf(),
-        frame_count: frames.len(),
+        frame_count: sorted.len(),
         frame_hashes: hashes,
         findings: all,
     })
@@ -1576,19 +1777,27 @@ pub fn build_handoff_package(
     ));
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work).map_err(|e| crate::resources::io_error(&work, &e))?;
+    let report = output_zip.with_extension("validation.md");
     let result = (|| {
-        let summary = export_scene(scene, root, &work, states, &mut |stage, done, total| {
-            let ratio = if total == 0 {
-                0.0
-            } else {
-                done as f64 / total as f64
-            };
-            progress(
-                &format!("handoff.{stage}"),
-                (ratio * 650.0).round() as usize,
-                1000,
-            )
-        })?;
+        let summary = export_scene_with_report(
+            scene,
+            root,
+            &work,
+            states,
+            Some(&report),
+            &mut |stage, done, total| {
+                let ratio = if total == 0 {
+                    0.0
+                } else {
+                    done as f64 / total as f64
+                };
+                progress(
+                    &format!("handoff.{stage}"),
+                    (ratio * 650.0).round() as usize,
+                    1000,
+                )
+            },
+        )?;
         let matrix = build_state_matrix(scene, policy)?;
         let matrix_summary = validate_matrix(scene, root, &matrix, &mut |stage, done, total| {
             let ratio = if total == 0 {

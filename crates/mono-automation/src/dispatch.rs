@@ -12,12 +12,14 @@ use mono_core::profiles::{OutputProfile, builtin_profiles, validate_profile_id};
 use mono_core::pyvalue::{py_int, py_repr, py_str, py_truthy};
 use mono_core::raster::{RgbaImage, rasterize};
 use mono_core::render::posix;
-use mono_core::state::{init_state, schema_from_scene, validate_state, validate_state_schema};
+use mono_core::state::{
+    apply_state_schema, init_state, schema_from_scene, validate_state, validate_state_schema,
+};
 use mono_font::{GenerateOptions, load_font, rasterize_characters};
 use mono_project::atomic::atomic_write;
 use mono_project::editor::{EditorSession, align_to, distribute, selection_metrics};
 use mono_project::export::{
-    deterministic_zip, export_scene, frame_png, has_blockers, validate_scene,
+    deterministic_zip, export_scene, frame_png, has_blockers, preflight, validate_scene,
 };
 use mono_project::fontpack_io::{load_font_pack, save_font_pack};
 use mono_project::image_io::{decode_image, encode_bitmap_png, encode_rgba_png};
@@ -668,22 +670,6 @@ fn scene_selection_layout(
 
 // -------------------------------------------------------------------- state
 
-/// V1 `apply_state_schema`.
-fn apply_state_schema(scene: &mut Map<String, Value>, schema: &Value) {
-    scene.insert(
-        "states".into(),
-        schema.get("variables").cloned().unwrap_or(json!({})),
-    );
-    match schema.get("relations").and_then(Value::as_array) {
-        Some(relations) if !relations.is_empty() => {
-            scene.insert("state_relations".into(), Value::Array(relations.clone()));
-        }
-        _ => {
-            scene.remove("state_relations");
-        }
-    }
-}
-
 fn state(
     service: &mut Service,
     method: &str,
@@ -718,7 +704,6 @@ fn state(
                 apply_state_schema(service.scene_mut(), &normalized);
                 if service.editor_attached {
                     service.session.state = init_state(service.scene());
-                    service.session.sync_dirty();
                 }
                 if tx.is_none() {
                     if service.editor_attached {
@@ -1615,6 +1600,35 @@ fn resources(
         "export.c_header" => {
             let target =
                 service.under_root(&opt_str(params, "path", "exports/current.h"), "C header")?;
+            let state = match params.get("state") {
+                Some(Value::Object(map)) if !map.is_empty() => map.clone(),
+                _ => init_state(service.scene()),
+            };
+            let findings = preflight(
+                service.scene(),
+                &service.session.doc.root,
+                &[("current".into(), state)],
+            )?;
+            let blockers: Vec<_> = findings
+                .values()
+                .flatten()
+                .filter(|finding| finding.is_blocking())
+                .collect();
+            if !blockers.is_empty() {
+                // Name every blocker, not just the first: unlike the desktop dialog
+                // and the CLI report, the caller has no other way to see the rest.
+                let mut lines = vec![format!("export blocked ({} finding(s))", blockers.len())];
+                lines.extend(
+                    blockers
+                        .iter()
+                        .take(8)
+                        .map(|blocker| format!("  {} {}", blocker.code, blocker.message)),
+                );
+                if blockers.len() > 8 {
+                    lines.push(format!("  ... and {} more", blockers.len() - 8));
+                }
+                return Err(RpcError::invalid(lines.join("\n")));
+            }
             let (_, result) = service.render(params.get("state"))?;
             let text = mono_core::c_header::framebuffer_to_c_header(
                 &result.framebuffer,

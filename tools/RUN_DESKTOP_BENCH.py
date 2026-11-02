@@ -72,7 +72,8 @@ def run_once(exe: Path, project: Path, scratch: Path, index: int) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--exe', default=str(ROOT / 'target' / 'release' / ('monooled-studio.exe' if sys.platform == 'win32' else 'monooled-studio')))
-    ap.add_argument('--project', default=str(ROOT / 'test_assets' / 'projects' / 'curing_lite' / 'project.oled.json'))
+    fixture = ROOT / 'test_assets' / 'projects' / 'curing_lite' / 'project.oled.json'
+    ap.add_argument('--project', default=str(fixture))
     ap.add_argument('--runs', type=int, default=3)
     args = ap.parse_args()
     with tempfile.TemporaryDirectory(prefix='mono-bench-') as tmp:
@@ -83,6 +84,9 @@ def main() -> int:
         worst = max(values) if values else None
         summary[key] = {'runs': values, 'worst': worst, 'budget': budget,
                         'pass': None if worst is None else worst <= budget}
+    # The memory budget describes the fixture; a generated scene only reports it.
+    if Path(args.project).resolve() != fixture.resolve():
+        summary['idle_private_mb']['pass'] = None
     for key in INFO:
         values = [r[key] for r in runs if r.get(key) is not None]
         summary[key] = {'runs': values, 'worst': max(values) if values else None}

@@ -5,16 +5,15 @@
 ## Project
 
 - Project: MonoOLED Studio
-- Product version: 2.3.0 (Rust; Python 1.x source at the v1-final tag)
-- Current phase: Rust Rewrite G6 complete; 2.0.4 trust fixes complete (TASK-004 DONE); 2.0.5 project loop complete (TASK-005 DONE, review PASS WITH MINOR NOTES); 2.1.0 professional workflow implemented (TASK-006 VERIFY, T12–T17); 2.2.0 polish and governance implemented (TASK-007 VERIFY, T18–T21); 2.3.0 device preview and review loop implemented (TASK-009 DONE, T22–T28)
+- Product version: 2.3.0 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
+- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance. Released: 2.0.4 (TASK-004), 2.0.5 (TASK-005), 2.1.0 (TASK-006), 2.2.0/2.2.1 (TASK-007), 2.3.0 (TASK-008, TASK-009). A second line of work (TASK-010 to TASK-013) branched at 2.0.3, never shipped, and is being integrated onto 2.3.0 by TASK-014; its notes are the `Unreleased` section of `CHANGELOG.md`.
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
-- Decision: ADR-005 (Rust full rewrite, main-only)
+- Decision: ADR-005 (Rust full rewrite, main-only); ADR-006 (release gate covers every *scene* export producer — the Output Workbench and `export.bitmap_data` stay outside it by decision, viewing a screen never writes)
 
 ## Workflow
 
-- Last completed workflow task: TASK-009
 - TASK-001 status: DONE
 - TASK-002 status: DONE
 - TASK-003 status: DONE
@@ -24,12 +23,25 @@
 - TASK-007 status: VERIFY (2.2.0; T18–T21 terminology, help/tooltips, new-project wizard, docs and version truth)
 - TASK-008 status: DONE (CLI `--json`; independent review PASS WITH MINOR NOTES; folded into 2.3.0, not released separately)
 - TASK-009 status: DONE (2.3.0 T22–T28; independent re-review PASS after gallery invalidation, note refresh, sidecar protection and documentation corrections)
-- Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-009); PASS WITH MINOR NOTES (TASK-008); PENDING for TASK-006/TASK-007 (subagent dispatch failed three times — two model-queue errors and one daily usage limit — so only inline self-review and implementer-side evidence are recorded; DONE/PASS remain open)
-- Active tasks: `.ai/tasks/TASK-006.md`, `.ai/tasks/TASK-007.md`
-- Next workflow action: none for 2.3.0 — `v2.3.0` was published as Latest on 2026-10-29 and `origin/main` is the tagged commit; independent review of TASK-006/TASK-007 remains a separate historical follow-up. Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
+- TASK-010 status: VERIFY (experience audit closeout, formerly TASK-004 on the unshipped line; three review slices recorded)
+- TASK-011 status: VERIFY (truthful controls, exposed engine, formerly TASK-005 on the unshipped line; three review slices recorded)
+- TASK-012 status: DONE (Designer edit-path performance, formerly TASK-006; scoped review PASS 2026-11-01)
+- TASK-013 status: DONE (stress findings: gate short-circuit, bounded export memory, member containment, formerly TASK-007; confirmation review PASS 2026-11-02)
+- TASK-014 status: VERIFY (integration of TASK-010 to TASK-013 onto 2.3.0; see `.ai/tasks/TASK-014.md`)
+- Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-009, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); PENDING for TASK-006/TASK-007 (subagent dispatch failed three times — two model-queue errors and one daily usage limit — so only inline self-review and implementer-side evidence are recorded); TASK-010/TASK-011 have review slices but no final verdict; TASK-014 not reviewed yet.
+- Active task: `.ai/tasks/TASK-014.md`
+- Next workflow action: an independent review of TASK-014. The open product decision TASK-014 names (whether the review pack belongs inside the release gate) and the release itself (the Compatibility changes rule out a patch version) are the user's. Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
 
 ## Current workstream
 
+- TASK-014 integrates the unshipped line onto 2.3.0. Where both lines fixed the same defect it kept one implementation: `EditorSession` judges dirtiness by comparing with a saved snapshot, Pixel documents keep 2.3.0's save point, the unsaved prompt keeps 2.3.0's per-document wording, shortcuts come from 2.3.0's command registry, and dialogs follow the unshipped line's focus model (overlays inside the shortcut `FocusScope`, `Scrim` owns Escape and backdrop dismissal, a modal blocks chords in `run_shortcut`).
+- TASK-010 (experience audit closeout) converged five "one signal, two owners" defects onto single sources of truth; `mono_project::export::preflight` is the one gate every export producer runs. `tools/CHECK_GUI_TRUST.py` re-checks the seams that only a real window can prove.
+- TASK-011 (truthful controls, exposed engine) removed the rows and properties nothing ever read, drew `design_rules.zones` behind a real toggle, put the job stage and a Cancel control in the status bar, opened the state schema, design rules, page rename and glyph offsets from the Inspector and Navigator, and rewrote the manual and rule files to match the code. Four text scans plus `tools/tests/test_docs_match_code.py` keep the seams from drifting back; during TASK-014 they caught every binding and translation key the integration left dead.
+- TASK-012 (interactive performance) draws the overlay and answers hit-tests from the rects the renderer already resolved, and moves validation for geometry, state and rule edits and `refresh_all` onto a worker thread (epoch-gated). Budgets and the remaining misses are in `docs/rewrite/G4_EVIDENCE.md` §4; they were measured before TASK-014.
+- TASK-013 (stress findings): the export gate stops at the first blocking frame, `ui_contract.json` and `UI_SPEC.md` stream frame by frame, and scene members are contained to the project root (`ASSET_PATH_ESCAPE` / `E-CORE-PATH`). The check is lexical: links and junctions are a recorded limitation.
+- Deferred by decision, not by omission: the Pixel Studio versus Font Lab visual language and any theme/colour revision are left for a separate design round.
+- Deferred for a product decision: the Output Workbench and Automation `export.bitmap_data` can still render the current scene into a file without the release gate (`docs/AI_HANDOFF.md` §5.5). The review pack added in 2.3.0 is in the same position; TASK-014 records it as an open question.
+- Slint 1.18 constraints: a component that inherits `ListView` mislays its delegates, and `@children` cannot be forwarded into a `ListView` (pinned by `no_list_is_a_subclassed_listview`). A `changed` handler on a bound property is evaluated eagerly (`ChangeTracker::init`), so `MainWindow.overlay-open` restores focus after every modal. Slint 1.18.1 cannot two-way-bind `MenuItem.checked`, so View-menu check marks are rendered from `Shell` state.
 - Theme Visual Workstream is closed by TASK-002 under the approved product
   decision B.
 - Dark theme routing decision resolved: preserve one-dark-pro runtime routing and

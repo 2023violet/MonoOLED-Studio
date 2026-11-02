@@ -4,7 +4,7 @@
 //! function. File access goes through [`Resources`], implemented by
 //! `mono-project`, so the core stays free of IO.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix};
 use std::sync::Arc;
 
 use indexmap::IndexMap;
@@ -38,8 +38,12 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             Component::CurDir => {}
+            // Only a name can be climbed out of: a `..` already kept here has to
+            // survive, or `../../a` would turn into `a`.
             Component::ParentDir => {
-                if !out.pop() {
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
+                    out.pop();
+                } else {
                     out.push("..");
                 }
             }
@@ -50,6 +54,7 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 }
 
 /// V1 `scene.resolve`: absolute paths kept, relative ones joined to the scene root.
+/// This does not contain anything: code that reads a member uses [`resolve_member`].
 pub fn resolve(root: &Path, member: &str) -> PathBuf {
     let path = Path::new(member);
     if path.is_absolute() {
@@ -57,6 +62,95 @@ pub fn resolve(root: &Path, member: &str) -> PathBuf {
     } else {
         normalize_path(&root.join(path))
     }
+}
+
+/// Error code for a scene member that resolves outside the project root.
+pub const PATH_ESCAPE: &str = "E-CORE-PATH";
+
+/// Path components in the form containment compares them: verbatim spellings of
+/// a drive or share equal the plain ones. `fold_ascii` compares ASCII letters
+/// without case. It stops there on purpose: NTFS does not fold every letter
+/// `to_lowercase` does, so a wider fold would let a sibling pass as the root.
+fn containment_key(path: &Path, fold_ascii: bool) -> Vec<String> {
+    path.components()
+        .map(|component| {
+            let text = match component {
+                Component::Prefix(prefix) => match prefix.kind() {
+                    Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => {
+                        format!("{}:", char::from(drive))
+                    }
+                    Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share) => {
+                        format!("//{}/{}", server.to_string_lossy(), share.to_string_lossy())
+                    }
+                    _ => component.as_os_str().to_string_lossy().into_owned(),
+                },
+                other => other.as_os_str().to_string_lossy().into_owned(),
+            };
+            if fold_ascii {
+                text.to_ascii_lowercase()
+            } else {
+                text
+            }
+        })
+        .collect()
+}
+
+fn anchored(path: &Path) -> bool {
+    matches!(
+        path.components().next(),
+        Some(Component::Prefix(_) | Component::RootDir)
+    )
+}
+
+/// `path` is `root` or below it. Both are normalized, so a `..` left after the
+/// root's own components can only mean the path climbed out of a relative root.
+fn is_contained(root: &Path, path: &Path, fold_ascii: bool) -> bool {
+    let root_key = containment_key(root, fold_ascii);
+    let path_key = containment_key(path, fold_ascii);
+    anchored(root) == anchored(path)
+        && path_key.starts_with(&root_key)
+        && !path_key[root_key.len()..].iter().any(|part| part == "..")
+}
+
+/// Resolve a member path and refuse anything that leaves `root`. Project members
+/// (assets, font headers, font packs, sequence directories) are not allowed to
+/// read outside the project, so `../` and absolute paths are errors. The check
+/// is lexical: a link inside the project that points outside it is not detected,
+/// and an 8.3 alias or linked spelling of the root is refused.
+///
+/// A relative member is joined to the root, so it carries the root's exact
+/// spelling and is compared exactly. Only an absolute member can legitimately
+/// spell the root differently, and on Windows that is compared without ASCII case.
+/// A `dir` plus a file goes through [`joined_member`], which keeps this distinction.
+pub fn member_path(root: &Path, path: &Path) -> CoreResult<PathBuf> {
+    let root = normalize_path(root);
+    let resolved = if path.is_absolute() {
+        normalize_path(path)
+    } else {
+        normalize_path(&root.join(path))
+    };
+    if is_contained(&root, &resolved, cfg!(windows) && path.is_absolute()) {
+        Ok(resolved)
+    } else {
+        Err(CoreError::new(
+            PATH_ESCAPE,
+            format!("project member path escapes project root: {}", posix(path)),
+        ))
+    }
+}
+
+/// [`member_path`] for a `scene.resolve`-style member string.
+pub fn resolve_member(root: &Path, member: &str) -> CoreResult<PathBuf> {
+    member_path(root, Path::new(member))
+}
+
+/// A member named by a `dir` and a file inside it: `image_seq` and `digits`. The
+/// `dir` is checked on its own, then the two are joined as written and checked
+/// once. Joining to the resolved `dir` would turn a relative member absolute, and
+/// it would lose the exact comparison `member_path` gives relative members.
+pub fn joined_member(root: &Path, dir: &str, file: &str) -> CoreResult<PathBuf> {
+    resolve_member(root, dir)?;
+    member_path(root, &Path::new(dir).join(file))
 }
 
 pub fn posix(path: &Path) -> String {
@@ -147,7 +241,7 @@ fn render_image<R: Resources>(
         let lower = element.get("var_lower").is_some_and(truthy);
         let template = py_str(field(element, "asset")?);
         (
-            resolve(ctx.root, &subst(&template, ctx.state, lower)?),
+            resolve_member(ctx.root, &subst(&template, ctx.state, lower)?)?,
             None,
         )
     } else {
@@ -155,8 +249,11 @@ fn render_image<R: Resources>(
         let raw = ctx.state.get(&name).ok_or_else(|| key_error(&name))?;
         let value = to_int(raw)?;
         let filename = py_str(field(element, "pattern")?).replace("{n}", &value.to_string());
-        let dir = resolve(ctx.root, &py_str(field(element, "dir")?));
-        (normalize_path(&dir.join(filename)), Some((name, value)))
+        let dir = py_str(field(element, "dir")?);
+        (
+            joined_member(ctx.root, &dir, &filename)?,
+            Some((name, value)),
+        )
     };
     let asset = ctx.bitmap(&path)?;
     let (x, y) = (int_field(element, "x")?, int_field(element, "y")?);
@@ -221,11 +318,13 @@ fn render_digits<R: Resources>(
     let digit_h = int_field(element, "digit_h")?;
     let tracking = int_or(element, "tracking", 0)?;
     let pattern = py_str(field(element, "pattern")?);
-    let dir = resolve(ctx.root, &py_str(field(element, "dir")?));
+    let dir = py_str(field(element, "dir")?);
+    // Checked here too: an empty value never reaches the loop.
+    resolve_member(ctx.root, &dir)?;
     let mut paths = Vec::new();
     let chars: Vec<char> = raw.chars().collect();
     for (index, ch) in chars.iter().enumerate() {
-        let path = normalize_path(&dir.join(pattern.replace("{d}", &ch.to_string())));
+        let path = joined_member(ctx.root, &dir, &pattern.replace("{d}", &ch.to_string()))?;
         let asset = ctx.bitmap(&path)?;
         paths.push(Value::from(asset.path.clone()));
         fb.or_mask(rows_of(&asset), x0 + index as i64 * (digit_w + tracking), y);
@@ -250,7 +349,7 @@ fn render_text<R: Resources>(
     ctx: &mut Ctx<'_, R>,
 ) -> CoreResult<Value> {
     let text = subst(&py_str(field(element, "text")?), ctx.state, false)?.to_uppercase();
-    let header = resolve(ctx.root, &py_str(field(element, "font_header")?));
+    let header = resolve_member(ctx.root, &py_str(field(element, "font_header")?))?;
     let font = ctx.resources.mode_font(&header)?;
     ctx.used_files.push(header.clone());
     let cell_w = int_or(element, "cell_w", 5)?;
@@ -315,7 +414,7 @@ fn render_bitmap_text<R: Resources>(
         ctx.state,
         false,
     )?;
-    let pack_root = resolve(ctx.root, &py_str(field(element, "font_pack")?));
+    let pack_root = resolve_member(ctx.root, &py_str(field(element, "font_pack")?))?;
     let pack = ctx.resources.font_pack(&pack_root)?;
     let (x0, y) = (int_or(element, "x", 0)?, int_or(element, "y", 0)?);
     let mut x = x0;

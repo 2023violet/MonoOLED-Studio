@@ -208,20 +208,21 @@ impl Service {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.fingerprint() != self.saved_fingerprint || (self.editor_attached && self.session.dirty)
+        self.fingerprint() != self.saved_fingerprint
+            || (self.editor_attached && self.session.is_dirty())
     }
 
     /// After a host (the Designer) lends its live session: a clean session
     /// means "saved", so the content baseline follows it.
     pub fn sync_baseline(&mut self) {
-        if !self.session.dirty {
+        if !self.session.is_dirty() {
             self.saved_fingerprint = self.fingerprint();
         }
     }
 
     pub fn refresh_saved_baseline(&mut self) {
         self.saved_fingerprint = self.fingerprint();
-        self.session.mark_saved();
+        self.session.mark_clean();
     }
 
     // ------------------------------------------------------------- results

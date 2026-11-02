@@ -12,11 +12,20 @@ The segmented control at the top switches between four workspaces: Design (Scene
 
 ## Scene Designer
 
-- Click an element to select it. `Ctrl`+click adds or removes elements, and dragging on empty canvas draws a marquee. The last selected element is the primary selection.
+- Click an element to select it. `Ctrl`+click adds or removes elements; pressing on empty canvas clears the selection. The last selected element is the primary selection.
 - Alignment and distribution can use the selection, the primary element or the canvas as reference. The Inspector shows the bounds and spacing of the selection.
 - `Ctrl+G` groups and `Ctrl+Shift+G` ungroups. `Ctrl+1` and `Ctrl+2` show or hide the navigator and the Inspector.
-- The project navigator adds, duplicates, renames and deletes screens.
-- If there are unsaved changes, switching or deleting a screen, opening another project or closing the window asks whether to save, discard or cancel. This also covers unsaved work in Pixel Studio and Font Lab.
+- The project navigator adds, duplicates, renames and deletes screens. **Rename** moves the scene file with the screen and re-opens it under the new id.
+- Viewing a screen is not an edit: switching screens does not rewrite `project.oled.json`. The active screen is recorded on the next explicit save, so after a restart the project reopens on the last **saved** screen, not the last one you looked at.
+- If there are unsaved changes, switching or deleting a screen, opening another project or closing the window asks whether to save, discard or cancel. The prompt names the documents that actually changed (Designer scene, Pixel Studio bitmap, Font Lab pack). This also covers unsaved work in Pixel Studio and Font Lab.
+- Undo back to the saved scene clears the title's `•` marker. Pixel Studio is a standalone PNG and keeps its own `•` in its panel header.
+- Export, handoff, batch validation and thumbnail-wall export run the same validation gate. When a blocking finding exists they stop, list the findings in a dialog (with **Go to** for each element) and write no export artefact; the findings themselves are saved as a report next to where the output would have gone. Export and handoff stop at the first blocking frame, and the report says how many frames were checked.
+- Esc closes any dialog, and so does clicking the dimmed area outside it.
+- The Navigator scrolls to the selected page, element or glyph, so a selection made from the canvas or with the arrow keys is never hidden below the fold.
+- The canvas toolbar's **Zones** toggle draws the project's design zones over the canvas, in the same editor-only layer as the grid and bounds.
+- The Inspector's **Schema** tab (State schema) edits the scene's state variables and their relations; **Rules** (Design rules) edits required elements, zones and baseline groups. The tab strip abbreviates both names because five tabs do not fit the panel at the smallest window width; inside, each section is titled by what it edits. An entry the engine cannot accept stays on screen with its own message, and is never written to disk.
+- Design rules live in `project.oled.json` and are written as you edit them, so the title's `•` does not track that file; the panel names the manifest it wrote.
+- Export, handoff, batch validation and the thumbnail wall run in the background: the status bar shows their progress and offers **Cancel background job**.
 - Autosave runs every 3 minutes by default. After a crash, reopening the same screen offers to restore the autosaved copy.
 
 ## Device preview, annotations and review
@@ -58,7 +67,7 @@ The output panel at the bottom generates, copies, saves or clears the output. Cl
 ## Font Lab
 
 - Font Packs normally live in the project's `.oled/fonts/` folder. A pack stores the cell size, baseline, advance, the character set and the pixels of every glyph.
-- Glyphs can be generated from a TTF/OTF font file, or from the built-in 5×7 glyphs when no font is given. Size, threshold, alignment and antialias sampling are adjustable.
+- Glyphs can be generated from a TTF/OTF font file, or from the built-in 5×7 glyphs when no font is given. Size, threshold, alignment and antialias sampling are adjustable, as is the horizontal/vertical glyph offset — an offset leaves the built-in 5×7 path, so it needs a font file.
 - Generation runs in the background. Progress appears in the status bar and the window stays usable.
 - Pick a character in the glyph list to edit it pixel by pixel. When you switch characters, an edited glyph is saved automatically.
 - Scene `bitmap_text` elements and Font Lab use the same Font Pack data.
@@ -84,7 +93,7 @@ mono handoff --project project.oled.json
 
 The desktop app, the CLI and the Automation API share one renderer and one set of validation rules.
 
-In the desktop app, export, the Code AI handoff, batch validation and the thumbnail wall run in the background. Progress shows in the status bar and you can keep editing. One background job runs at a time; to cancel it, use `Ctrl+K` → "Cancel background job". The app will not close or open another project until the job finishes.
+In the desktop app, export, the Code AI handoff, batch validation and the thumbnail wall run in the background. Progress and a **Cancel** control sit in the status bar, and you can keep editing. One background job runs at a time; `Ctrl+K` → "Cancel background job" does the same thing. The app will not close or open another project until the job finishes.
 
 ## Preferences and data locations
 

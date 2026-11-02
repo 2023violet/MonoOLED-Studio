@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use mono_core::CoreError;
+use mono_project::export::BlockedExport;
 
 /// What a finished job reports back to the UI thread.
 #[derive(Debug, Default)]
@@ -16,6 +17,8 @@ pub struct Outcome {
     pub log: Vec<String>,
     /// Findings or files changed: refresh the panels.
     pub refresh: bool,
+    /// Set when the release gate refused the job; the UI opens the blocked dialog.
+    pub blocked: Option<BlockedExport>,
 }
 
 #[derive(Default)]

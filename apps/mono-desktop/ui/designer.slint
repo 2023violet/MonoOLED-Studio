@@ -1,7 +1,7 @@
 // Scene Designer workspace: Navigator | OLED canvas | Inspector, plus the drawer.
 import { ScrollView, LineEdit, SpinBox, ComboBox, CheckBox, ListView } from "std-widgets.slint";
 import { Theme, Metrics } from "theme.slint";
-import { Shell, I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, ListRow } from "widgets.slint";
+import { Shell, I18n, Button, ButtonRole, TabStrip, Panel, SectionTitle, Caption, Label, StatusPill, PillTone, Divider, ListRow, Scroll } from "widgets.slint";
 import { NoteList } from "notes.slint";
 
 export struct ScreenItem { id: string, label: string, active: bool }
@@ -12,6 +12,11 @@ export struct OverlayBox { id: string, x: int, y: int, w: int, h: int, selected:
 export struct StateVar { name: string, kind: string, value: string, options: [string], current: int, minimum: int, maximum: int }
 export struct EventItem { at: string, kind: string, detail: string }
 export struct PresetItem { label: string, index: int }
+export struct StateVarSpec { name: string, kind: string, init: string, min: string, max: string, values: string }
+export struct StateRelation { left: string, left-index: int, operator: string, operator-index: int, right: string, right-index: int }
+export struct RuleText { value: string }
+export struct RuleZone { name: string, x: string, y: string, w: string, h: string }
+export struct RuleGroup { axis: string, ids: string }
 
 export global DesignerModel {
     // Navigator
@@ -19,6 +24,9 @@ export global DesignerModel {
     in property <[ElementItem]> elements;
     in property <[AssetItem]> assets;
     in property <[string]> font-packs;
+    // Row to scroll into view (`Scroll.into-view`).
+    in property <int> screen-current: -1;
+    in property <int> element-current: -1;
     in-out property <int> navigator-tab: 0;
     in-out property <string> asset-filter;
     // Canvas
@@ -32,6 +40,8 @@ export global DesignerModel {
     in-out property <bool> show-zones: false;
     in-out property <int> zoom-index: 0;
     in property <[OverlayBox]> boxes;
+    // `design_rules.zones` of the active screen, drawn when show-zones is on.
+    in property <[OverlayBox]> zones;
     in property <[int]> guides-x;
     in property <[int]> guides-y;
     in property <string> framebuffer-summary;
@@ -40,7 +50,7 @@ export global DesignerModel {
     in-out property <int> inspector-tab: 0;
     in property <bool> has-selection;
     in property <bool> can-edit-asset;
-    in property <int> selection-count;
+    in property <string> selection-text;
     in property <string> element-id;
     in property <string> element-type;
     in property <string> element-asset;
@@ -57,6 +67,22 @@ export global DesignerModel {
     in property <string> measure-text;
     in-out property <int> align-reference: 0;
     in property <[StateVar]> states;
+    // State schema editor: rows mirror the draft while it is invalid, the scene
+    // once the engine accepts it.
+    in property <[StateVarSpec]> schema-vars;
+    in property <[StateRelation]> relations;
+    in property <[string]> var-names;
+    in property <[string]> relation-ops;
+    in property <bool> schema-valid: true;
+    in property <string> schema-errors;
+    // Design rules from the project manifest (Inspector → rules tab).
+    in property <[RuleText]> rule-required;
+    in property <[RuleZone]> rule-zones;
+    in property <[RuleGroup]> rule-groups;
+    in property <bool> rules-valid: true;
+    in property <string> rules-errors;
+    /// Where the rules live, and that writing them is immediate.
+    in property <string> rules-status;
     in property <string> runtime-text;
     in property <bool> playing;
     in property <string> preview-boundary;
@@ -78,6 +104,8 @@ export global DesignerModel {
     callback geometry-edited(string /* field */, int /* value */);
     callback inspector-action(string);
     callback state-edited(string /* name */, string /* value */);
+    callback schema-edited(string /* action */, string /* name or row */, string /* value */);
+    callback rules-edited(string /* action */, string /* row */, string /* field */, string /* value */);
     callback canvas-pointer(string /* phase: down|move|up|hover */, float /* doc x */, float /* doc y */, bool /* shift */, bool /* ctrl */);
     callback canvas-key(string);
     callback canvas-size-edited(int, int);
@@ -105,6 +133,22 @@ component NumberField inherits HorizontalLayout {
 }
 
 component Navigator inherits Panel {
+    // The two lists that must follow the selection live here unconditionally so
+    // they keep an id; the tabs switch them with `visible`.
+    private property <length> row-height: Metrics.control-height + 4px;
+    // Left over from the original fix: 1.18 does fire a bound property's `changed`
+    // handler with no reader (see `overlay-open` in main.slint), so the
+    // `>= -1` reads below are harmless leftovers, not what makes scrolling work.
+    private property <int> screens-current: DesignerModel.screen-current;
+    private property <int> elements-current: DesignerModel.element-current;
+    changed screens-current => {
+        screens-list.content-y = Scroll.into-view(screens-current, row-height,
+            screens-list.content-y, screens-list.visible-height, screens-list.content-height);
+    }
+    changed elements-current => {
+        elements-list.content-y = Scroll.into-view(elements-current, row-height,
+            elements-list.content-y, elements-list.visible-height, elements-list.content-height);
+    }
     VerticalLayout {
         padding: 10px;
         spacing: 8px;
@@ -117,7 +161,8 @@ component Navigator inherits Panel {
             background: Theme.surface-toolbar;
             border-radius: Metrics.radius-control;
             vertical-stretch: 1;
-            if DesignerModel.navigator-tab == 0: ListView {
+            screens-list := ListView {
+                visible: DesignerModel.navigator-tab == 0 && screens-current >= -1;
                 for screen in DesignerModel.screens: ListRow {
                     text: screen.label;
                     detail: screen.id;
@@ -125,7 +170,8 @@ component Navigator inherits Panel {
                     clicked => { DesignerModel.navigator-action("open-screen", screen.id); }
                 }
             }
-            if DesignerModel.navigator-tab == 1: ListView {
+            elements-list := ListView {
+                visible: DesignerModel.navigator-tab == 1 && elements-current >= -1;
                 for element in DesignerModel.elements: ListRow {
                     text: element.id;
                     detail: element.kind;
@@ -164,7 +210,11 @@ component Navigator inherits Panel {
                 Button { shrink: true; text: I18n.tr(I18n.lang, "action.new_screen"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("new-screen", ""); } }
                 Button { shrink: true; text: I18n.tr(I18n.lang, "action.duplicate"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("duplicate-screen", ""); } }
             }
-            Button { text: I18n.tr(I18n.lang, "action.delete"); role: ButtonRole.danger; clicked => { DesignerModel.navigator-action("delete-screen", ""); } }
+            HorizontalLayout {
+                spacing: 6px;
+                Button { shrink: true; text: I18n.tr(I18n.lang, "action.rename"); horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("rename-screen", ""); } }
+                Button { shrink: true; text: I18n.tr(I18n.lang, "action.delete"); role: ButtonRole.danger; horizontal-stretch: 1; clicked => { DesignerModel.navigator-action("delete-screen", ""); } }
+            }
         }
         if DesignerModel.navigator-tab == 1: HorizontalLayout {
             spacing: 6px;
@@ -189,7 +239,9 @@ export component OledCanvas inherits Rectangle {
     in property <bool> grid;
     in property <bool> rulers;
     in property <bool> bounds;
+    in property <bool> show-zones;
     in property <[OverlayBox]> boxes;
+    in property <[OverlayBox]> zones;
     in property <[int]> guides-x;
     in property <[int]> guides-y;
     callback pointer(string, float, float, bool, bool);
@@ -245,6 +297,27 @@ export component OledCanvas inherits Rectangle {
                     width: parent.width;
                     background: Theme.canvas-grid;
                     opacity: 0.55;
+                }
+            }
+            for zone in root.zones: Rectangle {
+                visible: root.show-zones;
+                x: zone.x * root.px;
+                y: zone.y * root.px;
+                width: max(1px, zone.w * root.px);
+                height: max(1px, zone.h * root.px);
+                border-width: 1px;
+                border-color: Theme.status-warning;
+                Rectangle {
+                    background: Theme.status-warning;
+                    opacity: 0.16;
+                }
+                Text {
+                    visible: zone.w * root.px >= 26px;
+                    x: 2px;
+                    y: 1px;
+                    text: zone.id;
+                    font-size: 9px;
+                    color: Theme.status-warning;
                 }
             }
             for box in root.boxes: Rectangle {
@@ -352,6 +425,7 @@ component CanvasPanel inherits Panel {
             CheckBox { text: I18n.tr(I18n.lang, "toggle.grid"); checked <=> DesignerModel.show-grid; }
             CheckBox { text: I18n.tr(I18n.lang, "toggle.bounds"); checked <=> DesignerModel.show-bounds; }
             CheckBox { text: I18n.tr(I18n.lang, "toggle.rulers"); checked <=> DesignerModel.show-rulers; }
+            CheckBox { text: I18n.tr(I18n.lang, "toggle.zones"); checked <=> DesignerModel.show-zones; }
         }
         OledCanvas {
             vertical-stretch: 1;
@@ -363,6 +437,8 @@ component CanvasPanel inherits Panel {
             rulers: DesignerModel.show-rulers;
             bounds: DesignerModel.show-bounds;
             boxes: DesignerModel.boxes;
+            show-zones: DesignerModel.show-zones;
+            zones: DesignerModel.zones;
             guides-x: DesignerModel.guides-x;
             guides-y: DesignerModel.guides-y;
             pointer(phase, x, y, shift, ctrl) => { DesignerModel.canvas-pointer(phase, x, y, shift, ctrl); }
@@ -377,7 +453,11 @@ component Inspector inherits Panel {
         padding: 10px;
         spacing: 8px;
         TabStrip {
-            items: [I18n.tr(I18n.lang, "panel.properties"), I18n.tr(I18n.lang, "preview.state"), I18n.tr(I18n.lang, "inspector.canvas"), I18n.tr(I18n.lang, "notes.title")];
+            // Six tabs do not fit the 310px Inspector at the window minimum, so
+            // the two long names are abbreviated here: at that size every tab is
+            // elided to a couple of letters, and "State" and "State schema" would
+            // open on the same ones. The panels keep their full section titles.
+            items: [I18n.tr(I18n.lang, "panel.properties"), I18n.tr(I18n.lang, "preview.state"), I18n.tr(I18n.lang, "inspector.canvas"), I18n.tr(I18n.lang, "tab.schema"), I18n.tr(I18n.lang, "tab.rules"), I18n.tr(I18n.lang, "notes.title")];
             current <=> DesignerModel.inspector-tab;
         }
         ScrollView {
@@ -391,6 +471,9 @@ component Inspector inherits Panel {
                     if !DesignerModel.has-selection: Caption { text: I18n.tr(I18n.lang, "inspector.no_selection"); }
                     if DesignerModel.has-selection: VerticalLayout {
                         spacing: 8px;
+                        // The id/type rows above describe the primary element only, so
+                        // say how many are really in the selection.
+                        if DesignerModel.selection-text != "": Caption { text: DesignerModel.selection-text; wrap: word-wrap; }
                         HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "property.id"); width: 64px; } LineEdit { text: DesignerModel.element-id; read-only: true; } }
                         HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "property.type"); width: 64px; } LineEdit { text: DesignerModel.element-type; read-only: true; } }
                         HorizontalLayout {
@@ -502,6 +585,7 @@ component Inspector inherits Panel {
                             edited(v) => { DesignerModel.state-edited(state.name, v); }
                         }
                     }
+                    Caption { text: I18n.tr(I18n.lang, "state.preview_only"); wrap: word-wrap; }
                     Divider { }
                     SectionTitle { text: I18n.tr(I18n.lang, "preview.events"); }
                     if DesignerModel.events.length == 0: Caption { text: I18n.tr(I18n.lang, "preview.events_empty"); }
@@ -511,13 +595,161 @@ component Inspector inherits Panel {
                         Caption { text: event.detail; }
                     }
                 }
-                if DesignerModel.inspector-tab == 3: NoteList { }
+                if DesignerModel.inspector-tab == 5: NoteList { }
                 if DesignerModel.inspector-tab == 2: VerticalLayout {
                     spacing: 8px;
                     SectionTitle { text: I18n.tr(I18n.lang, "panel.canvas_settings"); }
                     HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "canvas.width"); width: 120px; } w-spin := SpinBox { value: DesignerModel.canvas-w-setting; minimum: 1; maximum: 1024; } }
                     HorizontalLayout { spacing: 6px; Label { text: I18n.tr(I18n.lang, "canvas.height"); width: 120px; } h-spin := SpinBox { value: DesignerModel.canvas-h-setting; minimum: 8; maximum: 1024; step-size: 8; } }
                     Button { text: I18n.tr(I18n.lang, "action.apply_canvas"); role: ButtonRole.secondary; clicked => { DesignerModel.canvas-size-edited(w-spin.value, h-spin.value); } }
+                }
+                if DesignerModel.inspector-tab == 3: VerticalLayout {
+                    spacing: 8px;
+                    SectionTitle { text: I18n.tr(I18n.lang, "schema.variables"); }
+                    if DesignerModel.schema-vars.length == 0: Caption { text: I18n.tr(I18n.lang, "state.empty"); }
+                    for spec in DesignerModel.schema-vars: VerticalLayout {
+                        spacing: 4px;
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Label { text: spec.name; width: 70px; overflow: elide; }
+                            ComboBox {
+                                min-width: 0px;
+                                horizontal-stretch: 1;
+                                model: ["int", "enum"];
+                                current-index: spec.kind == "enum" ? 1 : 0;
+                                selected(t) => { DesignerModel.schema-edited("set-kind", spec.name, t); }
+                            }
+                            Button { role: ButtonRole.danger; text: I18n.tr(I18n.lang, "action.delete"); clicked => { DesignerModel.schema-edited("remove-variable", spec.name, ""); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 4px;
+                            Caption { text: I18n.tr(I18n.lang, "schema.init"); }
+                            LineEdit { text: spec.init; min-width: 0px; horizontal-stretch: 1; accepted(t) => { DesignerModel.schema-edited("set-init", spec.name, t); } }
+                            Caption { text: I18n.tr(I18n.lang, "schema.min"); }
+                            LineEdit { text: spec.min; width: 46px; accepted(t) => { DesignerModel.schema-edited("set-min", spec.name, t); } }
+                            Caption { text: I18n.tr(I18n.lang, "schema.max"); }
+                            LineEdit { text: spec.max; width: 46px; accepted(t) => { DesignerModel.schema-edited("set-max", spec.name, t); } }
+                        }
+                        if spec.kind == "enum": HorizontalLayout {
+                            spacing: 4px;
+                            Caption { text: I18n.tr(I18n.lang, "schema.values"); }
+                            LineEdit { text: spec.values; min-width: 0px; horizontal-stretch: 1; accepted(t) => { DesignerModel.schema-edited("set-values", spec.name, t); } }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        new-var := LineEdit {
+                            placeholder-text: I18n.tr(I18n.lang, "schema.name_hint");
+                            horizontal-stretch: 1;
+                            accepted(t) => { DesignerModel.schema-edited("add-variable", t, ""); }
+                        }
+                        Button { text: I18n.tr(I18n.lang, "schema.add_variable"); role: ButtonRole.secondary; clicked => { DesignerModel.schema-edited("add-variable", new-var.text, ""); } }
+                    }
+                    if !DesignerModel.schema-valid: Text {
+                        text: DesignerModel.schema-errors;
+                        font-size: Metrics.font-small;
+                        color: Theme.status-error;
+                        wrap: word-wrap;
+                    }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "schema.relations"); }
+                    for relation[index] in DesignerModel.relations: HorizontalLayout {
+                        spacing: 4px;
+                        ComboBox {
+                            min-width: 0px;
+                            horizontal-stretch: 1;
+                            model: DesignerModel.var-names;
+                            current-index: relation.left-index;
+                            selected(t) => { DesignerModel.schema-edited("set-relation-left", "\{index}", t); }
+                        }
+                        ComboBox {
+                            width: 72px;
+                            model: DesignerModel.relation-ops;
+                            current-index: relation.operator-index;
+                            selected(t) => { DesignerModel.schema-edited("set-relation-op", "\{index}", t); }
+                        }
+                        ComboBox {
+                            min-width: 0px;
+                            horizontal-stretch: 1;
+                            model: DesignerModel.var-names;
+                            current-index: relation.right-index;
+                            selected(t) => { DesignerModel.schema-edited("set-relation-right", "\{index}", t); }
+                        }
+                        Button { role: ButtonRole.danger; text: I18n.tr(I18n.lang, "action.delete"); clicked => { DesignerModel.schema-edited("remove-relation", "\{index}", ""); } }
+                    }
+                    Button {
+                        text: I18n.tr(I18n.lang, "schema.add_relation");
+                        role: ButtonRole.secondary;
+                        enabled: DesignerModel.var-names.length >= 2;
+                        clicked => { DesignerModel.schema-edited("add-relation", "", ""); }
+                    }
+                }
+                if DesignerModel.inspector-tab == 4: VerticalLayout {
+                    spacing: 8px;
+                    SectionTitle { text: I18n.tr(I18n.lang, "rules.required"); }
+                    for required[index] in DesignerModel.rule-required: HorizontalLayout {
+                        spacing: 4px;
+                        LineEdit { text: required.value; min-width: 0px; horizontal-stretch: 1; accepted(t) => { DesignerModel.rules-edited("set-required", "\{index}", "value", t); } }
+                        Button { role: ButtonRole.danger; text: I18n.tr(I18n.lang, "action.delete"); clicked => { DesignerModel.rules-edited("remove-required", "\{index}", "", ""); } }
+                    }
+                    HorizontalLayout {
+                        spacing: 4px;
+                        new-required := LineEdit {
+                            min-width: 0px;
+                            horizontal-stretch: 1;
+                            placeholder-text: I18n.tr(I18n.lang, "rules.element_hint");
+                            accepted(t) => { DesignerModel.rules-edited("add-required", "", "", t); }
+                        }
+                        Button { text: I18n.tr(I18n.lang, "rules.add"); role: ButtonRole.secondary; clicked => { DesignerModel.rules-edited("add-required", "", "", new-required.text); } }
+                    }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "rules.zones"); }
+                    for zone[index] in DesignerModel.rule-zones: VerticalLayout {
+                        spacing: 4px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            LineEdit { text: zone.name; min-width: 0px; horizontal-stretch: 1; accepted(t) => { DesignerModel.rules-edited("set-zone", "\{index}", "name", t); } }
+                            Button { role: ButtonRole.danger; text: I18n.tr(I18n.lang, "action.delete"); clicked => { DesignerModel.rules-edited("remove-zone", "\{index}", "", ""); } }
+                        }
+                        GridLayout {
+                            spacing: 4px;
+                            Row {
+                                Caption { text: "x"; }
+                                LineEdit { text: zone.x; horizontal-stretch: 1; accepted(t) => { DesignerModel.rules-edited("set-zone", "\{index}", "x", t); } }
+                                Caption { text: "y"; }
+                                LineEdit { text: zone.y; horizontal-stretch: 1; accepted(t) => { DesignerModel.rules-edited("set-zone", "\{index}", "y", t); } }
+                            }
+                            Row {
+                                Caption { text: "w"; }
+                                LineEdit { text: zone.w; horizontal-stretch: 1; accepted(t) => { DesignerModel.rules-edited("set-zone", "\{index}", "w", t); } }
+                                Caption { text: "h"; }
+                                LineEdit { text: zone.h; horizontal-stretch: 1; accepted(t) => { DesignerModel.rules-edited("set-zone", "\{index}", "h", t); } }
+                            }
+                        }
+                    }
+                    Button { text: I18n.tr(I18n.lang, "rules.add_zone"); role: ButtonRole.secondary; clicked => { DesignerModel.rules-edited("add-zone", "", "", ""); } }
+                    Divider { }
+                    SectionTitle { text: I18n.tr(I18n.lang, "rules.baselines"); }
+                    for group[index] in DesignerModel.rule-groups: HorizontalLayout {
+                        spacing: 4px;
+                        ComboBox {
+                            width: 56px;
+                            model: ["y", "x"];
+                            current-index: group.axis == "x" ? 1 : 0;
+                            selected(t) => { DesignerModel.rules-edited("set-group", "\{index}", "axis", t); }
+                        }
+                        LineEdit { text: group.ids; min-width: 0px; horizontal-stretch: 1; accepted(t) => { DesignerModel.rules-edited("set-group", "\{index}", "ids", t); } }
+                        Button { role: ButtonRole.danger; text: I18n.tr(I18n.lang, "action.delete"); clicked => { DesignerModel.rules-edited("remove-group", "\{index}", "", ""); } }
+                    }
+                    Button { text: I18n.tr(I18n.lang, "rules.add_group"); role: ButtonRole.secondary; clicked => { DesignerModel.rules-edited("add-group", "", "", ""); } }
+                    if !DesignerModel.rules-valid: Text {
+                        text: DesignerModel.rules-errors;
+                        font-size: Metrics.font-small;
+                        color: Theme.status-error;
+                        wrap: word-wrap;
+                    }
+                    Caption { text: I18n.tr(I18n.lang, "rules.note"); wrap: word-wrap; }
+                    Caption { text: DesignerModel.rules-status; wrap: word-wrap; overflow: elide; }
                 }
             }
         }
