@@ -1101,7 +1101,6 @@ impl App {
             rm.set_current_w(0);
             rm.set_current_h(0);
             rm.set_changed(0);
-            rm.set_percent(0.0);
             rm.set_bbox_x(0);
             rm.set_bbox_y(0);
             rm.set_bbox_w(0);
@@ -1152,7 +1151,6 @@ impl App {
         let total = pixels.len().max(1);
         let percent = changed as f64 * 100.0 / total as f64;
         rm.set_changed(changed as i32);
-        rm.set_percent(percent as f32);
         match bbox {
             Some(b) => {
                 rm.set_bbox_x(b.x as i32);
@@ -1243,7 +1241,6 @@ impl App {
         rm.set_contract_status(ss(view.status));
         rm.set_frame_sha(ss(&view.frame_sha));
         rm.set_golden_sha(ss(&view.golden_sha));
-        rm.set_hash_match(view.status == "golden-match");
         rm.set_lit_pixels(view.lit as i32);
         rm.set_golden_lit(view.golden_lit as i32);
         rm.set_elements(model(view.elements));
