@@ -693,9 +693,9 @@ impl App {
         if self.workspace == REVIEW_WORKSPACE {
             self.refresh_review();
         }
+        // The Inspector refreshes the notes too, reusing the canvas frame.
         self.refresh_inspector_after_canvas();
         self.refresh_presets();
-        self.refresh_notes();
         self.refresh_state_schema();
         self.refresh_design_rules();
         self.schedule_validation();
