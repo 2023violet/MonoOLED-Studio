@@ -167,6 +167,28 @@
 - 证据包导出（1654–1749 ms）和取模 p95（一次 2.04 ms）比整合前慢，但导出路径在这次整合中没有改动，差异没有隔离；这两项按实测记为未达标。
 - 结论表沿用上面的定义，没有改动任何预算。
 
+### 2026-11-02 整合回退的修复（TASK-016）
+
+上一小节记录的整合回退有两个来源，都来自 2.3.0，本轮都已修复。测法与上一小节相同（release，3 次运行）；新增的 `panel_review_ms` 单独计时 Review 刷新体。
+
+1. **Review 刷新**：`refresh_all_inner` 每次都执行 `refresh_review()`，即使 Review 工作区不可见。它会再渲染一次场景、生成 C 头文件，并逐对比较元素。修复前在 1005 元素上测得 `panel_review_ms` 261.9–295.9 ms，占一次完整刷新（296.6–313.9 ms）的绝大部分。现在只在 Review 工作区打开时（以及切入时）刷新；元素差异改为按 id 建索引，结果与原逐对定义一致（`review_element_diff_matches_the_pairwise_definition`）。Review 可见时，1005 元素的刷新体现在是 8.4–9.3 ms。
+2. **备注行重复渲染**：`refresh_inspector` → `refresh_notes` → `note_rows` 每次都调用 `compute_frame_evidence()`，把场景再渲染一遍；`refresh_all_inner` 还会在 Inspector 之后再刷新一次备注。修复前 50 digits 上 `panel_inspector_ms` 为 16.5–17.1 ms，约等于一次完整渲染。现在，凡是 `refresh_canvas` 刚在同一次调用里存下本帧证据的地方，备注行都直接复用它（`note_rows_reuse_the_canvas_frame_only_right_after_it`），重复的那次刷新也已删除。单独的 Inspector 刷新（例如改变选择）仍会自己渲染。
+
+| 工作负载 | 指标 | 修复前 | 修复后 | 整合前（TASK-012） |
+|---|---|---|---|---|
+| 1005 元素 | panel_refresh_all | 296.6–313.9 ms | 11.8–15.0 ms | 11.1–13.4 ms |
+| 1005 元素 | max_handler | 27.0–30.3 ms | 19.5–24.1 ms | 20.5–23.1 ms |
+| 1005 元素 | panel_state_edit | 14.0–14.9 ms | 8.6–9.7 ms | 8.2–10.3 ms |
+| 1005 元素 | panel_geometry_edit | 18.8–21.9 ms | 14.6–18.3 ms | 15.5–17.6 ms |
+| 55 元素（50 digits） | panel_refresh_all | 61.5–61.9 ms | 14.9–16.1 ms | 15.1–16.0 ms |
+| 55 元素（50 digits） | max_handler | 44.2–45.0 ms | 22.2–27.1 ms | 21.4–22.7 ms |
+| 55 元素（50 digits） | panel_state_edit | 28.1–34.0 ms | 13.9–15.6 ms | 14.2–14.8 ms |
+| 55 元素（50 digits） | panel_geometry_edit | 28.7–32.3 ms | 14.9–16.8 ms | 14.9–16.2 ms |
+| `curing_lite` 夹具 | panel_refresh_all | 3.36–4.32 ms | 1.38–1.61 ms | 1.21–1.37 ms |
+| `curing_lite` 夹具 | max_handler | 2.75–18.0 ms | 1.77–2.31 ms | 1.78–2.10 ms |
+
+预算结论不变：夹具达标；1005 元素与 50 digits 的 `max_handler` 仍高于 16 ms，与整合前一样未达标（剩余下限见 TASK-012 小节）。空闲私有内存：夹具 74.2–76.4 MB（≤ 80 MB），生成场景只报告。上一小节列出的其他未达标项（笔画、冷启动、证据包导出、取模 p95 的一次超标）不在本轮范围内。
+
 ## 5. 记录在案的偏差
 
 1. **字模生成（Pixel Studio → 字模生成）在没有字体文件时使用内置 5×7 字形**；V1 使用 DejaVuSans 或 Pillow 默认字体。属于 D6 的语义等价范围。
