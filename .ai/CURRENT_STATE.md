@@ -7,7 +7,8 @@
 - Project: MonoOLED Studio
 - Product version: 2.1.0 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
 - Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance (2.0.3 on 2026-10-23, 2.1.0 on 2026-10-30)
-- Active round: the 2026-10-30 truthful-controls batch (TASK-005) stacked on the 2026-10-29 experience-audit fixes (TASK-004); both shipped as `2.1.0`
+- Active round: TASK-006 (Designer edit-path performance) and TASK-007 (the three defects from the 2026-10-31 stress campaign: gate short-circuit, bounded export memory, project-root member containment). TASK-006 is DONE (scoped review PASS, 2026-11-01). TASK-007 is DONE (confirmation review PASS, 2026-11-02); see Workflow below.
+- Last shipped batch: the 2026-10-30 truthful-controls batch (TASK-005) stacked on the 2026-10-29 experience-audit fixes (TASK-004); both shipped as `2.1.0`
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
@@ -15,14 +16,13 @@
 
 ## Workflow
 
-- Last completed workflow task: TASK-003
 - TASK-001 status: DONE
 - TASK-002 status: DONE
 - TASK-003 status: DONE
 - Independent Review: PASS (TASK-003, agent review)
-- Active task: TASK-005 (stacked on TASK-004 in the same working tree), both committed
-- Active task state: VERIFY with three independent review slices absorbed and their findings re-verified by the gates; `DONE` / `PASS` is the reviewer's or the maintainer's verdict and has not been awarded here (see each TASK's Review Status section)
-- Next workflow action: the maintainer confirms `PASS` / `DONE` for TASK-004 and TASK-005. Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules).
+- Active task: TASK-006 (Designer edit-path performance) and TASK-007 (stress-finding fixes)
+- Active task state: TASK-006 DONE (scoped review PASS, 2026-11-01) and TASK-007 DONE (confirmation review PASS, 2026-11-02). Each task's `## Review Status` holds every verdict and rework record.
+- Next workflow action: the user decides on committing and on the release. Open for its own decision: `CHANGELOG.md`'s released 2.1.0 entry says a blocked API `export.c_header` saves a report, which it does not. A release decision stays open: both Compatibility changes alter `export.*` behaviour, so this cannot ship as a patch. Both fix scopes used files outside each task's original Allowed Files list; the user confirmed those additions on 2026-11-01, and each task's Review Status section names them. Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules).
 
 ## Current workstream
 
@@ -39,6 +39,23 @@
   rules, page rename and glyph offsets from the Inspector and Navigator, and
   rewrites the manual and rule files to match the code. Four text scans plus
   `tools/tests/test_docs_match_code.py` keep the seams from drifting back.
+- TASK-006 (interactive performance) measures the Designer edit path for the
+  first time, draws the overlay and answers hit-tests from the rects the renderer
+  already resolved instead of one `geometry(id)` lookup per element, and moves
+  validation for geometry, state and rule edits and `refresh_all` onto a worker
+  thread (epoch-gated; only the newest result is applied, though a superseded
+  worker may still be finishing). Budgets, attribution and the remaining misses on
+  the 1005-element and 50-digit scenes are in `docs/rewrite/G4_EVIDENCE.md` §4.
+- TASK-007 (stress findings) follows the 2026-10-31 brute-force pass: the export
+  gate stops at the first blocking frame instead of evaluating the rest of the
+  matrix (blocked 1005-element export 464 s → 0.4 s), `ui_contract.json` and
+  `UI_SPEC.md` stream frame by frame (a clean 1000 × 560 export with zero findings
+  peaks at about 18 MB private instead of accumulating every frame), and scene
+  members are contained to the project root (`ASSET_PATH_ESCAPE` / `E-CORE-PATH`)
+  in the renderer, the validator, Font Lab and the FontPack fingerprint. The check
+  is lexical: links and junctions are a recorded limitation.
+- The 2026-10-31 stress evidence and the re-run results live in
+  `target/stress/REPORT.md` (ignored scratch, not a product document).
 - Deferred by decision, not by omission: the Pixel Studio versus Font Lab visual
   language (black-background white dots versus white-background black shapes) and
   any theme/colour revision are left for a separate design round.
