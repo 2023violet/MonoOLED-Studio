@@ -35,6 +35,9 @@ pub struct GalleryCard {
     pub warnings: usize,
     pub annotations: usize,
     pub image: Option<FrameImage>,
+    /// Why `image` is missing: the renderer's refusal, such as a member that
+    /// escapes the project root.
+    pub render_error: Option<String>,
 }
 
 pub struct GalleryJob {
@@ -84,13 +87,18 @@ pub fn build_cards(project: &ProjectWorkspace) -> Result<Vec<GalleryCard>, CoreE
         let findings = validate_scene(&scene.data, &project.root, Some(&state), &mut resources);
         let blockers = findings.iter().filter(|f| f.is_blocking()).count();
         let warnings = findings.len().saturating_sub(blockers);
-        let image = render_scene(&scene.data, &project.root, &state, &mut resources)
-            .ok()
-            .map(|result| FrameImage {
-                width: result.framebuffer.width().max(1),
-                height: result.framebuffer.height().max(1),
-                pixels: result.framebuffer.pixels().to_vec(),
-            });
+        let (image, render_error) =
+            match render_scene(&scene.data, &project.root, &state, &mut resources) {
+                Ok(result) => (
+                    Some(FrameImage {
+                        width: result.framebuffer.width().max(1),
+                        height: result.framebuffer.height().max(1),
+                        pixels: result.framebuffer.pixels().to_vec(),
+                    }),
+                    None,
+                ),
+                Err(error) => (None, Some(error.message)),
+            };
         cards.push(GalleryCard {
             id: screen.id.clone(),
             label: screen.label.clone(),
@@ -99,6 +107,7 @@ pub fn build_cards(project: &ProjectWorkspace) -> Result<Vec<GalleryCard>, CoreE
             warnings,
             annotations: 0,
             image,
+            render_error,
         });
     }
     sort_cards(&mut cards);
@@ -258,6 +267,7 @@ mod tests {
             warnings: 0,
             annotations: 0,
             image: None,
+            render_error: None,
         }
     }
 }

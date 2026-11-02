@@ -1065,14 +1065,10 @@ impl App {
         dm.set_zones(model(zones));
     }
 
-    /// Side-by-side baseline/current view for the Review workspace.
-    pub fn refresh_review(&mut self) {
-        let lang = self.lang.clone();
-        let Some(ui) = self.ui.upgrade() else { return };
-        let rm = ReviewModel::get(&ui);
-        let blank = image_from_pixels(1, 1, &[0]);
-        rm.set_mode(self.review_mode);
-        let rendered = self.session.as_mut().map(|session| match session.render() {
+    /// The current frame for the Review panel, or the renderer's refusal
+    /// (for example a member escaping the project root); `None` without a scene.
+    fn review_render(&mut self) -> Option<Result<ReviewRender, String>> {
+        self.session.as_mut().map(|session| match session.render() {
             Ok(result) => {
                 let fb = result.framebuffer;
                 let vlsb = fb.to_vlsb().ok();
@@ -1092,7 +1088,17 @@ impl App {
                 })
             }
             Err(error) => Err(error.message),
-        });
+        })
+    }
+
+    /// Side-by-side baseline/current view for the Review workspace.
+    pub fn refresh_review(&mut self) {
+        let lang = self.lang.clone();
+        let Some(ui) = self.ui.upgrade() else { return };
+        let rm = ReviewModel::get(&ui);
+        let blank = image_from_pixels(1, 1, &[0]);
+        rm.set_mode(self.review_mode);
+        let rendered = self.review_render();
         let Some(rendered) = rendered else {
             rm.set_baseline(blank.clone());
             rm.set_current(blank);
@@ -1118,11 +1124,7 @@ impl App {
             Ok(render) => render,
             Err(message) => {
                 rm.set_has_baseline(false);
-                rm.set_summary(ss(format!(
-                    "{}: {}",
-                    tr(&lang, "status.render_failed"),
-                    message
-                )));
+                rm.set_summary(ss(render_failed(&lang, &message)));
                 self.refresh_evidence(&rm, None);
                 return;
             }
@@ -1609,16 +1611,7 @@ impl App {
             rows.push(GalleryItem {
                 header: false,
                 title: ss(&card.label),
-                detail: ss(trf(
-                    &lang,
-                    "gallery.card",
-                    &[
-                        ("id", card.id.clone()),
-                        ("blockers", card.blockers.to_string()),
-                        ("warnings", card.warnings.to_string()),
-                        ("notes", card.annotations.to_string()),
-                    ],
-                )),
+                detail: ss(gallery_detail(&lang, card)),
                 badge: ss(if card.blockers > 0 {
                     trf(
                         &lang,
@@ -4181,6 +4174,30 @@ fn edit_rules(draft: &mut Value, action: &str, row: &str, field: &str, value: &s
     true
 }
 
+/// "Render failed: <reason>", as the status bar, the Review panel and the
+/// gallery card word a refused render.
+fn render_failed(lang: &str, message: &str) -> String {
+    format!("{}: {}", tr(lang, "status.render_failed"), message)
+}
+
+/// The gallery card's detail line: counts first, then why its frame is missing.
+fn gallery_detail(lang: &str, card: &GalleryCard) -> String {
+    let counts = trf(
+        lang,
+        "gallery.card",
+        &[
+            ("id", card.id.clone()),
+            ("blockers", card.blockers.to_string()),
+            ("warnings", card.warnings.to_string()),
+            ("notes", card.annotations.to_string()),
+        ],
+    );
+    match &card.render_error {
+        Some(message) => format!("{counts} · {}", render_failed(lang, message)),
+        None => counts,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -4496,6 +4513,107 @@ mod tests {
             error.message
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A project at `<base>/project` whose main scene, on disk, holds an image
+    /// member `../outside.png`. The file exists at `<base>/outside.png` and is a
+    /// decodable image larger than the declared 1x1, so reading it would add an
+    /// `ASSET_SIZE_MISMATCH` finding; its absence proves it was never opened.
+    fn escape_app(name: &str) -> (App, PathBuf) {
+        let base = std::env::temp_dir().join(format!("mono-escape-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let root = base.join("project");
+        copy_dir(&repo.join("test_assets/projects/curing_lite"), &root);
+        std::fs::copy(
+            root.join("assets/clinical_ui/running.png"),
+            base.join("outside.png"),
+        )
+        .unwrap();
+        let scene_path = root.join("scenes/main_scene.json");
+        let mut scene: Value =
+            serde_json::from_str(&std::fs::read_to_string(&scene_path).unwrap()).unwrap();
+        scene["elements"].as_array_mut().unwrap().push(json!({
+            "id": "outside_icon", "type": "image", "asset": "../outside.png",
+            "x": 0, "y": 0, "w": 1, "h": 1
+        }));
+        std::fs::write(&scene_path, scene.to_string()).unwrap();
+        let root = mono_project::project::py_resolve(&root);
+        let prefs = Preferences::load_from(base.join("prefs.json"));
+        let mut app = App::new(slint::Weak::default(), prefs);
+        app.open_project(&root.join("project.oled.json")).unwrap();
+        app.open_screen("main").unwrap();
+        (app, base)
+    }
+
+    fn assert_outside_unread(app: &App) {
+        let project = app.project.as_ref().unwrap();
+        let scene = app.session.as_ref().unwrap().scene();
+        let findings = mono_project::export::validate_scene(
+            scene,
+            &project.root,
+            None,
+            &mut DiskResources::new(),
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.code == "ASSET_PATH_ESCAPE" && f.is_blocking()),
+            "{findings:?}"
+        );
+        assert!(
+            !findings.iter().any(|f| f.code == "ASSET_SIZE_MISMATCH"),
+            "the outside file was opened: {findings:?}"
+        );
+    }
+
+    #[test]
+    fn gallery_card_reports_an_escaping_member_without_reading_it() {
+        let (mut app, base) = escape_app("gallery");
+        assert_outside_unread(&app);
+        app.ensure_gallery();
+        for _ in 0..600 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            app.gallery_tick();
+            if app.gallery_job.is_none() {
+                break;
+            }
+        }
+        assert!(app.gallery_job.is_none(), "worker did not finish");
+        let card = app
+            .gallery_cards
+            .iter()
+            .find(|card| card.id == "main")
+            .unwrap();
+        assert!(card.image.is_none(), "a refused frame must not be drawn");
+        assert!(card.blockers > 0);
+        let detail = gallery_detail("en_US", card);
+        assert!(
+            detail.contains(&tr("en_US", "status.render_failed"))
+                && detail.contains("escapes project root"),
+            "the card must say why it has no frame: {detail}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn review_panel_reports_an_escaping_member_without_reading_it() {
+        let (mut app, base) = escape_app("review");
+        assert_outside_unread(&app);
+        let message = match app.review_render() {
+            Some(Err(message)) => message,
+            Some(Ok(_)) => panic!("the Review render must refuse an escaping member"),
+            None => panic!("no session"),
+        };
+        assert!(message.contains("escapes project root"), "{message}");
+        let summary = render_failed("en_US", &message);
+        assert!(summary.starts_with(&tr("en_US", "status.render_failed")));
+        // The evidence panel shows no hash and no code for a refused frame.
+        let view = app.evidence_view(None);
+        assert!(view.frame_sha.is_empty());
+        assert!(view.code_c.is_empty() && view.code_hex.is_empty());
+        assert_ne!(view.status, "golden-match");
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -4869,6 +4987,7 @@ mod tests {
             warnings: 0,
             annotations: 0,
             image: None,
+            render_error: None,
         }];
         let other = root
             .parent()
