@@ -124,3 +124,12 @@ B3 执行记录（MEASURED）：
   - `Release (Rust V2)` run `40907992918`：版本校验、五个平台打包与安装测试、草稿创建全部通过。
   - 五个平台包与 `SHA256SUMS` 发布后下载复算全部一致；Windows zip 解压后 `monooled-studio --version` 输出 `monooled-studio 2.3.0`，`mono version` 输出 `mono 2.3.0`。
   - 匿名访问 `releases/latest` 重定向到 `v2.3.0`，API 显示 draft=false、prerelease=false、6 个附件。
+- **v2.4.0**（用户授权全程自行决策后于 2026-11-03 05:38 UTC 发布，设为 Latest）：
+  - 内容：此前未发布的 2026-10-30 线（TASK-010 至 TASK-013：如实的控件、统一导出闸门、Designer 性能、项目根约束）合并到 2.3.0 上（TASK-014），加上验证补缺（TASK-015）、大场景刷新回归修复（TASK-016），以及审阅包含阻断项时标注“不可交付”的横幅（TASK-017，ADR-007）。
+  - 每个 TASK 都经过独立评审 PASS。分支第一次推送时三平台 CI 暴露出三个问题（仅 Windows 用到的测试 import、Windows 8.3 短路径断言、async-executor 1.14.0 被撤回），修复后全绿。
+  - 提交 `f6e05f7`；`main` 由 `22bdc92` 快进到该提交。annotated tag `v2.4.0` 指向它。
+  - 同一提交的 `Rust` run `41581832805` 全部通过。发布前在分支上手动跑的 `Release (Rust V2)` 演练 run `41581884448` 也全部通过。
+  - tag 触发的 `Release (Rust V2)` run `41583205076` 全部通过：版本校验、五个平台打包与安装测试、草稿创建。
+  - 五个平台包与 `SHA256SUMS` 下载后 `sha256sum -c` 全部一致。Windows zip 解压后，`monooled-studio --version` 输出 `monooled-studio 2.4.0`，`mono version` 输出 `mono 2.4.0`。
+  - 发布后 API 显示 draft=false、prerelease=false，`releases/latest` 指向 `v2.4.0`。
+  - 未验证：macOS 与 Linux 只有 CI 和安装测试，没有真人使用；发布前没有在 release 构建上重跑 GUI trust（最后一次 17/17 在 `f5e2653`，此后未改 `.slint`）。
