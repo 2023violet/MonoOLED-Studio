@@ -1,7 +1,7 @@
 # TASK-014 — Integrate the Unshipped 2026-10-30 Line onto 2.3.0
 
-Status: VERIFY
-Review Status: REWORK REQUIRED (independent review 2026-11-02; one Medium, eight Low, no Critical/High)
+Status: DONE
+Review Status: PASS (confirmation review of the third rework, 2026-11-02)
 
 ## Goal
 
@@ -297,3 +297,18 @@ Gates (Windows):
 - deny ok.
 
 Not re-run: the release build and GUI trust. No `.slint` file changed.
+
+### Confirmation review of the third rework (2026-11-02)
+
+**PASS.** The reviewer re-ran the gates at `9620bc3`: fmt and clippy clean, 312 passed, pytest 36 passed and 1 skipped, deny ok.
+
+- **A2-1 confirmed fixed by probes.** An edited or new note follows a rename, and so does a chain of renames. A draft for a page that is not active also follows. Two unrelated renames, a rename plus a create, or a delete close the draft with `notes.page_gone`.
+- **A1-1 confirmed fixed.** The new test fails against the old condition.
+
+Remaining findings, none blocking 2.4.0 in the reviewer's judgement, left as follow-ups:
+- (Low) An agent that reuses the old id in the same batch (rename `main`→`x` then create `main`) catches an open draft on the new `main`.
+- (Low, suspicion, since `e864cdf`) A rename whose annotation move fails returns an error response, so the desktop skips the rebind and the review reload, and an open draft stays on the old id.
+- (Nit) After a re-key the open dialog's anchor text still names the old page.
+- (Nit) The byte-length assertion in `renaming_another_screen_leaves_the_session_on_its_own_file` is not discriminating; the path check and `assert_ne!` carry the test.
+
+Not verified on this tree: macOS and Linux (they need the three-platform CI), and a release build with GUI trust after `f5e2653`. The `.slint` files have not changed since that GUI trust run.
