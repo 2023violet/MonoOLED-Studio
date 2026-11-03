@@ -24,7 +24,9 @@ inside the project. `review/review.json` is meant to be committed;
 `review/quarantine/` and the generated HTML are build artifacts.
 
 `--json` prints `command`, `ok`, `exit_code`, `output`, `screens`, `frames`,
-`annotations`, `blocking`, `bytes` and `sha256`. Exit codes are unchanged:
+`annotations`, `blocking`, `blocking_frames`, `bytes` and `sha256`. `blocking`
+counts the blocking findings of each screen's init frame; `blocking_frames`
+counts the rendered frames (init and annotated states) that have at least one. Exit codes are unchanged:
 0 success, 2 error (with a JSON error object when `--json` is present).
 
 ## What is in the file
@@ -43,6 +45,22 @@ inside the project. `review/review.json` is meant to be committed;
 The page renders frames with `canvas` and `image-rendering: pixelated`, switches
 between Device and Code, shows pixel coordinates under the cursor, copies a
 frame hash, and filters screens by All / Blocking / Annotated or by search.
+
+## Blocking findings: written, but marked
+
+The release gate does not apply to the review pack: it is written whatever the
+findings, because reviewing problems is what it is for. When any
+rendered frame has a `BLOCKER` or `ERROR` finding, the page opens with a static
+banner, readable without JavaScript:
+
+> Not a deliverable. N of M rendered frames have blocking findings (BLOCKER or
+> ERROR). Exports refuse these scenes until the findings are fixed; this pack is
+> for review only.
+
+The text summary of `mono review-pack` prints `NOT A DELIVERABLE: …` and the
+desktop status line names the count. The pack renders the init frame and the
+annotated states only, not the full state matrix, so a pack without the banner
+does not prove that an export will pass; the export runs its own gate.
 
 ## Determinism
 

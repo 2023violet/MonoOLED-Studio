@@ -1392,12 +1392,18 @@ impl App {
         let lang = self.lang.clone();
         self.start_background("action.review_pack", move |progress| {
             let summary = build_review_pack(&project, &annotations, &output, progress)?;
+            let key = if summary.blocking_frames > 0 {
+                "status.review_pack_blocking"
+            } else {
+                "status.review_pack"
+            };
             Ok(Outcome {
                 status: trf(
                     &lang,
-                    "status.review_pack",
+                    key,
                     &[
                         ("frames", summary.frames.to_string()),
+                        ("blocking", summary.blocking_frames.to_string()),
                         ("path", posix(&summary.output)),
                     ],
                 ),

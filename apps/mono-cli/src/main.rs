@@ -469,6 +469,7 @@ review-pack {done}/{total}"
                 "frames": summary.frames,
                 "annotations": summary.annotations,
                 "blocking": summary.blocking,
+                "blocking_frames": summary.blocking_frames,
                 "bytes": summary.bytes,
                 "sha256": summary.sha256,
             })
@@ -484,6 +485,12 @@ review-pack {done}/{total}"
             summary.blocking,
             summary.bytes
         );
+        if summary.blocking_frames > 0 {
+            println!(
+                "NOT A DELIVERABLE: {} of {} frames have blocking findings",
+                summary.blocking_frames, summary.frames
+            );
+        }
         println!("sha256 {}", summary.sha256);
     }
     Ok(0)

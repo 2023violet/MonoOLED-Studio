@@ -148,6 +148,7 @@ fn review_pack_writes_html_and_json() {
     assert!(value["frames"].as_u64().unwrap() >= value["screens"].as_u64().unwrap());
     assert_eq!(value["sha256"].as_str().unwrap().len(), 64);
     assert!(value["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(value["blocking_frames"], 0, "the fixture is clean");
     assert!(output.is_file());
     let html = std::fs::read_to_string(&output).unwrap();
     assert!(html.starts_with("<!DOCTYPE html>"));

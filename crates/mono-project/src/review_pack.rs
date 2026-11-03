@@ -32,6 +32,8 @@ pub struct ReviewPackSummary {
     pub frames: usize,
     pub annotations: usize,
     pub blocking: usize,
+    /// Rendered frames (init and annotated states) with a blocking finding.
+    pub blocking_frames: usize,
     pub bytes: usize,
     pub sha256: String,
 }
@@ -61,6 +63,7 @@ pub fn build_review_pack(
     let mut screens_json = Vec::new();
     let mut frames_total = 0;
     let mut blocking_total = 0;
+    let mut blocking_frames = 0;
     for (index, screen) in screens.iter().enumerate() {
         let scene = match load_project_scene(project, Some(&screen.id)) {
             Ok(scene) => scene,
@@ -89,6 +92,9 @@ pub fn build_review_pack(
             let vlsb = result.framebuffer.to_vlsb()?;
             let lit = vlsb.iter().map(|byte| byte.count_ones() as usize).sum();
             let findings = validate_scene(&scene.data, &project.root, Some(state), &mut resources);
+            if findings.iter().any(|finding| finding.is_blocking()) {
+                blocking_frames += 1;
+            }
             if state_index == 0 {
                 init_blocking = findings
                     .iter()
@@ -225,10 +231,18 @@ pub fn build_review_pack(
             "frames": frames_total,
             "annotations": annotations.len(),
             "blocking": blocking_total,
+            "blocking_frames": blocking_frames,
         },
     });
     let data = script_json(&pack)?;
-    let html = HTML_TEMPLATE.replace("__PACK_DATA__", &data);
+    // The banner goes in before the data, so annotation text that happens to
+    // contain the placeholder is never substituted.
+    let html = HTML_TEMPLATE
+        .replace(
+            "__GATE_BANNER__",
+            &gate_banner(blocking_frames, frames_total),
+        )
+        .replace("__PACK_DATA__", &data);
     let bytes = html.as_bytes();
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
@@ -242,9 +256,23 @@ pub fn build_review_pack(
         frames: frames_total,
         annotations: annotations.len(),
         blocking: blocking_total,
+        blocking_frames,
         bytes: bytes.len(),
         sha256: hex_digest(bytes),
     })
+}
+
+/// Static markup, readable without JavaScript, for a pack that shows blocking
+/// findings: the pack is written anyway (ADR-007), but must not pass for a
+/// deliverable. A clean pack gets nothing, so its page is unchanged.
+fn gate_banner(blocking_frames: usize, frames: usize) -> String {
+    if blocking_frames == 0 {
+        return String::new();
+    }
+    format!(
+        "<div class=\"banner\" id=\"gate\" role=\"alert\"          style=\"color:var(--bad);border-color:var(--bad)\">         <strong>Not a deliverable.</strong> {blocking_frames} of {frames} rendered frames          have blocking findings (BLOCKER or ERROR). Exports refuse these scenes until          the findings are fixed; this pack is for review only.</div>
+"
+    )
 }
 
 struct ScreenRow {
@@ -446,7 +474,7 @@ button.copy { background:transparent; border:1px solid var(--line); color:var(--
   <div class="meta" id="meta"></div>
 </header>
 <div class="banner" id="honesty"></div>
-<main>
+__GATE_BANNER__<main>
   <aside>
     <input id="search" type="search" placeholder="Search screens…">
     <div class="filters" id="filters">
@@ -878,6 +906,57 @@ mod tests {
         let absolute = root.to_string_lossy().replace('\\', "\\\\");
         assert!(!html.contains(&absolute));
         assert!(!html.contains(&root.to_string_lossy().to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Adds an editor placeholder to a scene: `DRAFT_PLACEHOLDER` is a blocker
+    /// in every state, and the scene still renders.
+    fn add_placeholder(root: &Path, scene: &str) {
+        let path = root.join("scenes").join(scene);
+        let mut data: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let element = json!({"id": "draft", "type": "placeholder", "x": 0, "y": 0, "w": 8, "h": 8});
+        data["elements"].as_array_mut().unwrap().push(element);
+        std::fs::write(&path, serde_json::to_string_pretty(&data).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_clean_pack_has_no_gate_banner() {
+        let (project, root) = project("clean");
+        let (html, data) = build(&project, &[], "clean");
+        assert_eq!(data["totals"]["blocking_frames"], 0);
+        assert!(!html.contains("id=\"gate\""));
+        assert!(!html.contains("__GATE_BANNER__"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_blocking_scene_marks_the_pack_as_not_a_deliverable() {
+        let (_, root) = project("gate");
+        add_placeholder(&root, "main_scene.json");
+        let project = ProjectWorkspace::load(&root.join("project.oled.json")).unwrap();
+        let (html, data) = build(&project, &[], "gate");
+        assert_eq!(data["totals"]["frames"], 2);
+        assert_eq!(data["totals"]["blocking_frames"], 1);
+        assert!(html.contains("id=\"gate\""));
+        assert!(html.contains("<strong>Not a deliverable.</strong> 1 of 2 rendered frames"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `blockers` and `totals.blocking` count init frames only; the banner
+    /// counts every rendered frame, annotated states included.
+    #[test]
+    fn annotated_frames_count_towards_the_gate_banner() {
+        let (_, root) = project("gate-state");
+        add_placeholder(&root, "main_scene.json");
+        let project = ProjectWorkspace::load(&root.join("project.oled.json")).unwrap();
+        let output = root.join("review/gate-state.html");
+        let notes = [annotation("n1", "main", 0, "low")];
+        let summary = build_review_pack(&project, &notes, &output, &mut |_, _, _| true).unwrap();
+        assert_eq!(summary.frames, 3);
+        assert_eq!(summary.blocking_frames, 2, "init and the annotated state");
+        let html = std::fs::read_to_string(&output).unwrap();
+        assert!(html.contains("2 of 3 rendered frames"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

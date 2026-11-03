@@ -57,3 +57,13 @@ before export 而 C Header 照写不误，配置里的 `Ctrl+S` 与只读浏览�
 `export.bitmap_data` 可以把当前场景渲染成各自的文件而不走 `preflight`，纳入它们会
 改变 API 1.3 的行为，需要单独决策；`docs/AI_HANDOFF.md` §5.5 与 `CHANGELOG.md` 记录
 同一边界。
+
+## ADR-007 — 2.4.0 scope: the review pack is marked, not gated; the version is 2.4.0
+
+On 2026-11-02 the user delegated the remaining decisions of the integration plan and the release ("全程自行决策执行直到发布新版本"). Decided under that delegation:
+
+- D1 Review pack (option C): the pack is still written when scenes have blocking findings, because its purpose is to look at problems. When any rendered frame has a blocking finding, the page carries a static "not a deliverable" banner with the count (TASK-017). Rejected: B, refusing to write the pack, which would block review; A, an unmarked exception, which lets the pack pass for a deliverable.
+- D2 The Output Workbench and Automation `export.bitmap_data` stay outside the gate (ADR-006 boundary unchanged). Gating them changes API 1.3 behaviour and is not part of 2.4.0.
+- D3 The release is 2.4.0: the `Unreleased` notes contain Compatibility changes, which rule out a patch version.
+
+**How to apply:** the review pack never refuses because of findings; a new producer that writes a deliverable must still use `mono_project::export::preflight`.
