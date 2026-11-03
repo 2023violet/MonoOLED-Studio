@@ -418,7 +418,12 @@ pub(crate) mod tests {
         app.rename_active_screen("renamed").unwrap();
 
         let session = app.session.as_ref().unwrap();
-        assert_eq!(session.doc.path, root.join("scenes/renamed.json"));
+        // Canonical on both sides: the session holds the project's resolved root,
+        // while `temp_dir()` may be an 8.3 short path (as on the Windows runners).
+        assert_eq!(
+            std::fs::canonicalize(&session.doc.path).unwrap(),
+            std::fs::canonicalize(root.join("scenes/renamed.json")).unwrap()
+        );
         assert!(!session.is_dirty(), "the saved edits moved with the screen");
         assert!(
             !root.join("scenes/main_scene.json").exists(),

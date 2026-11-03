@@ -6,11 +6,13 @@ use std::path::{Path, PathBuf};
 use mono_core::FrameBuffer;
 use mono_core::render::{PATH_ESCAPE, joined_member, member_path, render_scene};
 use mono_core::state::{State, eval_do};
+#[cfg(windows)]
 use mono_project::editor::EditorSession;
 use mono_project::export::validate_scene;
 use mono_project::fontpack_io::{fontpack_fingerprint, load_font_pack};
 use mono_project::image_io::decode_image;
 use mono_project::resources::DiskResources;
+#[cfg(windows)]
 use mono_project::scene_io::load_scene;
 use serde_json::{Map, Value, json};
 

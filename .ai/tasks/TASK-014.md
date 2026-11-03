@@ -312,3 +312,13 @@ Remaining findings, none blocking 2.4.0 in the reviewer's judgement, left as fol
 - (Nit) The byte-length assertion in `renaming_another_screen_leaves_the_session_on_its_own_file` is not discriminating; the path check and `assert_ne!` carry the test.
 
 Not verified on this tree: macOS and Linux (they need the three-platform CI), and a release build with GUI trust after `f5e2653`. The `.slint` files have not changed since that GUI trust run.
+
+### Three-platform CI rework (2026-11-02)
+
+The first push of `integrate/2.4.0` ran the Rust workflow on every platform. Three failures, all from local-only work that had never been through CI:
+
+- **Clippy on macOS and Linux (all four runners)**: `crates/mono-project/tests/safety.rs` imported `EditorSession` and `load_scene` unconditionally, but only a `#[cfg(windows)]` test uses them. Outside Windows the imports were unused, and `-D warnings` failed. Fix: both imports are now `#[cfg(windows)]`.
+- **Tests on windows-latest**: `guard::tests::renaming_the_active_screen_rebinds_the_session_and_never_writes_the_old_path` compared paths literally. The runner's `temp_dir()` is the 8.3 short path `C:\Users\RUNNER~1\…`, while the session holds the project's resolved root `C:\Users\runneradmin\…`. Same file, different spelling. Fix: the test canonicalizes both sides. Test-only; the product rebinds correctly.
+- **Dependency policy**: `async-executor 1.14.0` (via `accesskit_unix` and `zbus`, under Slint) was yanked after the last local `cargo deny` run. Fix: `cargo update -p async-executor` to 1.14.1, Cargo.lock only.
+
+Failure evidence: the CI logs of the first run on the branch, quoted above. No `.slint` or product source changed.
