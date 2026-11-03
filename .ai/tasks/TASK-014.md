@@ -1,7 +1,7 @@
 # TASK-014 — Integrate the Unshipped 2026-10-30 Line onto 2.3.0
 
 Status: VERIFY
-Review Status: PENDING (no independent review yet)
+Review Status: REWORK REQUIRED (independent review 2026-11-02; one Medium, eight Low, no Critical/High)
 
 ## Goal
 
@@ -164,3 +164,38 @@ Not verified:
 - macOS and Linux;
 - the performance budgets on the integrated tree;
 - the gallery and review panel with an escaping member (their render goes through the same renderer, but no test exercises them).
+
+## Review Status
+
+Independent review of `a35d425` against `origin/main` (2026-11-02, fresh-context agent, read-only): **REWORK REQUIRED**. No Critical or High findings.
+
+What passed:
+- Every duplicate fix has one implementation.
+- No export path bypasses the gate without documentation.
+- No member read skips containment.
+- The reviewer's own run of the five gates matched the Result above: 300 passed, pytest 36 passed and 1 skipped, deny ok. The release build and GUI trust were not re-run.
+
+Findings:
+- **F1 (Medium)**: the desktop Rename (from the unshipped line) leaves 2.3.0's annotations under the old screen id. The Notes tab and the gallery then show none for the renamed screen. This was confirmed with a scratch test (`annotations_for("renamed") == 0`). The API's `project.rename_screen` already behaved this way in 2.3.0.
+- **F2 (Low)**: `CHANGELOG.md` gives the wrong report path for `mono c-header`; it actually writes `<output>.validation.md`.
+- **F3 (Low)**: "every dialog closes on a backdrop click" is false for 2.3.0's `NewProjectDialog`, `NoteDialog` and `GalleryOverlay`, which do not bind `dismissed`. The scrim test does not scan their files.
+- **F4 (Low)**: `export.c_header` lists up to 8 blockers plus "… and N more", not every blocker.
+- **F5 (Low)**: `docs/AUTOMATION_API_V1.md` still says `export.c_header` writes a report, and refers to "2.1.0". `docs/rewrite/G4_EVIDENCE.md` has the same stale "2.1.0".
+- **F6 (Low)**: `docs/rewrite/G4_EVIDENCE.md:68/74` still point to the "TASK-006" section.
+- **F7 (Low)**: RUSTSEC-2026-0414 was already fixed in 2.3.0; only 0433 is new.
+- **F8 (Low)**: three gaps between the notes or docs and the code:
+  - the title `•` no longer follows Pixel or Font documents, and this is not in the notes;
+  - the user guides still call Pixel standalone-only and list batch validation as gated;
+  - `docs/AI_HANDOFF.md:129` says a blocked export writes nothing, and it omits the review pack.
+- **F9 (Low)**: the nested-shortcut fallback only affects `Preferences::get`. Dispatch reads the flat object, so the CHANGELOG sentence overstates it.
+
+Rework scope:
+1. F1: move annotations with a renamed screen, or document the limitation. This is the user's choice.
+2. F3: bind `dismissed` in the three dialogs and extend the scrim test, or narrow the claim.
+3. Text corrections for F2 and F4 to F9.
+4. Re-run the five gates, then a delta review.
+
+Suspicions recorded, not caused by the merge (present on both parents):
+- `start_export` sets `pending_contract` before the job start can fail.
+- The Navigator's `delete-elements` action has no handler.
+- `ReviewModel.percent` / `hash-match` and `AgentModel.endpoint` are set but never read. The truthful-controls scan does not cover the 2.3.0 globals; TASK-015 item 4 targets this.
