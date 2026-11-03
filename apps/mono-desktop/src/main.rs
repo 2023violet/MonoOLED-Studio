@@ -795,7 +795,7 @@ fn switch_workspace(app: &Rc<RefCell<App>>, ui: &MainWindow, index: i32) {
     } else if index == 2 {
         a.refresh_font();
         a.refresh_pixel();
-    } else if index == 3 {
+    } else if index == app::REVIEW_WORKSPACE {
         a.refresh_review();
         a.refresh_app();
     } else {
@@ -1565,6 +1565,11 @@ mod ui_source_tests {
     const PIXEL: &str = include_str!("../ui/pixel.slint");
     const DESIGNER: &str = include_str!("../ui/designer.slint");
     const FONTLAB: &str = include_str!("../ui/fontlab.slint");
+    const REVIEW: &str = include_str!("../ui/review.slint");
+    const GALLERY: &str = include_str!("../ui/gallery.slint");
+    const NOTES: &str = include_str!("../ui/notes.slint");
+    const AGENT: &str = include_str!("../ui/agent.slint");
+    const NEW_PROJECT: &str = include_str!("../ui/new_project.slint");
 
     /// Brace depth just before `needle`, ignoring string literals.
     fn depth_at(src: &str, needle: &str) -> i32 {
@@ -1788,13 +1793,18 @@ mod ui_source_tests {
     /// hooks are what prove those.
     #[test]
     fn every_model_property_is_used() {
-        const MODELS: [&str; 6] = [
+        const MODELS: [&str; 11] = [
             "AppModel",
             "DesignerModel",
             "PixelModel",
             "OutputModel",
             "FontModel",
             "PrefsModel",
+            "ReviewModel",
+            "GalleryModel",
+            "NoteModel",
+            "AgentModel",
+            "NewProjectModel",
         ];
         let files = [
             ("main.slint", MAIN),
@@ -1803,6 +1813,11 @@ mod ui_source_tests {
             ("pixel.slint", PIXEL),
             ("designer.slint", DESIGNER),
             ("fontlab.slint", FONTLAB),
+            ("review.slint", REVIEW),
+            ("gallery.slint", GALLERY),
+            ("notes.slint", NOTES),
+            ("agent.slint", AGENT),
+            ("new_project.slint", NEW_PROJECT),
         ];
         let controller = controller_text();
         let mut dead = Vec::new();

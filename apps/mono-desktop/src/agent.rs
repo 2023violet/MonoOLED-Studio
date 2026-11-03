@@ -188,7 +188,6 @@ impl App {
                 model.set_port(agent.bridge.port as i32);
                 model.set_permission(agent.permission.index());
                 model.set_token(ss(&agent.bridge.token));
-                model.set_endpoint(ss(format!("127.0.0.1:{}", agent.bridge.port)));
                 model.set_status(ss(trf(
                     &self.lang,
                     "agent.panel.running",
@@ -204,7 +203,6 @@ impl App {
                 model.set_port(0);
                 model.set_permission(self.pending_permission.index());
                 model.set_token(ss(""));
-                model.set_endpoint(ss(""));
                 model.set_status(ss(self.t("agent.panel.idle")));
             }
         }

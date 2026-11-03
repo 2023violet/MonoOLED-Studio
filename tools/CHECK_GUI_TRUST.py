@@ -514,18 +514,19 @@ def check_scroll_to_selection(runner: Runner) -> None:
 
 
 def check_inspector_tabs_at_min_size(runner: Runner) -> None:
-    """R11/WP4+WP5: all five Inspector tabs render inside the narrow panel.
+    """R11/WP4+WP5: all six Inspector tabs render inside the narrow panel.
 
-    The State schema and Design rules tabs are new, and at the window minimum the
-    Inspector is about 310px wide, so the tab strip cannot show every full label.
-    Each tab is opened at that size and its pixels kept: five identical shots
+    The State schema and Design rules tabs are new, Notes moved to the last tab
+    (5) in the 2.3.0 integration, and at the window minimum the Inspector is
+    about 310px wide, so the tab strip cannot show every full label.
+    Each tab is opened at that size and its pixels kept: six identical shots
     would mean the strip stopped switching or a body renders nothing at all, and
     the last one is left for a human to read the wording.
     """
     work = runner.case_dir('inspector-min-size')
     project = runner.project(work)
     shots = []
-    for tab in range(5):
+    for tab in range(6):
         runner.run(work, project, ['open-screen:main', f'inspector-tab:{tab}'], ['--window-size', '1166x800'])
         shot = work / 'shot.png'
         expect(shot.is_file(), f'missing screenshot for tab {tab}')
@@ -533,8 +534,8 @@ def check_inspector_tabs_at_min_size(runner: Runner) -> None:
         (work / f'shot-tab-{tab}.png').write_bytes(shots[-1])
     width, height = png_size(work / 'shot.png')
     expect(width >= MIN_WINDOW[0] and height >= MIN_WINDOW[1], f'screenshot {width}x{height} below the window minimum')
-    expect(len(set(shots)) == 5, 'the Inspector tabs render identically, so the strip is not switching')
-    print(f'  screenshot for review: {work / "shot-tab-4.png"}')
+    expect(len(set(shots)) == 6, 'the Inspector tabs render identically, so the strip is not switching')
+    print(f'  screenshot for review: {work / "shot-tab-5.png"}')
 
 
 CHECKS = [

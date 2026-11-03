@@ -127,6 +127,68 @@
 - **空闲私有内存 ≤80 MB**：预算只针对 `curing_lite` 夹具，75.0–79.5 MB（最终构建 3 次；更早的同代码构建曾测到 80.5 MB，超过预算，该项在运行间波动）。生成场景只报告不判定，`RUN_DESKTOP_BENCH.py` 对它们输出 `pass: null`：55 元素 81.3–84.2 MB、125 元素 86.7–93.1 MB、1005 元素 194.0–201.4 MB，都高于 80 MB。基准现在包含 40 次 Designer 画布渲染，与 §4 原记录的 67.8–68.9 MB 不是同一工作量，不能直接相减；HYPOTHESIS：差异主要来自分配器保留，而不是代码长期持有（`last_resolved` 保存每个元素解析后的条目）。
 - 范围外的三份预算本轮未动，保持"未达标"：笔画 p95 重测 15.0–25.7 ms（四个工作负载合计；Pixel 编辑器，等待 vsync，定义仍待用户决定）；50 屏完整证据包未重测（fsync 可靠性契约，见分析 2）；冷启动 1108–1641 ms，重新构建后的首次启动 2385 ms（渲染器/后端实验，见分析 3）。
 
+### 2026-11-02 整合后重测（TASK-015）
+
+上面 TASK-012 的数字是在 2.3.0 整合（TASK-014）之前测的。本轮在整合后的树上重测（`integrate/2.4.0` 之上的 TASK-015 分支，release 构建，Windows 10，同一台机器，同一测法，每项 3 次运行）。机器没有隔离：桌面常驻程序照常运行，测量期间没有并行的构建或测试。
+
+核心基准（`mono bench --project test_assets/projects/curing_lite/project.oled.json`，3 次）：
+
+| 指标 | 预算 | 实测（3 次） | 结论 |
+|---|---|---|---|
+| 256×128 取模 + 格式化 p95 | ≤ 2 ms | 1.88 / 2.04 / 1.84 ms | ❌ 3 次中 1 次超标（整合前 1.40–1.62） |
+| 50 个 Screen 导出：固件数据 | ≤ 500 ms | 290 / 307 / 335 ms | ✅ |
+| 50 个 Screen 导出：完整证据包 | ≤ 500 ms | 1665 / 1654 / 1749 ms | ❌（整合前 1268–1383） |
+
+桌面基准（`python tools/RUN_DESKTOP_BENCH.py --runs 3`；生成场景由 `tools/BENCH_DESIGNER_PROJECT.py --elements 1000` 与 `--elements 0 --digits 50` 生成，区间为 3 次的最小–最大）：
+
+| 指标 | `curing_lite` 夹具 | 1005 元素 | 55 元素（50 digits） |
+|---|---|---|---|
+| designer_edit p95 | 23.7–62.1 ms | 62.2–102.7 ms | 61.7–81.4 ms |
+| max_handler（预算 ≤ 16 ms） | 4.26–10.63 ms ✅ | 31.0–73.2 ms ❌ | 49.3–72.7 ms ❌ |
+| panel_canvas | 0.56–0.65 ms | 6.96–11.70 ms | 17.8–29.7 ms |
+| panel_render | 0.56–1.23 ms | 5.40–6.78 ms | 16.4–17.5 ms |
+| panel_validation（会话缓存） | 3.11–3.67 ms | 19.2–31.2 ms | 78.6–118.9 ms |
+| panel_validation_worker | 3.21–7.01 ms | 20.9–31.9 ms | 82.6–92.2 ms |
+| panel_refresh_all | 2.55–4.96 ms | **306.9–517.3 ms** | 58.4–73.7 ms |
+| panel_state_edit | 1.23–3.02 ms | 13.2–17.9 ms | 28.2–34.0 ms |
+| panel_geometry_edit | 1.92–2.76 ms | 19.1–29.2 ms | 26.2–32.4 ms |
+| panel_set_geometry | 0.03–0.06 ms | 3.84–6.10 ms | 0.28–0.52 ms |
+| 空闲私有内存 | 62.2–63.7 MB ✅（≤ 80 MB） | 180.5–189.1 MB（只报告） | 69.9–71.1 MB（只报告） |
+| 笔画 p95（预算 ≤ 8 ms） | 39.9–47.2 ms ❌ | 24.6–38.6 ms | 38.1–40.1 ms |
+| 　其中笔画渲染 p95 | 15.7–19.3 ms | 8.6–16.3 ms | 11.1–12.7 ms |
+| 主题切换 p95（预算 ≤ 50 ms） | 35.2–48.1 ms ✅ | 25.4–31.4 ms | 27.9–38.5 ms |
+| 冷启动（预算 ≤ 1 s） | 955 / 1120 / 994 ms ❌ | 1404–2648 ms | 1074–1263 ms |
+
+结论：
+
+- **整合带来了回退**：1005 元素的 `panel_refresh_all` 从 11.1–13.4 ms 变成 306.9–517.3 ms；50 digits 从 15.1–16.0 ms 变成 58.4–73.7 ms；两个生成场景的 `max_handler` 都从 20–23 ms 升到 31–73 ms。夹具上 `max_handler` 4.26–10.63 ms，仍在 16 ms 以内。
+- 原因（HYPOTHESIS，只读诊断，未计时、未修改）：2.3.0 把 `refresh_review()` 加进了 `App::refresh_all_inner`，所以不在 Review 工作区时也会每次刷新都执行。它会再渲染一次场景、生成 C 头文件，并对当前元素和基线元素做 O(n²) 的比较；每一对都要经 `py_str` 分配 id 字符串，被修改的元素还要做深比较。1005 元素时大约是一百万次比较，量级与多出来的 300–500 ms 相符。`panel_*` 各行没有单独统计 Review 刷新，所以这一项没有直接的数字。修复（例如只在 Review 可见时刷新，比较时按 id 建索引）不属于 TASK-015 的范围，需要单独立项。
+- 笔画、主题切换和 Designer 编辑的等待时间整体高于整合前：笔画渲染 p95 在夹具上是 15.7–19.3 ms，整合前是 4.3–4.7 ms。这三项都受合成器节拍影响（分析 1），本轮没有把机器状态和代码差异分开，所以不判断是不是回退。
+- 证据包导出（1654–1749 ms）和取模 p95（一次 2.04 ms）比整合前慢，但导出路径在这次整合中没有改动，差异没有隔离；这两项按实测记为未达标。
+- 结论表沿用上面的定义，没有改动任何预算。
+
+### 2026-11-02 整合回退的修复（TASK-016）
+
+上一小节记录的整合回退有两个来源，都来自 2.3.0，本轮都已修复。测法与上一小节相同（release，3 次运行）；新增的 `panel_review_ms` 单独计时 Review 刷新体。
+
+1. **Review 刷新**：`refresh_all_inner` 每次都执行 `refresh_review()`，即使 Review 工作区不可见。它会再渲染一次场景、生成 C 头文件，并逐对比较元素。修复前在 1005 元素上测得 `panel_review_ms` 261.9–295.9 ms，占一次完整刷新（296.6–313.9 ms）的绝大部分。现在只在 Review 工作区打开时（以及切入时）刷新；元素差异改为按 id 建索引，结果与原逐对定义一致（`review_element_diff_matches_the_pairwise_definition`）。Review 可见时，1005 元素的刷新体现在是 8.4–9.3 ms。
+2. **备注行重复渲染**：`refresh_inspector` → `refresh_notes` → `note_rows` 每次都调用 `compute_frame_evidence()`，把场景再渲染一遍；`refresh_all_inner` 还会在 Inspector 之后再刷新一次备注。修复前 50 digits 上 `panel_inspector_ms` 为 16.5–17.1 ms，约等于一次完整渲染。现在，凡是 `refresh_canvas` 刚在同一次调用里存下本帧证据的地方，备注行都直接复用它（`note_rows_reuse_the_canvas_frame_only_right_after_it`），重复的那次刷新也已删除。单独的 Inspector 刷新（例如改变选择）仍会自己渲染。
+
+| 工作负载 | 指标 | 修复前 | 修复后 | 整合前（TASK-012） |
+|---|---|---|---|---|
+| 1005 元素 | panel_refresh_all | 296.6–313.9 ms | 11.8–15.0 ms | 11.1–13.4 ms |
+| 1005 元素 | max_handler | 27.0–30.3 ms | 19.5–24.1 ms | 20.5–23.1 ms |
+| 1005 元素 | panel_state_edit | 14.0–14.9 ms | 8.6–9.7 ms | 8.2–10.3 ms |
+| 1005 元素 | panel_geometry_edit | 18.8–21.9 ms | 14.6–18.3 ms | 15.5–17.6 ms |
+| 55 元素（50 digits） | panel_refresh_all | 61.5–61.9 ms | 14.9–16.1 ms | 15.1–16.0 ms |
+| 55 元素（50 digits） | max_handler | 44.2–45.0 ms | 22.2–27.1 ms | 21.4–22.7 ms |
+| 55 元素（50 digits） | panel_state_edit | 28.1–34.0 ms | 13.9–15.6 ms | 14.2–14.8 ms |
+| 55 元素（50 digits） | panel_geometry_edit | 28.7–32.3 ms | 14.9–16.8 ms | 14.9–16.2 ms |
+| `curing_lite` 夹具 | panel_refresh_all | 3.36–4.32 ms | 1.38–1.61 ms | 1.21–1.37 ms |
+| `curing_lite` 夹具 | max_handler | 2.75–18.0 ms | 1.77–2.31 ms | 1.78–2.10 ms |
+
+预算结论不变：夹具达标；1005 元素与 50 digits 的 `max_handler` 仍高于 16 ms，与整合前一样未达标（剩余下限见 TASK-012 小节）。空闲私有内存：夹具 74.2–76.4 MB（≤ 80 MB），生成场景只报告。上一小节列出的其他未达标项（笔画、冷启动、证据包导出、取模 p95 的一次超标）不在本轮范围内。
+
 ## 5. 记录在案的偏差
 
 1. **字模生成（Pixel Studio → 字模生成）在没有字体文件时使用内置 5×7 字形**；V1 使用 DejaVuSans 或 Pillow 默认字体。属于 D6 的语义等价范围。
