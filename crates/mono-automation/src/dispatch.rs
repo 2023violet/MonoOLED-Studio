@@ -329,13 +329,13 @@ fn api_and_project(service: &mut Service, method: &str, params: &Params) -> RpcR
             let old = req_str(params, "screen_id")?;
             let new_id = req_str(params, "new_id")?;
             let label = params.get("label").filter(|v| !v.is_null()).map(py_str);
-            // The session may be bound to this screen without it being the
-            // manifest's active one (`Service::for_project(.., Some(id))`), so
-            // compare the file the session edits too.
+            // Rebind only when the session edits this screen's file. The
+            // manifest's active screen can differ from the session's
+            // (`Service::for_project(.., Some(id))`), and rebinding on it would
+            // point the session at another page's file.
             let old_path = service.require_project()?.screen_path(&old)?;
-            let bound = service.session.doc.path == old_path;
+            let was_active = service.session.doc.path == old_path;
             let project = service.require_project_mut()?;
-            let was_active = bound || project.active_screen() == old;
             let screen = project.rename_screen(&old, &new_id, label.as_deref())?;
             // Annotations in `review/review.json` are keyed by screen id: move
             // them with the page, or the renamed screen shows none. The rename

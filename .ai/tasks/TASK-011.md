@@ -2,8 +2,8 @@
 
 > Renumbered from TASK-005 on 2026-11-02 by TASK-014, when this line of work was integrated with `origin/main`, whose own TASK-004 to TASK-009 already used those numbers. The body below is unchanged: where it says TASK-004, TASK-005, TASK-006 or TASK-007 it means TASK-010, TASK-011, TASK-012 or TASK-013.
 
-Status: VERIFY
-Review Status: REWORK REQUIRED (final verdict 2026-11-02; see `### Final verdict`)
+Status: DONE
+Review Status: PASS (confirmation review of the rework, 2026-11-02)
 
 ## Goal
 
@@ -207,3 +207,7 @@ Status stays `VERIFY` until that rework is reviewed.
 - `apps/mono-desktop/src/guard.rs` `rename_active_screen`: when `rename_screen` refuses, it now re-opens the project's still-active screen before returning the error. It used to leave the Designer with no session.
 - Failure evidence: on a pre-fix worktree, the new test `app::tests::a_refused_rename_keeps_the_page_open` failed (`app.session` was `None`). After the fix it passes for an invalid id (`bad id/..`) and a duplicate id (`123`): `app.session` stays bound to `main`'s scene path and `is_dirty()` is false.
 - Back to VERIFY for a delta review.
+
+### Confirmation review (2026-11-02)
+
+**PASS.** On a refused rename, `guard.rs:260-268` reopens `active_screen_id()`, and a failure to reopen is reported. An invalid id, a duplicate id and, on Windows, a case-only rename all move nothing. If the rollback fails, the session stays empty and nothing recreates the old path. `a_refused_rename_keeps_the_page_open` covers the invalid and duplicate ids. The reviewer ran the gates at `e864cdf`: 309 passed.

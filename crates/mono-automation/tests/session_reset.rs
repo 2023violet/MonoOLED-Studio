@@ -131,3 +131,26 @@ fn a_failed_annotation_move_still_rebinds_the_session_to_the_renamed_file() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn renaming_another_screen_leaves_the_session_on_its_own_file() {
+    // The fixture's manifest marks `123` active while this session edits `main`.
+    let (mut service, root) = attached_service("rename-other");
+    let own = service.session.doc.path.clone();
+    let main_before = std::fs::read(&own).unwrap();
+    call(
+        &mut service,
+        "project.rename_screen",
+        json!({"screen_id": "123", "new_id": "renamed"}),
+    );
+    assert_eq!(service.session.doc.path, own);
+    call(&mut service, "project.save", json!({}));
+    assert_eq!(std::fs::read(&own).unwrap().len(), main_before.len());
+    let renamed = service
+        .require_project()
+        .unwrap()
+        .screen_path("renamed")
+        .unwrap();
+    assert_ne!(std::fs::read(renamed).unwrap(), main_before);
+    let _ = std::fs::remove_dir_all(&root);
+}

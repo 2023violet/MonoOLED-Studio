@@ -4856,6 +4856,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A bridged rename while the note dialog is open: the store is reloaded
+    /// from disk and the draft follows the page instead of saving under the
+    /// old id.
+    #[test]
+    fn an_open_note_follows_a_bridged_rename() {
+        let (mut app, root) = project_app("note-bridged-rename");
+        app.begin_note().unwrap();
+        let before = app.screen_ids_for_test();
+        let project = app.project.as_mut().unwrap();
+        project.rename_screen("main", "renamed", None).unwrap();
+        app.reload_review_after_structure_change(&before);
+        assert_eq!(app.note_draft.as_ref().unwrap().screen, "renamed");
+        app.save_note("Battery clips", "", 0).unwrap();
+        let store = ReviewStore::for_root(&root).unwrap();
+        assert_eq!(store.annotations_for("renamed").len(), 1);
+        assert!(store.annotations_for("main").is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_open_note_for_a_vanished_page_is_closed_not_saved() {
+        let (mut app, root) = project_app("note-bridged-delete");
+        app.begin_note().unwrap();
+        app.note_draft.as_mut().unwrap().screen = "gone".into();
+        let before = app.screen_ids_for_test();
+        app.reload_review_after_structure_change(&before);
+        assert!(app.note_draft.is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn a_refused_rename_keeps_the_page_open() {
         let (mut app, root) = project_app("rename-refused");

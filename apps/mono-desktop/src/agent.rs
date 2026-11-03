@@ -221,6 +221,53 @@ impl App {
         crate::AppModel::get(&ui).set_agent_text(ss(text));
     }
 
+    fn screen_ids(&self) -> Vec<String> {
+        self.project
+            .as_ref()
+            .map(|project| project.screens().into_iter().map(|s| s.id).collect())
+            .unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn screen_ids_for_test(&self) -> Vec<String> {
+        self.screen_ids()
+    }
+
+    /// A bridged `project.rename_screen` rewrites `review/review.json`; reload
+    /// it so the Notes tab and gallery follow the renamed page and the next
+    /// desktop note save is not refused as an external change. Every store
+    /// operation saves at once, so nothing unsaved is lost. An open note
+    /// dialog keeps its draft: a draft for a renamed page is re-keyed to the
+    /// new id, and one whose page vanished any other way is closed with a
+    /// message rather than saved under a dead id.
+    pub(crate) fn reload_review_after_structure_change(&mut self, screens_before: &[String]) {
+        self.review = self.load_review();
+        let after = self.screen_ids();
+        let Some(draft) = self.note_draft.as_mut() else {
+            return;
+        };
+        if after.contains(&draft.screen) {
+            return;
+        }
+        let removed: Vec<&String> = screens_before
+            .iter()
+            .filter(|id| !after.contains(id))
+            .collect();
+        let added: Vec<&String> = after
+            .iter()
+            .filter(|id| !screens_before.contains(id))
+            .collect();
+        if let ([old], [new]) = (removed.as_slice(), added.as_slice())
+            && **old == draft.screen
+        {
+            draft.screen = (*new).clone();
+            return;
+        }
+        self.cancel_note();
+        let message = self.t("notes.page_gone");
+        self.set_status(message);
+    }
+
     /// Timer tick: execute queued requests against the live session.
     pub fn poll_agent(&mut self) {
         let Some(mut agent) = self.agent.take() else {
@@ -230,6 +277,7 @@ impl App {
             self.agent = Some(agent);
             return;
         };
+        let screens_before = self.screen_ids();
         let service = &mut agent.service;
         std::mem::swap(&mut service.session, &mut session);
         std::mem::swap(&mut service.project, &mut self.project);
@@ -270,11 +318,7 @@ impl App {
         if rebind {
             self.rebaseline();
             self.scan_project_files();
-            // A bridged `project.rename_screen` rewrites `review/review.json`;
-            // reload it so the Notes tab and gallery follow the renamed page and
-            // the next desktop note save is not refused as an external change.
-            // Every store operation saves at once, so nothing unsaved is lost.
-            self.review = self.load_review();
+            self.reload_review_after_structure_change(&screens_before);
         }
         self.refresh_all();
         if let Some(ui) = self.ui.upgrade() {

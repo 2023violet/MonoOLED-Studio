@@ -271,3 +271,29 @@ Gates after the second rework (Windows):
 - deny ok.
 
 Not re-run: the release build and GUI trust. No `.slint` file changed, and `agent.rs`'s reload path has no GUI trust case.
+
+### Confirmation review of the second rework (2026-11-02)
+
+**REWORK REQUIRED.** The reviewer ran the gates at `e864cdf`: 309 passed, everything else clean. A1, A3, B1 and the nits are confirmed, and TASK-011 is PASS. Findings:
+
+- **A2-1 (Low–Medium, introduced by `e864cdf`)**: the review-store reload after a bridged rename left an open note draft keyed to the old screen id. Saving it put the note back under the dead id, with no error. Before the reload that save was refused. A probe showed `main=1 renamed=0`.
+- **A1-1 (Low, pre-existing, library-only state)**: `was_active = bound || active_screen() == old` could rebind a session that edits another screen. A probe renamed `123` while the session was on `main`, and `main`'s content overwrote it.
+
+### Third rework (2026-11-02)
+
+- **A2-1**: the reload moved into `App::reload_review_after_structure_change(&screens_before)` (`agent.rs`).
+  - If the open draft's screen was the one screen that disappeared while exactly one appeared (a rename), the draft is re-keyed to the new id.
+  - If the screen vanished any other way, the dialog is closed with the new status `notes.page_gone` (en/zh) instead of saving under a dead id.
+  - Tests: `an_open_note_follows_a_bridged_rename` (saved under `renamed`, nothing under `main`) and `an_open_note_for_a_vanished_page_is_closed_not_saved`.
+- **A1-1**: the rebind now depends only on whether the session edits the renamed screen's file (`dispatch.rs`).
+  - Test: `session_reset::renaming_another_screen_leaves_the_session_on_its_own_file`.
+- Failure evidence for both: the reviewer's probes on `e864cdf`, recorded above.
+
+Gates (Windows):
+- fmt clean;
+- clippy `-D warnings` clean;
+- `cargo test --workspace --locked --no-fail-fast`: 28 groups, 312 passed, 0 failed;
+- pytest 36 passed, 1 skipped;
+- deny ok.
+
+Not re-run: the release build and GUI trust. No `.slint` file changed.
