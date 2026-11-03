@@ -3,7 +3,7 @@
 > Renumbered from TASK-005 on 2026-11-02 by TASK-014, when this line of work was integrated with `origin/main`, whose own TASK-004 to TASK-009 already used those numbers. The body below is unchanged: where it says TASK-004, TASK-005, TASK-006 or TASK-007 it means TASK-010, TASK-011, TASK-012 or TASK-013.
 
 Status: VERIFY
-Review Status: three independent slices run (see Review Status below)
+Review Status: REWORK REQUIRED (final verdict 2026-11-02; see `### Final verdict`)
 
 ## Goal
 
@@ -154,3 +154,50 @@ last fix. `AGENTS.md` reserves `DONE` / `PASS` for an independent reviewer, so
 this task stays at `VERIFY` with three absorbed review slices recorded above —
 the verdict itself belongs to the maintainer, and was not awarded here.
 
+### Final verdict (independent review, 2026-11-02)
+
+**REWORK REQUIRED.** Checked against the integrated code on `integrate/2.4.0`
+(a35d425).
+
+- Re-run on `integrate/2.4.0` (a35d425) rather than taken from the recorded
+  results: `cargo test --locked -p mono-desktop` (171 passed), `-p mono-core`
+  (including the 3 `diff` tests), `-p mono-automation`, `-p mono-project` and
+  `-p mono-cli` (all passed, 0 failed); `python -m pytest tools/tests -q`
+  (36 passed, 1 skipped, including `test_version_consistency.py` and
+  `test_docs_match_code.py`). fmt, clippy and `cargo deny` were not re-run by
+  this review.
+- Verified as recorded: `apply_state_schema` lives once in
+  `mono-core/src/state.rs:40` and is used by Automation (`dispatch.rs:704`) and
+  the editor (`editor.rs:745`); the zones overlay is a real toggle fed by
+  `canvas.zones` (`prefs_ui.rs:491`, `designer.slint:428`); the anti-regression
+  scans pass.
+
+Finding (Important):
+
+1. `apps/mono-desktop/src/guard.rs:255` - `rename_active_screen` calls
+   `drop_session()` before `rename_screen`, and returns on its error without
+   re-binding, so any refused rename leaves the Designer with no scene.
+   Scenario: Navigator rename with an id `validate_screen_id` refuses (a space
+   or `/`), an existing page id, or, on Windows, a case-only rename (`Main` to
+   `main`, `E-EXISTS`, which this record calls "the safe side"). The error is
+   shown and `finish_prompt` refreshes, but the Designer stays empty until the
+   user reopens a page. Reproduced with a throwaway test (reverted, not
+   committed): `app.rename_active_screen("bad id with spaces/..")` returns `Err`
+   and leaves `app.session` as `None`. No data is lost (the prompt already
+   saved or discarded), but the control leaves the app in a state the user did
+   not ask for, which is the defect class this task exists to remove.
+
+Fix scope (only this):
+
+- In `rename_active_screen`, run the checks that can refuse the rename
+  (`validate_screen_id`, the duplicate-id check, the target-exists check) before
+  `drop_session()`; or, when `rename_screen` returns `Err` and the old scene
+  file still exists, re-bind with `switch_screen(&active)` before returning the
+  error. Keep dropping the session before the file move itself.
+- Add a guard test next to
+  `renaming_the_active_screen_rebinds_the_session_and_never_writes_the_old_path`:
+  an invalid id and a duplicate id each return `Err` with `app.session` still
+  bound to the original path and `is_dirty()` false.
+- No other change; the known gaps listed above stay accepted.
+
+Status stays `VERIFY` until that rework is reviewed.

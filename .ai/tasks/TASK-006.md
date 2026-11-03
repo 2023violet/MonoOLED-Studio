@@ -1,7 +1,7 @@
 # TASK-006 — 2.1.0 Professional Workflow (Phase 3)
 
-Status: VERIFY
-Review Status: PENDING
+Status: DONE
+Review Status: PASS (post-release independent review, 2026-11-02; see `## Review Status`)
 
 ## Goal
 
@@ -150,3 +150,60 @@ Independent review was requested twice through the subagent dispatcher and both 
 - `legacy_custom_palette` only fires when `pixel_studio.palette_mode` is absent *and* a stored colour differs from the default, so it cannot rewrite an unrelated preference.
 - `start_agent_with` logs only port + permission (`AGENT_BRIDGE on 127.0.0.1:<port> permission=…`), `Bridge::start(0)` binds `127.0.0.1`, and `token_never_appears_in_log` asserts the token is absent after a permission restart.
 - Every `selected(` handler in `apps/mono-desktop/ui/*.slint` now treats the parameter as a label or reads `current-index`; the custom `Segmented`/`TabStrip` callbacks are `int` by declaration.
+
+## Review Status
+
+Independent post-release review, 2026-11-02. Reviewed against `bc64431` and its
+follow-ups `3327fc5`, `4b444b2`, `517a226`, `d50c646` on `origin/main`, and
+against the current code on `integrate/2.4.0`. No product code was changed.
+
+**Verdict: PASS.** Acceptance criteria 1-7 hold in the current code. The
+findings below are Minor; because the work is released (first in v2.2.0), they
+go to a proposed follow-up fix task instead of reopening this one.
+
+Checked:
+
+- Re-run on `integrate/2.4.0` (a35d425) rather than taken from the recorded
+  results: `cargo test --locked -p mono-desktop` (171 passed), `-p mono-core`
+  (including the 3 `diff` tests), `-p mono-automation`, `-p mono-project` and
+  `-p mono-cli` (all passed, 0 failed); `python -m pytest tools/tests -q`
+  (36 passed, 1 skipped, including `test_version_consistency.py` and
+  `test_docs_match_code.py`). fmt, clippy and `cargo deny` were not re-run by
+  this review.
+- T12: every `COMMANDS` action has a literal handling site outside
+  `commands.rs`; the `align:` / `workspace:` entries are handled by prefix
+  (`app.rs:3109`, `main.rs:425`). Fixed chords come only from the registry.
+- T13: the Designer drawer (`app.rs:951`), the review workspace
+  (`app.rs:1150`) and Automation `render.pixel_diff` (`dispatch.rs:893`) all
+  count through `mono_core::diff`; the Automation JSON shape is unchanged.
+- T14: `start_agent_with` logs port and permission only; a permission change
+  stops and restarts the bridge (new port and token); the combo maps its label
+  back to an index (`agent.slint:52`).
+- The `ComboBox.selected`-passes-a-label contract holds in every `ui/*.slint`
+  handler today (designer, notes, fontlab, agent; `Segmented` passes an int).
+- T15: `auto` derives the palette from `theme_mode`; `legacy_custom_palette`
+  only fires when `palette_mode` is absent and a colour differs from the default.
+
+Findings (all Minor):
+
+1. `crates/mono-project/src/export.rs:48` - `FINDING_CODES` is not exhaustive
+   and nothing enforces it. `ASSET_PATH_ESCAPE` (emitted at `export.rs:670` and
+   `:716`, added later by TASK-013 and carried in by TASK-014) has no entry and
+   no `finding.ASSET_PATH_ESCAPE` label. Scenario: a scene member `../x.png`
+   shows the raw `ASSET_PATH_ESCAPE - ...` row in the Chinese UI instead of a
+   localized label (acceptance 6). `every_finding_code_has_label` iterates
+   `FINDING_CODES` only, so any newly emitted code bypasses it.
+2. `apps/mono-desktop/src/commands.rs` `palette_actions_are_dispatchable`
+   asserts `is_known(spec.action)` for entries taken from `COMMANDS`, which is
+   true by construction; it does not prove a dispatch branch exists. Scenario:
+   a new palette command with no handler passes CI and does nothing when chosen.
+3. `apps/mono-desktop/src/app.rs:951` - with no baseline (`baseline_pixels`
+   empty) the Designer drawer reports every pixel as changed (100%), while the
+   review workspace shows its empty state for the same condition.
+
+Proposed follow-up fix task (scope): add `ASSET_PATH_ESCAPE` to
+`FINDING_CODES` with en/zh `finding.*` labels; add a test that collects every
+code passed to `Finding::new` under `crates/` and asserts it is in
+`FINDING_CODES`; replace the tautological palette test with one that checks each
+palette action against a handler site; make the drawer say there is no baseline
+instead of printing a percentage when the baseline is empty.

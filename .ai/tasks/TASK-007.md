@@ -1,7 +1,7 @@
 # TASK-007 — 2.2.0 Polish and Governance (Phase 4)
 
-Status: VERIFY
-Review Status: PENDING
+Status: DONE
+Review Status: PASS (post-release independent review, 2026-11-02; see `## Review Status`)
 
 ## Goal
 
@@ -122,3 +122,42 @@ Independent review was requested twice through the subagent dispatcher and both 
 - `App::new_project` validates size before calling `create_project`; `create_project` refuses to touch an existing manifest/main scene and writes directories first, so an IO failure can leave empty directories (documented) but never a project file.
 - Every `selected(` handler in `ui/*.slint` treats the parameter as a label or reads `current-index`; `Segmented`/`TabStrip` declare `callback selected(int)` and pass an index.
 - `tools/tests/test_version_consistency.py` reads the same four sources the release workflow checks (`Cargo.toml` version, `ui/main.slint` default, `CURRENT_STATE`, a `## <version> - ` changelog heading).
+
+## Review Status
+
+Independent post-release review, 2026-11-02, against `bc64431` and its
+follow-ups on `origin/main` and the current code on `integrate/2.4.0`. No
+product code was changed.
+
+**Verdict: PASS.** Acceptance criteria 1-5 hold in the current code.
+
+Checked:
+
+- Re-run on `integrate/2.4.0` (a35d425) rather than taken from the recorded
+  results: `cargo test --locked -p mono-desktop` (171 passed), `-p mono-core`
+  (including the 3 `diff` tests), `-p mono-automation`, `-p mono-project` and
+  `-p mono-cli` (all passed, 0 failed); `python -m pytest tools/tests -q`
+  (36 passed, 1 skipped, including `test_version_consistency.py` and
+  `test_docs_match_code.py`). fmt, clippy and `cargo deny` were not re-run by
+  this review.
+- T19: Help's `shortcuts` / `open-docs` / `report-issue` are registry entries
+  (`commands.rs`) dispatched through `open_local_or_url`.
+- T20: `App::new_project` (`app.rs:396`) rejects a non-positive size or a height
+  that is not a multiple of 8 before `create_project` runs; the name falls back
+  to the folder name; `create_project` refuses an existing manifest or main
+  scene, and `add_screen` removes its scene file when the manifest write fails,
+  so only the documented empty directories can be left behind. The dialog's
+  `SpinBox`es cap both sides at 1024.
+- T21: `test_version_consistency.py` passes against `Cargo.toml` 2.3.0,
+  `ui/main.slint`, `CURRENT_STATE` and the `## 2.3.0 - ` changelog heading.
+
+Finding (Minor, records only):
+
+1. `.ai/CURRENT_STATE.md` listed "2.1.0 (TASK-006)" as released, but there is
+   no `v2.1.0` tag: TASK-006 first shipped in `v2.2.0` (`bc64431` closes the
+   version at 2.2.0), and `CHANGELOG.md` keeps a `## 2.1.0 - 2026-10-25`
+   heading for a version that was never tagged. A separate, unshipped
+   "release: 2.1.0" commit (`2b23b5f`) exists on the other line. Scenario: a
+   reader looking for the 2.1.0 source or binaries finds none. The
+   `CURRENT_STATE` wording is corrected by this review; the changelog note is
+   left to the proposed follow-up task.
