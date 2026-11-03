@@ -322,3 +322,5 @@ The first push of `integrate/2.4.0` ran the Rust workflow on every platform. Thr
 - **Dependency policy**: `async-executor 1.14.0` (via `accesskit_unix` and `zbus`, under Slint) was yanked after the last local `cargo deny` run. Fix: `cargo update -p async-executor` to 1.14.1, Cargo.lock only.
 
 Failure evidence: the CI logs of the first run on the branch, quoted above. No `.slint` or product source changed.
+
+Result: the rerun of the Rust workflow passed on every job: Rust on windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest and macos-15-intel; Python tooling on Windows and Ubuntu; dependency policy. These changes are test-only plus a lockfile bump, and have had no independent review yet.
