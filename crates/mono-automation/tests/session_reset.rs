@@ -102,3 +102,32 @@ fn renaming_a_screen_moves_its_annotations() {
     assert!(store.annotations_for("main").is_empty());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn a_failed_annotation_move_still_rebinds_the_session_to_the_renamed_file() {
+    let (mut service, root) = attached_service("rename-notes-fail");
+    let review = root.join("review/review.json");
+    std::fs::create_dir_all(review.parent().unwrap()).unwrap();
+    // A newer schema the store refuses to load: the annotation move fails.
+    std::fs::write(
+        &review,
+        r#"{"schema_version":99,"annotations":[],"scenarios":[]}"#,
+    )
+    .unwrap();
+    let old_path = service.session.doc.path.clone();
+    let response = dispatch_json_rpc(
+        &mut service,
+        &json!({"jsonrpc": "2.0", "id": 1, "method": "project.rename_screen",
+                "params": {"screen_id": "main", "new_id": "renamed"}}),
+    );
+    assert!(response.get("error").is_some(), "{response}");
+    assert!(!old_path.exists(), "the rename moved the scene file");
+    assert_ne!(service.session.doc.path, old_path);
+    assert!(service.session.doc.path.ends_with("renamed.json"));
+    call(&mut service, "project.save", json!({}));
+    assert!(
+        !old_path.exists(),
+        "a save after the failed move must not recreate the old file"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

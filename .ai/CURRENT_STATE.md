@@ -24,16 +24,16 @@
 - TASK-008 status: DONE (CLI `--json`; independent review PASS WITH MINOR NOTES; folded into 2.3.0, not released separately)
 - TASK-009 status: DONE (2.3.0 T22–T28; independent re-review PASS after gallery invalidation, note refresh, sidecar protection and documentation corrections)
 - TASK-010 status: DONE (experience audit closeout, formerly TASK-004 on the unshipped line; three review slices, final independent review PASS 2026-11-02 on the integrated code)
-- TASK-011 status: VERIFY — REWORK REQUIRED (truthful controls, exposed engine, formerly TASK-005 on the unshipped line; final review 2026-11-02: a refused page rename drops the Designer session, `guard.rs:255`; fix scope in the TASK)
+- TASK-011 status: VERIFY, reworked after REWORK REQUIRED (truthful controls, exposed engine, formerly TASK-005 on the unshipped line; final review 2026-11-02: a refused page rename drops the Designer session, `guard.rs:255`; fix scope in the TASK)
 - TASK-012 status: DONE (Designer edit-path performance, formerly TASK-006; scoped review PASS 2026-11-01)
 - TASK-013 status: DONE (stress findings: gate short-circuit, bounded export memory, member containment, formerly TASK-007; confirmation review PASS 2026-11-02)
 - TASK-014 status: VERIFY (integration of TASK-010 to TASK-013 onto 2.3.0; see `.ai/tasks/TASK-014.md`)
-- TASK-016 status: VERIFY (large-scene refresh regression from the 2.3.0 integration: Review rebuilt only while visible with an indexed diff, note rows reuse the canvas frame; refresh back to pre-integration figures)
-- TASK-015 status: VERIFY (closes TASK-014's verification gaps: escaping members in the gallery and Review panel, six Inspector tabs in the GUI trust check, performance re-measured on the integrated tree, dead-binding scan over the 2.3.0 globals)
-- Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-006, TASK-007, TASK-009, TASK-010, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); REWORK REQUIRED (TASK-011, TASK-014); TASK-015 and TASK-016 not reviewed yet. TASK-006/007 were reviewed after release (2026-11-02).
+- TASK-016 status: DONE, review PASS 2026-11-02 (large-scene refresh regression from the 2.3.0 integration: Review rebuilt only while visible with an indexed diff, note rows reuse the canvas frame; refresh back to pre-integration figures)
+- TASK-015 status: DONE, review PASS 2026-11-02 (closes TASK-014's verification gaps: escaping members in the gallery and Review panel, six Inspector tabs in the GUI trust check, performance re-measured on the integrated tree, dead-binding scan over the 2.3.0 globals)
+- Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-006, TASK-007, TASK-009, TASK-010, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); PASS (TASK-015, TASK-016); TASK-011 and TASK-014 reworked twice after REWORK REQUIRED and await a delta review. TASK-006/007 were reviewed after release (2026-11-02).
 - Proposed follow-up fix task (not yet numbered or approved), from the TASK-006/007 review: add `ASSET_PATH_ESCAPE` to `FINDING_CODES` with en/zh labels plus a test that every emitted finding code is listed; replace the tautological `palette_actions_are_dispatchable`; make the Designer drawer say there is no baseline instead of 100%; note in `CHANGELOG.md` that 2.0.4/2.0.5/2.1.0 were never tagged.
-- Active task: `.ai/tasks/TASK-014.md` (rework of the review findings, together with TASK-011's rework); TASK-015 and TASK-016 await review.
-- Next workflow action: finish the TASK-014 / TASK-011 rework, then a delta review of TASK-014 to TASK-016. The open product decision TASK-014 names (whether the review pack belongs inside the release gate) and the release itself (the Compatibility changes rule out a patch version) are the user's. Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
+- Active task: `.ai/tasks/TASK-014.md` (rework of the review findings, together with TASK-011's rework).
+- Next workflow action: a delta review of the second TASK-014 rework (and TASK-011's), then the user's release and push decisions. The open product decision TASK-014 names (whether the review pack belongs inside the release gate) and the release itself (the Compatibility changes rule out a patch version) are the user's. Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
 
 ## Current workstream
 

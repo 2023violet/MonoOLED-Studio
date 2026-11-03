@@ -65,7 +65,7 @@
 | 主题切换 p95 | ≤ 50 ms | 19.9 / 19.4 / 17.3 ms（渲染 p95 5.5 ms） | ✅ |
 | 冷启动（创建进程 → 首帧渲染完成） | ≤ 1 s | 938 / 976 / 925 ms 与 949 / 1002 ms；重新构建后的首次启动 2069 ms（HYPOTHESIS：杀毒软件扫描新可执行文件）；其中 `main()` 之后 911–992 ms | ❌ 未达标（多次运行中有超标） |
 | 空闲私有内存 | ≤ 80 MB | 67.8 / 68.6 / 68.9 MB | ✅ |
-| UI 线程单次阻塞（最长同步处理） | ≤ 16 ms | 笔画与主题切换处理函数 ≤ 1.1 ms。导出全部、交接包、批量验证、缩略图墙原本阻塞数百毫秒，2.0.1 之后（`f82540a`）改为后台执行：启动一次只占用 UI 线程约 5 ms（release，curing_lite 全状态矩阵）。Agent 通过桥同步调用 `render.all_states`、`validate.all_states`、`export.all` 时，现在先在 UI 线程上做版本与权限检查，再在工作线程上按快照计算，响应不变（`bridge::tests::matrix_calls_are_answered_off_the_draining_thread_with_the_same_result`）。152 步回放不经过桥，不受影响 | ⚠️ 长任务与 Agent 长调用已离开 UI 线程（MEASURED：单元与集成测试；未做真人交互测量）。Designer 几何编辑部分达标：125 元素场景 3.79–4.46 ms、`curing_lite` 夹具 1.78–2.10 ms 达标；50 digits 场景 21.4–22.7 ms、1005 元素压力场景 20.5–23.1 ms 未达标。该数字只覆盖基准发出的几何编辑、笔画和主题切换；状态编辑与整轮刷新另见下方 TASK-006 小节 |
+| UI 线程单次阻塞（最长同步处理） | ≤ 16 ms | 笔画与主题切换处理函数 ≤ 1.1 ms。导出全部、交接包、批量验证、缩略图墙原本阻塞数百毫秒，2.0.1 之后（`f82540a`）改为后台执行：启动一次只占用 UI 线程约 5 ms（release，curing_lite 全状态矩阵）。Agent 通过桥同步调用 `render.all_states`、`validate.all_states`、`export.all` 时，现在先在 UI 线程上做版本与权限检查，再在工作线程上按快照计算，响应不变（`bridge::tests::matrix_calls_are_answered_off_the_draining_thread_with_the_same_result`）。152 步回放不经过桥，不受影响 | ⚠️ 长任务与 Agent 长调用已离开 UI 线程（MEASURED：单元与集成测试；未做真人交互测量）。Designer 几何编辑部分达标：125 元素场景 3.79–4.46 ms、`curing_lite` 夹具 1.78–2.10 ms 达标；50 digits 场景 21.4–22.7 ms、1005 元素压力场景 20.5–23.1 ms 未达标。该数字只覆盖基准发出的几何编辑、笔画和主题切换；状态编辑与整轮刷新另见下方 TASK-012 小节 |
 
 未达标项的分析（MEASURED 数据 + 推断，推断部分标 HYPOTHESIS）：
 

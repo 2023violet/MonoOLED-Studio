@@ -329,25 +329,25 @@ fn api_and_project(service: &mut Service, method: &str, params: &Params) -> RpcR
             let old = req_str(params, "screen_id")?;
             let new_id = req_str(params, "new_id")?;
             let label = params.get("label").filter(|v| !v.is_null()).map(py_str);
+            // The session may be bound to this screen without it being the
+            // manifest's active one (`Service::for_project(.., Some(id))`), so
+            // compare the file the session edits too.
+            let old_path = service.require_project()?.screen_path(&old)?;
+            let bound = service.session.doc.path == old_path;
             let project = service.require_project_mut()?;
-            let was_active = project.active_screen() == old;
+            let was_active = bound || project.active_screen() == old;
             let screen = project.rename_screen(&old, &new_id, label.as_deref())?;
             // Annotations in `review/review.json` are keyed by screen id: move
-            // them with the page, or the renamed screen shows none.
-            if screen.id != old {
-                let root = project.root.clone();
-                ReviewStore::for_root(&root)
+            // them with the page, or the renamed screen shows none. The rename
+            // has already moved the scene file, so whatever happens to the
+            // annotations the session is rebound first: left on the old path,
+            // the next save would recreate the file the rename just moved.
+            let notes = if screen.id == old {
+                Ok(0)
+            } else {
+                ReviewStore::for_root(&project.root)
                     .and_then(|mut review| review.rename_screen(&old, &screen.id))
-                    .map_err(|error| {
-                        mono_core::CoreError::new(
-                            error.code,
-                            format!(
-                                "screen renamed to '{}', but its annotations were not moved: {}",
-                                screen.id, error.message
-                            ),
-                        )
-                    })?;
-            }
+            };
             if was_active {
                 let project = service.require_project()?;
                 let path = project.screen_path(&screen.id)?;
@@ -360,6 +360,18 @@ fn api_and_project(service: &mut Service, method: &str, params: &Params) -> RpcR
                 service
                     .scene_mut()
                     .insert("_project_path".into(), json!(project_path));
+            }
+            if let Err(error) = notes {
+                service.revision += 1;
+                service.notify("project.rename_screen", json!({"screen_id": screen.id}));
+                return Err(mono_core::CoreError::new(
+                    error.code,
+                    format!(
+                        "screen renamed to '{}', but its annotations were not moved: {}",
+                        screen.id, error.message
+                    ),
+                )
+                .into());
             }
             screen_changed(service, "project.rename_screen", &screen)
         }
@@ -1632,7 +1644,7 @@ fn resources(
                 .filter(|finding| finding.is_blocking())
                 .collect();
             if !blockers.is_empty() {
-                // Name every blocker, not just the first: unlike the desktop dialog
+                // Name the blockers (up to eight), not just the first: unlike the desktop dialog
                 // and the CLI report, the caller has no other way to see the rest.
                 let mut lines = vec![format!("export blocked ({} finding(s))", blockers.len())];
                 lines.extend(

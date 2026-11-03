@@ -270,6 +270,11 @@ impl App {
         if rebind {
             self.rebaseline();
             self.scan_project_files();
+            // A bridged `project.rename_screen` rewrites `review/review.json`;
+            // reload it so the Notes tab and gallery follow the renamed page and
+            // the next desktop note save is not refused as an external change.
+            // Every store operation saves at once, so nothing unsaved is lost.
+            self.review = self.load_review();
         }
         self.refresh_all();
         if let Some(ui) = self.ui.upgrade() {

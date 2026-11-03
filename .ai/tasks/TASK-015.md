@@ -1,7 +1,7 @@
 # TASK-015 — Close TASK-014's Verification Gaps
 
-Status: VERIFY
-Review Status: PENDING (no independent review yet)
+Status: DONE
+Review Status: PASS (independent delta review 2026-11-02)
 
 ## Goal
 
@@ -120,3 +120,16 @@ Gates:
 Not verified: macOS and Linux; a direct timing of `refresh_review` inside `refresh_all`.
 
 Follow-up for the user: decide whether the refresh regression on large scenes is fixed before 2.4.0. That needs its own TASK.
+
+## Independent review (2026-11-02)
+
+**PASS**, from a delta review of `integrate/2.4.0` at `f5e2653`. The reviewer re-ran the gates: fmt, clippy, 308 tests, pytest 36/1, deny. It also ran a release build with GUI trust (exit 0, no FAIL).
+
+Checks:
+- The escaping-member tests pass, and the gallery fix is real.
+- The Inspector check covers six tabs.
+- None of the three removed bindings was read by any view, and removing them drops no feature. The percent is in the Review detail text, hash-match is the `contract-status` pill, and the endpoint shows as host:port.
+
+Notes:
+- The "never opened" proof in `assert_outside_unread` comes from a fresh `validate_scene` in the test, not from the gallery or Review paths. It rests on the renderer's lexical refusal, so the test name claims slightly more than it checks.
+- Low: the CHANGELOG fixture memory figure (62–64 MB) was stale against the post-TASK-016 74–76 MB; the reviewer measured 76–78 MB. This is corrected in TASK-014's second rework. The growth is unexplained and close to the 80 MB budget.

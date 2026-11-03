@@ -1,7 +1,7 @@
 # TASK-016 — Large-Scene Refresh Regression from the 2.3.0 Integration
 
-Status: VERIFY
-Review Status: PENDING (no independent review yet)
+Status: DONE
+Review Status: PASS (independent delta review 2026-11-02)
 
 ## Goal
 
@@ -126,3 +126,25 @@ Not verified:
 
 - macOS and Linux.
 - A manual GUI walk of the Review workspace after an edit made in another workspace. Entering Review goes through `switch_workspace`, which still rebuilds it, but no automated check opens Review after such an edit.
+
+## Independent review (2026-11-02)
+
+**PASS**, from a delta review of `integrate/2.4.0` at `f5e2653`.
+
+Review stays fresh:
+- It is rebuilt only while visible (`app.rs:693`).
+- Every path into workspace 3 goes through `switch_workspace`, which rebuilds it.
+- `element_diff` is equivalent to the pairwise definition.
+- Note evidence is reused only right after `refresh_canvas` stores it.
+- Gallery counts do not depend on `refresh_review`.
+
+The reviewer's release bench (2 runs) reproduced the record:
+
+| Scene | refresh_all | max_handler |
+|---|---|---|
+| 1005 elements | 12.3–12.8 ms | 18.2–19.9 ms |
+| 50 digits | 14.9–15.0 ms | 22.1–24.1 ms |
+
+Found but not caused by this task, so no action now:
+- Pre-existing on both parents: undo/redo and other Designer actions while Review is visible go through `after_edit`, which never refreshes Review, so the view stays stale until the next `refresh_all` or until Review is re-entered.
+- Cost only: in the preview-step path, `refresh_notes()` still follows `refresh_inspector_after_canvas()`, which renders once more than needed.

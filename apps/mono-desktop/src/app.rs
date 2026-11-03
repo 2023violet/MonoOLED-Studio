@@ -2416,7 +2416,7 @@ impl App {
         true
     }
 
-    fn load_review(&mut self) -> Option<ReviewStore> {
+    pub(crate) fn load_review(&mut self) -> Option<ReviewStore> {
         let root = self.project_root()?;
         match ReviewStore::for_root(&root) {
             Ok(store) => Some(store),

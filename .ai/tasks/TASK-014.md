@@ -241,3 +241,33 @@ Gates after the rework (Windows):
 GUI trust on a fresh release build of the reworked tree, with `APPDATA` / `LOCALAPPDATA` / `XDG_CONFIG_HOME` in a temporary directory: 17 of 17 PASS. Not verified: a real backdrop click on the three dialogs, because the scripted hooks have no pointer action outside the canvas; the source test pins the binding.
 
 A shared-target worktree build of the pre-fix tree overwrote the workspace crates' artefacts in `target/`, and the next test build linked against them (a spurious "no method `rename_screen`"). `cargo clean -p` on the six workspace crates fixed it. Failure-evidence worktrees must use their own `CARGO_TARGET_DIR`.
+
+### Delta review of the rework (2026-11-02)
+
+The verdict on TASK-014's rework at `f5e2653` was **REWORK REQUIRED**. The reviewer re-ran the gates: 308 passed, a release build and GUI trust exit 0. Separate verdicts went to TASK-015 and TASK-016 (both PASS).
+
+Confirmed resolved: F1 on the desktop and on the API success path, F2–F5, F7–F9, F3 including the gallery panel's click swallow, and the TASK-011 rework.
+
+New findings:
+- **A1 (Medium)**: when the annotation move fails in the API's `project.rename_screen`, it returned before rebinding the session. The next save recreated the old scene file. Reproduced with a review file at schema version 99.
+- **A2 (Low)**: a rename through the Agent Bridge did not reload the desktop's in-memory review store. The renamed page looked as if it had no notes, and later desktop note saves were refused as an external change.
+- **A3 (Low)**: `G4_EVIDENCE.md:68` still pointed to a TASK-006 section.
+- Nits: the docs used a Unicode "…" where the code prints "...", and a comment still said "Name every blocker".
+
+### Second rework (2026-11-02)
+
+- **A1**: `dispatch.rs` `project.rename_screen` now rebinds the session before moving annotations. On a failed move it bumps the revision, sends the `project.rename_screen` notification, and then returns the error.
+  - The new test `session_reset::a_failed_annotation_move_still_rebinds_the_session_to_the_renamed_file` exposed a deeper cause. The service had opened `main` while the manifest's active screen was another one. `was_active`, read from the manifest, was false, so the session was never rebound, on success or on failure.
+  - The service now also rebinds when the session's own path is the renamed screen's file. The test failed before this change (`left == right`, the old path) and passes after it.
+- **A2**: on a structural change, the Agent Bridge rebind now reloads `self.review = self.load_review()`. Every store operation saves at once, so nothing unsaved is dropped.
+- **A3**: the reference now points to TASK-012. Nits: the docs now print "... and N more" and the comment says up to eight.
+- **B1** (from TASK-015's review): the CHANGELOG now gives the fixture memory before (62–64 MB) and after (74–76 MB) the refresh fix, and says the growth is not separated from machine state.
+
+Gates after the second rework (Windows):
+- fmt clean;
+- clippy `-D warnings` clean;
+- `cargo test --workspace --locked --no-fail-fast`: 28 groups, 309 passed, 0 failed;
+- pytest 36 passed, 1 skipped;
+- deny ok.
+
+Not re-run: the release build and GUI trust. No `.slint` file changed, and `agent.rs`'s reload path has no GUI trust case.
