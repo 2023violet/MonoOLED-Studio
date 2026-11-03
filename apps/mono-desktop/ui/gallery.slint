@@ -84,6 +84,7 @@ component GalleryCard inherits Rectangle {
 
 export component GalleryOverlay inherits Scrim {
     callback refocus();
+    dismissed => { GalleryModel.close(); }
     scope := FocusScope {
         key-pressed(event) => {
             if (event.text == Key.Escape) {
@@ -103,6 +104,8 @@ export component GalleryOverlay inherits Scrim {
             border-color: Theme.border-normal;
             drop-shadow-blur: 24px;
             drop-shadow-color: Theme.popover-shadow;
+            // Clicks on empty panel space must not reach the scrim behind it.
+            swallow := TouchArea { clicked => { } }
             VerticalLayout {
                 padding: 16px;
                 spacing: 10px;

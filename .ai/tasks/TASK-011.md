@@ -201,3 +201,9 @@ Fix scope (only this):
 - No other change; the known gaps listed above stay accepted.
 
 Status stays `VERIFY` until that rework is reviewed.
+
+### Rework (2026-11-02, together with TASK-014's rework)
+
+- `apps/mono-desktop/src/guard.rs` `rename_active_screen`: when `rename_screen` refuses, it now re-opens the project's still-active screen before returning the error. It used to leave the Designer with no session.
+- Failure evidence: on a pre-fix worktree, the new test `app::tests::a_refused_rename_keeps_the_page_open` failed (`app.session` was `None`). After the fix it passes for an invalid id (`bad id/..`) and a duplicate id (`123`): `app.session` stays bound to `main`'s scene path and `is_dirty()` is false.
+- Back to VERIFY for a delta review.

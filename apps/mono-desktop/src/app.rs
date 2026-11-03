@@ -2427,7 +2427,7 @@ impl App {
         }
     }
 
-    fn active_screen_id(&self) -> String {
+    pub(crate) fn active_screen_id(&self) -> String {
         self.project
             .as_ref()
             .map(|project| project.active_screen())
@@ -4833,6 +4833,44 @@ mod tests {
         assert_eq!(notes[0].evidence.sha256.len(), 64);
         assert!(notes[0].evidence.lit_pixels > 0);
         assert_eq!(notes[0].evidence.source, "designer");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn renaming_a_screen_moves_its_notes() {
+        let (mut app, root) = project_app("note-rename");
+        app.begin_note().unwrap();
+        app.save_note("Battery clips", "at minimum", 0).unwrap();
+        app.rename_active_screen("renamed").unwrap();
+        let store = ReviewStore::for_root(&root).unwrap();
+        assert_eq!(store.annotations_for("renamed").len(), 1);
+        assert!(store.annotations_for("main").is_empty());
+        assert_eq!(
+            app.review
+                .as_ref()
+                .unwrap()
+                .annotations_for("renamed")
+                .len(),
+            1
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_refused_rename_keeps_the_page_open() {
+        let (mut app, root) = project_app("rename-refused");
+        let main = app.project.as_ref().unwrap().screen_path("main").unwrap();
+        // An id `validate_screen_id` refuses, then an id another page already has.
+        for refused in ["bad id/..", "123"] {
+            assert!(app.rename_active_screen(refused).is_err(), "{refused}");
+            assert!(
+                app.session.is_some(),
+                "{refused}: the Designer keeps a scene"
+            );
+            let session = app.session.as_ref().unwrap();
+            assert_eq!(session.doc.path, main, "{refused}");
+            assert!(!session.is_dirty(), "{refused}");
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 

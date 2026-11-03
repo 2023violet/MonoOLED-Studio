@@ -81,3 +81,24 @@ fn rollback_restores_a_renderable_runtime_state() {
     service.session.render().expect("render after rollback");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn renaming_a_screen_moves_its_annotations() {
+    let (mut service, root) = attached_service("rename-notes");
+    let review = root.join("review/review.json");
+    std::fs::create_dir_all(review.parent().unwrap()).unwrap();
+    std::fs::write(
+        &review,
+        r#"{"schema_version":1,"annotations":[{"id":"n1","kind":"defect","screen":"main","state":{},"title":"t","body":"","evidence":{"sha256":"","lit_pixels":0,"source":"designer"},"created_utc":"","updated_utc":""}],"scenarios":[]}"#,
+    )
+    .unwrap();
+    call(
+        &mut service,
+        "project.rename_screen",
+        json!({"screen_id": "main", "new_id": "renamed"}),
+    );
+    let store = mono_project::review::ReviewStore::for_root(&root).unwrap();
+    assert_eq!(store.annotations_for("renamed").len(), 1);
+    assert!(store.annotations_for("main").is_empty());
+    let _ = std::fs::remove_dir_all(&root);
+}

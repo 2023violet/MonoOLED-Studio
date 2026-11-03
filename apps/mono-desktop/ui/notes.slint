@@ -75,6 +75,7 @@ export component NoteList inherits VerticalLayout {
 
 export component NoteDialog inherits Scrim {
     callback refocus();
+    dismissed => { NoteModel.cancel(); }
     scope := FocusScope {
         key-pressed(event) => {
             if (event.text == Key.Escape) {

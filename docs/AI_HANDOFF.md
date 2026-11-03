@@ -126,7 +126,7 @@ cargo test --workspace --locked
 
 API 1.3.0 是兼容性契约。`export.c_header`、`export.current`、`export.all` 和 Code AI 交接包的行为不能在没有版本升级和兼容方案的情况下静默改变。事务提交只改变内存状态，写盘需要显式保存。
 
-发布闸门（ADR-006，2026-10-29 确认）：场景导出生产者共用 `mono_project::export::preflight` 与 `BlockedExport`——`export_scene` 自带闸门，桌面/CLI/Automation 的 C Header 在渲染前先 preflight。场景存在阻断项时一律不写任何东西（包括 `reference/`、`golden/` 目录）：CLI 打印 `FAIL:` 并 exit 2，API 返回 `INVALID_REQUEST`，桌面打开可跳转到具体元素的阻断对话框；成功导出的字节输出保持不变。交接包的阻断报告写在 `<zip>.validation.md`，临时工作目录删除后仍可读。闸门目前**不覆盖** Output Workbench 与 `export.bitmap_data`：两者可以把当前场景渲染成自己的文件，纳入闸门会改变 API 1.3 的行为，需要单独决策。
+发布闸门（ADR-006，2026-10-29 确认）：场景导出生产者共用 `mono_project::export::preflight` 与 `BlockedExport`——`export_scene` 自带闸门，桌面/CLI/Automation 的 C Header 在渲染前先 preflight。场景存在阻断项时不写任何导出产物（包括 `reference/`、`golden/` 目录），只写阻断报告（API 的 `export.c_header` 连报告也不写）：CLI 打印 `FAIL:` 并 exit 2，API 返回 `INVALID_REQUEST`，桌面打开可跳转到具体元素的阻断对话框；成功导出的字节输出保持不变。交接包的阻断报告写在 `<zip>.validation.md`，临时工作目录删除后仍可读。闸门目前**不覆盖** Output Workbench、`export.bitmap_data` 与 2.3.0 的审阅包：前两者可以把当前场景渲染成自己的文件，审阅包把每帧的 C Header 与 hex 连同问题一起写进 HTML，纳入闸门会改变 API 1.3 的行为，需要单独决策。
 
 ### 5.6 两种"AI 交接"不要混淆
 

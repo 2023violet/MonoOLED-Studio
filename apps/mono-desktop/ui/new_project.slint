@@ -15,6 +15,11 @@ export global NewProjectModel {
 
 export component NewProjectDialog inherits Scrim {
     callback refocus();
+    dismissed => {
+        NewProjectModel.visible = false;
+        NewProjectModel.cancel();
+        root.refocus();
+    }
     scope := FocusScope {
         key-pressed(event) => {
             if (event.text == Key.Escape) {

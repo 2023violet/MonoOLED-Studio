@@ -1672,10 +1672,16 @@ mod ui_source_tests {
             ("main.slint", MAIN),
             ("preferences.slint", PREFERENCES),
             ("pixel.slint", PIXEL),
+            ("gallery.slint", GALLERY),
+            ("notes.slint", NOTES),
+            ("new_project.slint", NEW_PROJECT),
         ] {
             let dialogs = src.matches("inherits Scrim").count();
             let dismissals = src.matches("dismissed =>").count();
-            assert_eq!(dialogs, dismissals, "{name}: a dialog ignores Escape");
+            assert_eq!(
+                dialogs, dismissals,
+                "{name}: a dialog ignores Escape or a backdrop click"
+            );
         }
     }
 

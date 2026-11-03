@@ -453,6 +453,37 @@ impl ReviewStore {
         Ok(true)
     }
 
+    /// Re-key every annotation of screen `from` to `to` after a screen rename,
+    /// so the notes follow the page. Returns how many moved; nothing is written
+    /// when none did.
+    pub fn rename_screen(&mut self, from: &str, to: &str) -> CoreResult<usize> {
+        if from == to {
+            return Ok(0);
+        }
+        let before = self.data.clone();
+        let mut moved = 0;
+        if let Some(items) = self
+            .data
+            .get_mut("annotations")
+            .and_then(Value::as_array_mut)
+        {
+            for item in items.iter_mut() {
+                if item.get("screen").and_then(Value::as_str) == Some(from) {
+                    item["screen"] = json!(to);
+                    moved += 1;
+                }
+            }
+        }
+        if moved == 0 {
+            return Ok(0);
+        }
+        if let Err(error) = self.save() {
+            self.data = before;
+            return Err(error);
+        }
+        Ok(moved)
+    }
+
     /// Insert or replace a scenario by id; an empty id is generated.
     pub fn upsert_scenario(&mut self, mut scenario: Scenario) -> CoreResult<String> {
         let (compact, iso) = now();
@@ -570,6 +601,28 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn rename_screen_moves_only_that_screens_notes() {
+        let root = root("rename");
+        let mut store = ReviewStore::for_root(&root).unwrap();
+        store
+            .upsert_annotation(annotation("main", AnnotationKind::Defect, "a"))
+            .unwrap();
+        store
+            .upsert_annotation(annotation("main", AnnotationKind::Decision, "b"))
+            .unwrap();
+        store
+            .upsert_annotation(annotation("other", AnnotationKind::Defect, "c"))
+            .unwrap();
+        assert_eq!(store.rename_screen("main", "renamed").unwrap(), 2);
+        assert_eq!(store.rename_screen("missing", "x").unwrap(), 0);
+        let reloaded = ReviewStore::for_root(&root).unwrap();
+        assert_eq!(reloaded.annotations_for("renamed").len(), 2);
+        assert!(reloaded.annotations_for("main").is_empty());
+        assert_eq!(reloaded.annotations_for("other").len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     fn annotation(screen: &str, kind: AnnotationKind, title: &str) -> Annotation {

@@ -253,8 +253,26 @@ impl App {
         // on the next save. Nothing is lost — the prompt above already saved or
         // discarded every change.
         self.drop_session();
-        if let Some(project) = self.project.as_mut() {
-            project.rename_screen(&active, new_id, Some(new_id))?;
+        let renamed = match self.project.as_mut() {
+            Some(project) => project.rename_screen(&active, new_id, Some(new_id)),
+            None => return Ok(()),
+        };
+        if let Err(error) = renamed {
+            // A refused rename (bad id, duplicate, case-only on Windows) moves
+            // nothing: reopen the page that is still active instead of leaving
+            // the Designer without a scene.
+            let current = self.active_screen_id();
+            if let Err(reopen) = self.switch_screen(&current) {
+                self.error(&reopen);
+            }
+            return Err(error);
+        }
+        // Annotations are keyed by screen id; without this they stay behind
+        // under the old id and the renamed page shows none.
+        if let Some(review) = self.review.as_mut()
+            && let Err(error) = review.rename_screen(&active, new_id)
+        {
+            self.error(&error);
         }
         self.switch_screen(new_id)
     }

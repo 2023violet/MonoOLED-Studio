@@ -25,6 +25,7 @@ use mono_project::fontpack_io::{load_font_pack, save_font_pack};
 use mono_project::image_io::{decode_image, encode_bitmap_png, encode_rgba_png};
 use mono_project::project::resolve_under_root;
 use mono_project::resources::hex_digest;
+use mono_project::review::ReviewStore;
 use serde_json::{Map, Value, json};
 
 use crate::error::{RpcError, RpcResult};
@@ -331,6 +332,22 @@ fn api_and_project(service: &mut Service, method: &str, params: &Params) -> RpcR
             let project = service.require_project_mut()?;
             let was_active = project.active_screen() == old;
             let screen = project.rename_screen(&old, &new_id, label.as_deref())?;
+            // Annotations in `review/review.json` are keyed by screen id: move
+            // them with the page, or the renamed screen shows none.
+            if screen.id != old {
+                let root = project.root.clone();
+                ReviewStore::for_root(&root)
+                    .and_then(|mut review| review.rename_screen(&old, &screen.id))
+                    .map_err(|error| {
+                        mono_core::CoreError::new(
+                            error.code,
+                            format!(
+                                "screen renamed to '{}', but its annotations were not moved: {}",
+                                screen.id, error.message
+                            ),
+                        )
+                    })?;
+            }
             if was_active {
                 let project = service.require_project()?;
                 let path = project.screen_path(&screen.id)?;

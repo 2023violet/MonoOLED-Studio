@@ -199,3 +199,45 @@ Suspicions recorded, not caused by the merge (present on both parents):
 - `start_export` sets `pending_contract` before the job start can fail.
 - The Navigator's `delete-elements` action has no handler.
 - `ReviewModel.percent` / `hash-match` and `AgentModel.endpoint` are set but never read. The truthful-controls scan does not cover the 2.3.0 globals; TASK-015 item 4 targets this.
+
+### Rework (2026-11-02)
+
+The user approved the recommended scope ("按建议一起返工"): move notes with a rename, bind backdrop dismissal, fix the text. TASK-015 and TASK-016 (on `claude/heuristic-goldberg-a5634a`) and the TASK-006/007/010/011 verdicts (on `claude/blissful-pasteur-3bfb53`) were merged into `integrate/2.4.0` first. Changes by finding:
+
+- **F1**:
+  - New `ReviewStore::rename_screen(from, to)` (`crates/mono-project/src/review.rs`) re-keys a screen's annotations and saves through the existing fingerprint guard.
+  - The desktop `rename_active_screen` calls it on the in-memory store, so the store's fingerprint stays current.
+  - The API's `project.rename_screen` calls it on `ReviewStore::for_root` after the rename. If that step fails, the error says the rename was already applied, and the response shape is unchanged; `docs/AUTOMATION_API_V1.md` documents this.
+  - Tests:
+    - `review::tests::rename_screen_moves_only_that_screens_notes`
+    - `app::tests::renaming_a_screen_moves_its_notes`
+    - `session_reset::renaming_a_screen_moves_its_annotations`
+  - Failure evidence: on a pre-fix worktree the API test failed (`left: 0, right: 1`). The desktop case had been reproduced by the reviewer.
+  - Known edge: while the desktop Agent Bridge renames a screen, the desktop's own in-memory store sees an external change, and its next note save is refused with `E-REVIEW-EXTERNAL` ("reopen the project"). That refusal is safe: no note is lost.
+- **F3**:
+  - `NewProjectDialog`, `NoteDialog` and `GalleryOverlay` bind `dismissed` to their existing cancel or close.
+  - The gallery panel swallows clicks on its empty space, the same way `Dialog` does.
+  - `scrim_owns_escape_and_every_dialog_binds_dismissal` now scans `gallery.slint`, `notes.slint` and `new_project.slint`.
+- **F2, F4, F7 and F9**: corrected in `CHANGELOG.md`:
+  - the report paths per producer;
+  - "up to eight blockers";
+  - only RUSTSEC-2026-0433 is new;
+  - the nested shortcut key is readable but does not bind.
+- **F5**: `docs/AUTOMATION_API_V1.md`: `export.c_header` writes no report; "2.1.0" becomes 2.3.0.
+- **F6**: `docs/rewrite/G4_EVIDENCE.md`: TASK-006 becomes TASK-012, and the stale 2.1.0 references are corrected.
+- **F8**:
+  - CHANGELOG Integration now names the title-dot change and the rename fix.
+  - Both user guides now describe project-asset PNGs in Pixel Studio and say batch validation is not a gated export.
+  - `docs/AI_HANDOFF.md` §5.5 says a blocked export still writes its report and lists the review pack outside the gate.
+- TASK-011's rework (a refused rename keeps the page open) is in the same change; see that file.
+
+Gates after the rework (Windows):
+- fmt clean;
+- clippy `-D warnings` clean;
+- `cargo test --workspace --locked --no-fail-fast`: 28 groups, 308 passed, 0 failed (before the duplicate-id case was added to one test, which passes on its own);
+- pytest 36 passed, 1 skipped;
+- deny ok.
+
+GUI trust on a fresh release build of the reworked tree, with `APPDATA` / `LOCALAPPDATA` / `XDG_CONFIG_HOME` in a temporary directory: 17 of 17 PASS. Not verified: a real backdrop click on the three dialogs, because the scripted hooks have no pointer action outside the canvas; the source test pins the binding.
+
+A shared-target worktree build of the pre-fix tree overwrote the workspace crates' artefacts in `target/`, and the next test build linked against them (a spurious "no method `rename_screen`"). `cargo clean -p` on the six workspace crates fixed it. Failure-evidence worktrees must use their own `CARGO_TARGET_DIR`.
