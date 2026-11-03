@@ -54,13 +54,16 @@ rendered frame has a `BLOCKER` or `ERROR` finding, the page opens with a static
 banner, readable without JavaScript:
 
 > Not a deliverable. N of M rendered frames have blocking findings (BLOCKER or
-> ERROR). Exports refuse these scenes until the findings are fixed; this pack is
-> for review only.
+> ERROR). An export is refused while a blocking finding remains in any state it
+> checks; this pack is for review only.
 
 The text summary of `mono review-pack` prints `NOT A DELIVERABLE: …` and the
 desktop status line names the count. The pack renders the init frame and the
-annotated states only, not the full state matrix, so a pack without the banner
-does not prove that an export will pass; the export runs its own gate.
+annotated states only, not the export's state matrix, so the banner does not
+predict the export verdict exactly: a pack without the banner does not prove
+that an export will pass, and a blocker found only in an annotated state that
+the matrix does not sample does not block the export. The export runs its own
+gate.
 
 ## Determinism
 

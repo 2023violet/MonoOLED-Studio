@@ -270,8 +270,11 @@ fn gate_banner(blocking_frames: usize, frames: usize) -> String {
         return String::new();
     }
     format!(
-        "<div class=\"banner\" id=\"gate\" role=\"alert\"          style=\"color:var(--bad);border-color:var(--bad)\">         <strong>Not a deliverable.</strong> {blocking_frames} of {frames} rendered frames          have blocking findings (BLOCKER or ERROR). Exports refuse these scenes until          the findings are fixed; this pack is for review only.</div>
-"
+        "<div class=\"banner\" id=\"gate\" role=\"alert\" \
+         style=\"color:var(--bad);border-color:var(--bad)\">\
+         <strong>Not a deliverable.</strong> {blocking_frames} of {frames} rendered frames \
+         have blocking findings (BLOCKER or ERROR). An export is refused while a blocking \
+         finding remains in any state it checks; this pack is for review only.</div>\n"
     )
 }
 

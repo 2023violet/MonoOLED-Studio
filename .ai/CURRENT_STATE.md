@@ -5,8 +5,8 @@
 ## Project
 
 - Project: MonoOLED Studio
-- Product version: 2.3.0 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
-- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance. Released (tagged): 2.2.0/2.2.1 (TASK-004 to TASK-007; the 2.0.4, 2.0.5 and 2.1.0 changelog versions were never tagged and first shipped in v2.2.0), 2.3.0 (TASK-008, TASK-009). A second line of work (TASK-010 to TASK-013) branched at 2.0.3, never shipped, and is being integrated onto 2.3.0 by TASK-014; its notes are the `Unreleased` section of `CHANGELOG.md`.
+- Product version: 2.4.0 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
+- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance. Released (tagged): 2.2.0/2.2.1 (TASK-004 to TASK-007; the 2.0.4, 2.0.5 and 2.1.0 changelog versions were never tagged and first shipped in v2.2.0), 2.3.0 (TASK-008, TASK-009), 2.4.0 (TASK-010 to TASK-017: a second line of work that branched at 2.0.3 and never shipped on its own, integrated onto 2.3.0 by TASK-014, plus its verification, the refresh-regression fix and the review-pack banner; the user delegated the decisions and the release on 2026-11-02, ADR-007).
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
@@ -30,10 +30,11 @@
 - TASK-014 status: DONE, confirmation review PASS 2026-11-02 after three reworks (integration of TASK-010 to TASK-013 onto 2.3.0; see `.ai/tasks/TASK-014.md`)
 - TASK-016 status: DONE, review PASS 2026-11-02 (large-scene refresh regression from the 2.3.0 integration: Review rebuilt only while visible with an indexed diff, note rows reuse the canvas frame; refresh back to pre-integration figures)
 - TASK-015 status: DONE, review PASS 2026-11-02 (closes TASK-014's verification gaps: escaping members in the gallery and Review panel, six Inspector tabs in the GUI trust check, performance re-measured on the integrated tree, dead-binding scan over the 2.3.0 globals)
+- TASK-017 status: DONE, review PASS 2026-11-02 (ADR-007 D1: a review pack with blocking findings is written with a static "Not a deliverable" banner; the same review covered TASK-014's three-platform CI rework)
 - Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-006, TASK-007, TASK-009, TASK-010, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); PASS (TASK-011, TASK-014, TASK-015, TASK-016 after rework where noted). TASK-006/007 were reviewed after release (2026-11-02).
 - Proposed follow-up fix task (not yet numbered or approved), from the TASK-006/007 review: add `ASSET_PATH_ESCAPE` to `FINDING_CODES` with en/zh labels plus a test that every emitted finding code is listed; replace the tautological `palette_actions_are_dispatchable`; make the Designer drawer say there is no baseline instead of 100%; note in `CHANGELOG.md` that 2.0.4/2.0.5/2.1.0 were never tagged.
-- Active task: none. Integration branch `integrate/2.4.0` is reviewed; follow-ups are listed at the end of `.ai/tasks/TASK-014.md`.
-- Next workflow action: the user decides on pushing `integrate/2.4.0` for the three-platform CI, on the review-pack gate question, and on releasing 2.4.0. The open product decision TASK-014 names (whether the review pack belongs inside the release gate) and the release itself (the Compatibility changes rule out a patch version) are the user's. Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
+- Active task: none. Follow-ups are listed at the end of `.ai/tasks/TASK-014.md` and in `.ai/tasks/TASK-017.md` Review Status.
+- Next workflow action: choose among the follow-ups (TASK-014 and TASK-017 lists, the proposed TASK-006/007 fix task, the G4 §4 performance budgets). Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
 
 ## Current workstream
 
@@ -43,7 +44,7 @@
 - TASK-012 (interactive performance) draws the overlay and answers hit-tests from the rects the renderer already resolved, and moves validation for geometry, state and rule edits and `refresh_all` onto a worker thread (epoch-gated). Budgets and the remaining misses are in `docs/rewrite/G4_EVIDENCE.md` §4. TASK-015 re-measured them after TASK-014 and found a regression on large scenes. TASK-016 fixed it: Review is rebuilt only while visible, and the note rows reuse the canvas frame. Full refreshes are back to their pre-integration figures.
 - TASK-013 (stress findings): the export gate stops at the first blocking frame, `ui_contract.json` and `UI_SPEC.md` stream frame by frame, and scene members are contained to the project root (`ASSET_PATH_ESCAPE` / `E-CORE-PATH`). The check is lexical: links and junctions are a recorded limitation.
 - Deferred by decision, not by omission: the Pixel Studio versus Font Lab visual language and any theme/colour revision are left for a separate design round.
-- Deferred for a product decision: the Output Workbench and Automation `export.bitmap_data` can still render the current scene into a file without the release gate (`docs/AI_HANDOFF.md` §5.5). The review pack added in 2.3.0 is in the same position; TASK-014 records it as an open question.
+- Decided for 2.4.0 (ADR-007): the Output Workbench and Automation `export.bitmap_data` stay outside the release gate (`docs/AI_HANDOFF.md` §5.5); the review pack is written whatever its findings but marks itself "Not a deliverable" when a rendered frame has a blocking finding.
 - Slint 1.18 constraints: a component that inherits `ListView` mislays its delegates, and `@children` cannot be forwarded into a `ListView` (pinned by `no_list_is_a_subclassed_listview`). A `changed` handler on a bound property is evaluated eagerly (`ChangeTracker::init`), so `MainWindow.overlay-open` restores focus after every modal. Slint 1.18.1 cannot two-way-bind `MenuItem.checked`, so View-menu check marks are rendered from `Shell` state.
 - Theme Visual Workstream is closed by TASK-002 under the approved product
   decision B.

@@ -323,4 +323,4 @@ The first push of `integrate/2.4.0` ran the Rust workflow on every platform. Thr
 
 Failure evidence: the CI logs of the first run on the branch, quoted above. No `.slint` or product source changed.
 
-Result: the rerun of the Rust workflow passed on every job: Rust on windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest and macos-15-intel; Python tooling on Windows and Ubuntu; dependency policy. These changes are test-only plus a lockfile bump, and have had no independent review yet.
+Result: the rerun of the Rust workflow passed on every job: Rust on windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest and macos-15-intel; Python tooling on Windows and Ubuntu; dependency policy. These changes are test-only plus a lockfile bump. Independent review PASS 2026-11-02, recorded with TASK-017.

@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.4.0 - 2026-11-02
 
-This section is the 2026-10-30 to 2026-11-02 work (truthful controls, the export gate, Designer performance, project-root containment). It was developed on a line that branched at 2.0.3, never shipped, and is now integrated onto 2.3.0. Where both lines fixed the same defect, one implementation was kept; those items are listed under **Integration** instead of being announced twice.
+This release is the 2026-10-30 to 2026-11-02 work (truthful controls, the export gate, Designer performance, project-root containment, a review pack that marks blocking findings). It was developed on a line that branched at 2.0.3, never shipped, and is integrated onto 2.3.0. Where both lines fixed the same defect, one implementation was kept; those items are listed under **Integration** instead of being announced twice.
 
 ### Compatibility (contract changes)
 
@@ -19,7 +19,7 @@ This section is the 2026-10-30 to 2026-11-02 work (truthful controls, the export
 - The Navigator renames a page. **Rename** moves the scene file with it and re-opens it under the new id.
 - The canvas toolbar's **Zones** toggle (and the `canvas.zones` preference) draws the project's design zones over the canvas, in the same editor-only layer as the grid and bounds.
 - The status bar shows what a running background job is doing (`Export · 12/40`) and carries a **Cancel** control; the Edit menu names what the next undo reverts ("Undo: move battery").
-- **A review pack with blocking findings says it is not a deliverable.** The pack is still written, because reviewing problems is its purpose, but when any rendered frame (an init frame or an annotated state) has a `BLOCKER` or `ERROR` finding the page opens with a static banner, readable without JavaScript: "Not a deliverable. N of M rendered frames have blocking findings". `mono review-pack` prints the same line, `--json` adds `blocking_frames`, and the desktop status line names the count. A pack without blocking frames has no banner.
+- **A review pack with blocking findings says it is not a deliverable.** The pack is still written, because reviewing problems is its purpose, but when any rendered frame (an init frame or an annotated state) has a `BLOCKER` or `ERROR` finding the page opens with a static banner, readable without JavaScript: "Not a deliverable. N of M rendered frames have blocking findings". The text output of `mono review-pack` adds `NOT A DELIVERABLE: N of M frames have blocking findings`, `--json` adds `blocking_frames`, and the desktop status line names the count. A pack without blocking frames has no banner. The pack renders init frames and annotated states only, so the banner does not predict the export verdict exactly: an annotated state outside the export's state matrix is not checked by the export gate.
 - Font Lab can offset the glyphs horizontally and vertically. The generator always supported `GenerateOptions::offset`; no control could set it.
 
 ### Performance

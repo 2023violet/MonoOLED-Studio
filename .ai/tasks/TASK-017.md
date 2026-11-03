@@ -1,7 +1,7 @@
 # TASK-017 — Review Pack Marks Blocking Findings as Not a Deliverable
 
-Status: VERIFY
-Review Status: NOT REVIEWED
+Status: DONE
+Review Status: PASS (independent review 2026-11-02)
 
 ## Goal
 
@@ -49,3 +49,12 @@ New unit tests in `review_pack.rs`, CLI JSON test, the five CI gates.
 - Deviation from the contract: requirement 4's "blocker only in an annotated state" case was replaced by the annotated-frame counting test. Per-element blockers in `validate_scene` ignore `visible_when`, and state-dependent blockers that still render need a font pack fixture; the counting test proves that annotated frames are included.
 - Failure evidence: the three new review-pack tests fail on the pre-change code (no `blocking_frames`, no banner).
 - Docs: `docs/REVIEW_PACK.md` (new section, `--json` fields), `CHANGELOG.md` Unreleased (Compatibility sentence and Added), `docs/AI_HANDOFF.md` §5.5 boundary text, ADR-007.
+
+## Review Status
+
+**PASS** (independent review 2026-11-02, also covering the TASK-014 CI rework `d89842d`). Gates re-run by the reviewer: fmt, clippy, tests 0 failed, pytest 36 passed and 1 skipped, deny ok. Findings:
+
+- (Low) The banner said exports "refuse these scenes", but an annotated state outside the export's state matrix is never gated. Fixed: the banner now says an export is refused while a blocking finding remains in any state it checks; `docs/REVIEW_PACK.md` and `CHANGELOG.md` state the limit.
+- (Low) `CHANGELOG.md` said the CLI prints "the same line" as the banner. Fixed: it quotes the CLI text.
+- (Low, follow-up) Untested: the CLI text line, a non-zero `blocking_frames` in `--json`, the desktop status key choice, and a pack whose only blocker is in an annotated state (needs a font-pack fixture).
+- (Nit) The banner literal had lost its line continuations. Fixed.
