@@ -688,12 +688,70 @@ mod tests {
         assert_eq!(configurable, CONFIGURABLE.to_vec());
     }
 
+    /// The text of one dispatch function, from its signature to the first line
+    /// that is exactly `close` (its closing brace), whatever the line endings.
+    fn dispatch_body(source: &str, signature: &str, close: &str) -> String {
+        let start = source
+            .find(signature)
+            .unwrap_or_else(|| panic!("dispatcher {signature} moved"));
+        let mut body = String::new();
+        for line in source[start..].lines() {
+            if line.trim_end_matches('\r') == close {
+                return body;
+            }
+            body.push_str(line);
+            body.push('\n');
+        }
+        panic!("end of {signature} not found");
+    }
+
+    /// `is_known` reads the same registry the palette lists, so it cannot tell
+    /// whether anything handles an action; `App::action` ignores one nobody
+    /// handles (`E-APP-UNHANDLED`). Every palette action must instead be an arm
+    /// of one of the three dispatchers: `handle_action` in main.rs, then
+    /// `App::extra_action`, then `App::action`. A dynamic family (`pixel-tool:0`)
+    /// must have its prefix matched.
     #[test]
     fn palette_actions_are_dispatchable() {
+        let main = include_str!("main.rs");
+        let extras = include_str!("extras.rs");
+        let app = include_str!("app.rs");
+        let bodies = [
+            dispatch_body(main, "fn handle_action(", "}"),
+            dispatch_body(extras, "    pub fn extra_action(", "    }"),
+            dispatch_body(app, "    pub fn action(&mut self", "    }"),
+        ];
+        let handled = |action: &str| {
+            let needle = match action.find(':') {
+                Some(colon) => format!("\"{}\"", &action[..=colon]),
+                None => format!("\"{action}\""),
+            };
+            bodies.iter().any(|body| body.contains(&needle))
+        };
+        let mut unhandled = BTreeSet::new();
+        for ctx in [
+            Requirement::None,
+            Requirement::Document,
+            Requirement::Project,
+            Requirement::Scene,
+            Requirement::PixelOrFont,
+        ] {
+            for spec in palette_commands(ctx) {
+                if !handled(spec.action) {
+                    unhandled.insert(spec.action);
+                }
+            }
+        }
+        assert!(
+            unhandled.is_empty(),
+            "palette actions no dispatcher handles: {unhandled:?}"
+        );
+        // The scan must keep telling a handled action from an unhandled one.
+        assert!(handled("save") && handled("pixel-tool:3"));
+        assert!(!handled("no-such-action") && !handled("no-such-family:1"));
         let commands = palette_commands(Requirement::Document);
         assert!(commands.len() >= 25);
         for spec in commands {
-            assert!(is_known(spec.action), "unregistered {}", spec.action);
             assert!(!spec.action.starts_with("align:"));
         }
         let pixel: Vec<_> = palette_commands(Requirement::PixelOrFont)
