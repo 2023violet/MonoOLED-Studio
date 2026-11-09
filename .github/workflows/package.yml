@@ -38,8 +38,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # x64 and arm64 for macOS and Linux; Windows x64.
-        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
+        # x64 and arm64 for macOS and Linux; Windows x64. Linux is pinned to
+        # 24.04, not ubuntu-latest: the .deb's libc6 floor comes from the build
+        # host's glibc, and the install test below runs in a clean ubuntu:24.04
+        # (ubuntu-latest moved to 26.04 / glibc 2.43 in November 2026).
+        os: [windows-latest, ubuntu-24.04, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned toolchain
