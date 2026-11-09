@@ -272,6 +272,76 @@ fn review_pack_rejects_an_unknown_schema_version() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+/// A throwaway copy of the fixture whose main scene carries an editor
+/// placeholder: `DRAFT_PLACEHOLDER` blocks every state, and the scene renders.
+fn blocking_project(tag: &str) -> (std::path::PathBuf, String) {
+    let root = std::env::temp_dir().join(format!("mono-cli-blocking-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let fixture = std::path::PathBuf::from(fixture());
+    copy_dir(fixture.parent().unwrap(), &root);
+    let scene_path = root.join("scenes/main_scene.json");
+    let mut scene: Value =
+        serde_json::from_str(&std::fs::read_to_string(&scene_path).unwrap()).unwrap();
+    scene["elements"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!(
+            {"id": "draft", "type": "placeholder", "x": 0, "y": 0, "w": 8, "h": 8}
+        ));
+    std::fs::write(&scene_path, serde_json::to_vec_pretty(&scene).unwrap()).unwrap();
+    let project = root
+        .join("project.oled.json")
+        .to_string_lossy()
+        .into_owned();
+    (root, project)
+}
+
+#[test]
+fn a_blocking_review_pack_says_so_in_text_and_json() {
+    let (root, project) = blocking_project("pack");
+    let output = root.join("review.html").to_string_lossy().into_owned();
+    let (code, stdout, stderr) = run(&["review-pack", "--project", &project, "--output", &output]);
+    // The pack is still written: it is a review document, not an export.
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let frames = stdout
+        .lines()
+        .find(|line| line.starts_with("NOT A DELIVERABLE: "))
+        .unwrap_or_else(|| panic!("no NOT A DELIVERABLE line in: {stdout}"));
+    assert_eq!(
+        frames,
+        "NOT A DELIVERABLE: 1 of 2 frames have blocking findings"
+    );
+    let (code, stdout, stderr) = run(&[
+        "review-pack",
+        "--project",
+        &project,
+        "--output",
+        &output,
+        "--json",
+    ]);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let value = json_of(&stdout);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["blocking_frames"], 1);
+    assert_eq!(value["frames"], 2);
+    let html = std::fs::read_to_string(&output).unwrap();
+    assert!(html.contains("<strong>Not a deliverable.</strong> 1 of 2 rendered frames"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// A scene the release gate refuses (`../outside.png` escapes the project) in
 /// a throwaway copy of the fixture's scene, standalone with its own root.
 fn escaping_scene(tag: &str) -> (std::path::PathBuf, String) {

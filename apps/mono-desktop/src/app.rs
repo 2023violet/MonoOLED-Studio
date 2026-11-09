@@ -1416,21 +1416,8 @@ impl App {
         let lang = self.lang.clone();
         self.start_background("action.review_pack", move |progress| {
             let summary = build_review_pack(&project, &annotations, &output, progress)?;
-            let key = if summary.blocking_frames > 0 {
-                "status.review_pack_blocking"
-            } else {
-                "status.review_pack"
-            };
             Ok(Outcome {
-                status: trf(
-                    &lang,
-                    key,
-                    &[
-                        ("frames", summary.frames.to_string()),
-                        ("blocking", summary.blocking_frames.to_string()),
-                        ("path", posix(&summary.output)),
-                    ],
-                ),
+                status: review_pack_status(&lang, &summary),
                 log: vec![format!(
                     "REVIEW_PACK {} {}",
                     posix(&summary.output),
@@ -4252,6 +4239,28 @@ fn element_diff(before: &[Value], after: &[Value]) -> (Vec<String>, Vec<String>,
     (added, removed, modified)
 }
 
+/// The status line after a review pack: a pack with blocking frames says it is
+/// not a deliverable.
+fn review_pack_status(
+    lang: &str,
+    summary: &mono_project::review_pack::ReviewPackSummary,
+) -> String {
+    let key = if summary.blocking_frames > 0 {
+        "status.review_pack_blocking"
+    } else {
+        "status.review_pack"
+    };
+    trf(
+        lang,
+        key,
+        &[
+            ("frames", summary.frames.to_string()),
+            ("blocking", summary.blocking_frames.to_string()),
+            ("path", posix(&summary.output)),
+        ],
+    )
+}
+
 /// The Designer drawer's pixel-diff line against the loaded or saved frame.
 fn diff_summary(lang: &str, pixels: &[u8], baseline: &[u8]) -> String {
     // An empty baseline means the scene did not render when it was opened.
@@ -4976,6 +4985,45 @@ mod tests {
 
     /// Note rows render the frame themselves unless the canvas stored it in the
     /// same refresh; then they reuse it instead of rendering the scene again.
+    #[test]
+    fn review_pack_status_names_blocking_frames() {
+        let mut summary = mono_project::review_pack::ReviewPackSummary {
+            output: PathBuf::from("review/pack.html"),
+            screens: 1,
+            frames: 3,
+            annotations: 1,
+            blocking: 0,
+            blocking_frames: 0,
+            bytes: 10,
+            sha256: String::new(),
+        };
+        let args = |summary: &mono_project::review_pack::ReviewPackSummary| {
+            [
+                ("frames", summary.frames.to_string()),
+                ("blocking", summary.blocking_frames.to_string()),
+                ("path", posix(&summary.output)),
+            ]
+        };
+        for lang in ["en_US", "zh_CN"] {
+            summary.blocking_frames = 0;
+            assert_eq!(
+                review_pack_status(lang, &summary),
+                trf(lang, "status.review_pack", &args(&summary))
+            );
+            summary.blocking_frames = 2;
+            let blocked = review_pack_status(lang, &summary);
+            assert_eq!(
+                blocked,
+                trf(lang, "status.review_pack_blocking", &args(&summary))
+            );
+            assert!(blocked.contains('2'), "{blocked}");
+        }
+        assert_ne!(
+            tr("en_US", "status.review_pack"),
+            tr("en_US", "status.review_pack_blocking")
+        );
+    }
+
     /// Without a baseline (the scene did not render when it was opened) there
     /// is nothing to compare with, so the drawer must not report every pixel
     /// as changed.

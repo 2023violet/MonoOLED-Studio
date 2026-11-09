@@ -963,6 +963,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A digits value too long for the canvas puts the element out of bounds in
+    /// that state only: the init frame is clean, so `totals.blocking` (init
+    /// frames) stays 0 while the banner still names the annotated frame.
+    #[test]
+    fn a_blocker_only_in_an_annotated_state_still_marks_the_pack() {
+        let (project, root) = project("gate-annotated-only");
+        let mut note = annotation("n1", "main", 4, "long timer");
+        note.state.insert("seconds".into(), json!(123_456));
+        let output = root.join("review/gate-annotated-only.html");
+        let summary = build_review_pack(&project, &[note], &output, &mut |_, _, _| true).unwrap();
+        assert_eq!(summary.frames, 3);
+        assert_eq!(summary.blocking, 0, "every init frame is clean");
+        assert_eq!(
+            summary.blocking_frames, 1,
+            "only the annotated state blocks"
+        );
+        let html = std::fs::read_to_string(&output).unwrap();
+        assert!(html.contains("<strong>Not a deliverable.</strong> 1 of 3 rendered frames"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn embeds_annotated_states() {
         let (project, root) = project("states");
