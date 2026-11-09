@@ -1,6 +1,6 @@
 # TASK-018 — Designer Edit Hot Path
 
-Status: VERIFY (review rework M1 awaits a confirmation review)
+Status: VERIFY (review rework M1/R1 awaits a confirmation review)
 Review Status: PASS WITH MINOR NOTES (independent review 2026-11-09); M1 fixed after the review
 
 ## Goal
@@ -165,6 +165,7 @@ The base and the change were measured on the same machine on the same day: `pyth
 Findings:
 
 - (Minor, M1) `Command::Patch` restored elements by list index without checking the id. A change made without an undo step (an open Automation transaction: `changed()` records nothing inside one) can shift the list; undo then wrote the element into a neighbour's slot, duplicating one id and losing another. **Fixed after the review:** failure evidence `undo_follows_the_element_id_when_the_list_moved_underneath` (`crates/mono-project/tests/editor_patch_undo.rs`) failed with `["c", "b", "b", "z"]`; `apply` now checks the recorded index against the element id, looks the element up by id when the list moved, and skips a vanished element. Gates after the fix: fmt and clippy clean, tests 328 passed, 0 failed, pytest 36 passed and 1 skipped, deny ok, golden diff empty. A confirmation review of the fix is pending.
+- (Minor, R1) The confirmation review of the M1 fix (2026-11-09) returned REWORK REQUIRED: the coalescing path in `batch_set_geometry` still merged entries by index. With the list shifted mid-drag, a multi-select drag undid to `b.x = 11` instead of 10 and redid to `["c", "a", "a", "z"]`, and a single drag undid to its middle value. **Fixed:** failure evidence `a_coalesced_drag_follows_the_element_id_when_the_list_moves_mid_drag` failed with 11 against 10; entries now merge by element id and take the element's current index, and undo walks a step's entries in reverse. Gates after the fix: fmt and clippy clean, tests 329 passed, 0 failed, pytest 36 passed and 1 skipped, deny ok, golden diff empty. A second confirmation review is pending.
 - (Minor, M2, accepted) An Inspector X/Y/W/H edit on an element that cannot render (for example a missing font header) used to be refused by the scratch render and now succeeds; `geometry()` still reports the render error, and `batch_move`, align, distribute, snap and Automation are unchanged. Accepted as the better behaviour; no test pins it yet.
 - (Minor, M3, follow-up) The Review panel's summary line still reports 100% changed when there is no baseline; this TASK and TASK-019 fixed only the drawer.
 - (Minor, M4, follow-up) Coverage: the frame-geometry equality test meets no unzoned text without a full rect, no `bitmap_text` and no hidden element (the reviewer's probe found the code correct for them), and no desktop test pins that `refresh_inspector` uses the frame only when `canvas_frame_fresh` is set.
