@@ -29,6 +29,43 @@ pub const MAX_HISTORY: usize = 500;
 /// `(x, y, w, h)` for one element, or `None` where the render left it null.
 pub type OverlayRect = Option<(i64, i64, i64, i64)>;
 
+/// Which geometry fields the Inspector may edit. It depends only on which keys
+/// the element and its zone declare, never on the render, so an edit can check
+/// it without resolving the element's size.
+fn editable_of(element: &Map<String, Value>) -> Editable {
+    let zone = element.get("zone").and_then(Value::as_object);
+    let native_locked = element.get("type").map(py_str).as_deref() == Some("image")
+        && element
+            .get("resize_policy")
+            .map(py_str)
+            .unwrap_or_else(|| "native_only".into())
+            == "native_only";
+    let complete =
+        |map: &Map<String, Value>| ["x", "y", "w", "h"].iter().all(|k| map.contains_key(*k));
+    if zone.is_none() && complete(element) {
+        return Editable {
+            x: true,
+            y: true,
+            w: !native_locked,
+            h: !native_locked,
+        };
+    }
+    if zone.is_some_and(complete) {
+        return Editable {
+            x: true,
+            y: true,
+            w: true,
+            h: true,
+        };
+    }
+    Editable {
+        x: element.contains_key("x"),
+        y: element.contains_key("y"),
+        w: element.contains_key("w") && !native_locked,
+        h: element.contains_key("h") && !native_locked,
+    }
+}
+
 /// The rect the Inspector reports, the overlay draws and a click must hit, without
 /// a geometry lookup: `resolved` is the frame's resolved elements, index-aligned
 /// with the scene. A complete `zone` wins, then a complete explicit rect, then the
@@ -103,13 +140,21 @@ pub struct Geometry {
     pub editable: Editable,
 }
 
-/// One undoable action: element-list snapshots, or whole-scene snapshots.
+/// One undoable action: element-list snapshots, per-element patches, or
+/// whole-scene snapshots.
 #[derive(Debug, Clone)]
 enum Command {
     Elements {
         label: String,
         before: Vec<Value>,
         after: Vec<Value>,
+    },
+    /// Element values by list index. A geometry edit changes a few elements of
+    /// a long list, so it records only those instead of two copies of the list;
+    /// the undo stack is linear, so the indices still hold when it is applied.
+    Patch {
+        label: String,
+        changes: Vec<(usize, Value, Value)>,
     },
     Scene {
         label: String,
@@ -430,6 +475,29 @@ impl EditorSession {
 
     /// Geometry from an element value alone, for walks that already hold the
     /// list: no id lookup, so a scene-wide pass stays linear.
+    /// The Inspector's geometry from a frame the session just rendered, without
+    /// rendering again: `resolved` is that frame's resolved elements. The rect is
+    /// `overlay_rect`'s, which follows `geometry`'s priority; `None` when the frame
+    /// does not line up with the scene or left the element without a rect, and
+    /// the caller then asks `geometry`.
+    pub fn geometry_from_frame(&self, id: &str, resolved: &[Value]) -> Option<Geometry> {
+        let elements = self.elements();
+        if resolved.len() != elements.len() {
+            return None;
+        }
+        let index = elements
+            .iter()
+            .position(|e| e.get("id").map(py_str).as_deref() == Some(id))?;
+        let (x, y, w, h) = overlay_rect(&elements[index], resolved, index)?;
+        Some(Geometry {
+            x,
+            y,
+            w,
+            h,
+            editable: editable_of(elements[index].as_object()?),
+        })
+    }
+
     fn geometry_of(
         element: &Map<String, Value>,
         data: &Map<String, Value>,
@@ -438,12 +506,7 @@ impl EditorSession {
         resources: &mut DiskResources,
     ) -> CoreResult<Geometry> {
         let zone = element.get("zone").and_then(Value::as_object).cloned();
-        let native_locked = element.get("type").map(py_str).as_deref() == Some("image")
-            && element
-                .get("resize_policy")
-                .map(py_str)
-                .unwrap_or_else(|| "native_only".into())
-                == "native_only";
+        let editable = editable_of(element);
         if zone.is_none()
             && ["x", "y", "w", "h"]
                 .iter()
@@ -454,12 +517,7 @@ impl EditorSession {
                 y: int_of(element.get("y")),
                 w: int_of(element.get("w")),
                 h: int_of(element.get("h")),
-                editable: Editable {
-                    x: true,
-                    y: true,
-                    w: !native_locked,
-                    h: !native_locked,
-                },
+                editable,
             });
         }
         if let Some(zone) = &zone {
@@ -469,12 +527,7 @@ impl EditorSession {
                     y: int_of(zone.get("y")),
                     w: int_of(zone.get("w")),
                     h: int_of(zone.get("h")),
-                    editable: Editable {
-                        x: true,
-                        y: true,
-                        w: true,
-                        h: true,
-                    },
+                    editable,
                 });
             }
         }
@@ -490,12 +543,7 @@ impl EditorSession {
                 .get("h")
                 .filter(|v| !v.is_null())
                 .map_or(rh, |v| int_of(Some(v))),
-            editable: Editable {
-                x: element.contains_key("x"),
-                y: element.contains_key("y"),
-                w: element.contains_key("w") && !native_locked,
-                h: element.contains_key("h") && !native_locked,
-            },
+            editable,
         })
     }
 
@@ -512,14 +560,15 @@ impl EditorSession {
             return Err(CoreError::invalid(format!("{id} is locked")));
         }
         let zone = element.get("zone").and_then(Value::as_object).cloned();
-        let geom = self.geometry(id)?;
+        // Only the flags are needed here, and they never depend on the render.
+        let editable = editable_of(&element);
         let mut changes = Vec::new();
         for (name, value) in values {
             let editable = match *name {
-                "x" => geom.editable.x,
-                "y" => geom.editable.y,
-                "w" => geom.editable.w,
-                "h" => geom.editable.h,
+                "x" => editable.x,
+                "y" => editable.y,
+                "w" => editable.w,
+                "h" => editable.h,
                 other => return Err(key_error(format!("unknown geometry field: {other}"))),
             };
             if !editable {
@@ -555,38 +604,50 @@ impl EditorSession {
         if prepared.is_empty() {
             return Ok(false);
         }
-        let before = self.elements().to_vec();
-        let mut after = before.clone();
-        for (id, changes) in &prepared {
-            if let Some(element) = after
-                .iter_mut()
-                .find(|e| e.get("id").map(py_str).as_deref() == Some(id))
-            {
+        // Change the targeted elements in place and keep their before/after.
+        let mut patch: Vec<(usize, Value, Value)> = Vec::new();
+        if let Some(Value::Array(elements)) = self.doc.data.get_mut("elements") {
+            for (id, changes) in &prepared {
+                let Some(index) = elements
+                    .iter()
+                    .position(|e| e.get("id").map(py_str).as_deref() == Some(id))
+                else {
+                    continue;
+                };
+                let before = elements[index].clone();
                 for (path, value) in changes {
-                    set_path(element, path, *value);
+                    set_path(&mut elements[index], path, *value);
+                }
+                if elements[index] == before {
+                    continue;
+                }
+                match patch.iter_mut().find(|(i, ..)| *i == index) {
+                    Some(entry) => entry.2 = elements[index].clone(),
+                    None => patch.push((index, before, elements[index].clone())),
                 }
             }
         }
-        if after == before {
+        if patch.is_empty() {
             return Ok(false);
         }
-        self.set_elements(after.clone());
         self.redo.clear();
         let coalesced = coalesce
             && self.coalesce_open
-            && matches!(self.undo.last(), Some(Command::Elements { label: last, .. }) if last == label);
+            && matches!(self.undo.last(), Some(Command::Patch { label: last, .. }) if last == label);
         if coalesced {
-            if let Some(Command::Elements {
-                after: last_after, ..
-            }) = self.undo.last_mut()
-            {
-                *last_after = after;
+            if let Some(Command::Patch { changes, .. }) = self.undo.last_mut() {
+                // The step keeps each element's first `before` and newest `after`.
+                for (index, before, after) in patch {
+                    match changes.iter_mut().find(|(i, ..)| *i == index) {
+                        Some(entry) => entry.2 = after,
+                        None => changes.push((index, before, after)),
+                    }
+                }
             }
         } else {
-            self.push_undo(Command::Elements {
+            self.push_undo(Command::Patch {
                 label: label.into(),
-                before,
-                after,
+                changes: patch,
             });
         }
         self.coalesce_open = coalesce;
@@ -656,6 +717,15 @@ impl EditorSession {
                     before.clone()
                 });
             }
+            Command::Patch { changes, .. } => {
+                if let Some(Value::Array(elements)) = self.doc.data.get_mut("elements") {
+                    for (index, before, after) in changes {
+                        if let Some(slot) = elements.get_mut(*index) {
+                            *slot = if forward { after } else { before }.clone();
+                        }
+                    }
+                }
+            }
             Command::Scene { before, after, .. } => {
                 self.doc.data = if forward {
                     after.clone()
@@ -698,7 +768,9 @@ impl EditorSession {
 
     pub fn undo_label(&self) -> Option<&str> {
         self.undo.last().map(|c| match c {
-            Command::Elements { label, .. } | Command::Scene { label, .. } => label.as_str(),
+            Command::Elements { label, .. }
+            | Command::Patch { label, .. }
+            | Command::Scene { label, .. } => label.as_str(),
         })
     }
 
