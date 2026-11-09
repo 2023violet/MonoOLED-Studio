@@ -182,9 +182,10 @@ pub struct App {
     /// Evidence for the frame currently on the canvas (annotation staleness).
     pub frame_evidence: Option<Evidence>,
     /// True only while a refresh that has just run `refresh_canvas` refreshes
-    /// the Inspector, so the note rows reuse that frame instead of rendering
-    /// the scene a second time (`refresh_inspector_after_canvas`).
-    canvas_evidence_fresh: bool,
+    /// the Inspector, so the note rows and the geometry fields reuse that frame
+    /// (`frame_evidence`, `last_resolved`) instead of rendering the scene again
+    /// (`refresh_inspector_after_canvas`).
+    canvas_frame_fresh: bool,
     /// Exported contract backing the Review evidence panel.
     pub contract: Option<Value>,
     pub contract_path: Option<PathBuf>,
@@ -293,7 +294,7 @@ impl App {
             presets: Vec::new(),
             note_draft: None,
             frame_evidence: None,
-            canvas_evidence_fresh: false,
+            canvas_frame_fresh: false,
             contract: None,
             contract_path: None,
             pending_contract: None,
@@ -881,8 +882,8 @@ impl App {
                 s.scene()
                     .get("elements")
                     .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default()
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[])
                     .iter()
                     .map(|e| {
                         let id = e.get("id").map(py_str).unwrap_or_default();
@@ -1642,11 +1643,12 @@ impl App {
     }
 
     /// `refresh_inspector` right after `refresh_canvas` in the same call: the
-    /// canvas just stored this frame's evidence, so the note rows reuse it.
+    /// canvas just stored this frame's evidence and resolved rects, so the note
+    /// rows and the geometry fields reuse them.
     fn refresh_inspector_after_canvas(&mut self) {
-        self.canvas_evidence_fresh = true;
+        self.canvas_frame_fresh = true;
         self.refresh_inspector();
-        self.canvas_evidence_fresh = false;
+        self.canvas_frame_fresh = false;
     }
 
     pub fn refresh_inspector(&mut self) {
@@ -1677,10 +1679,15 @@ impl App {
         } else {
             ss("")
         });
-        match primary
-            .as_deref()
-            .map(|id| (session.element(id), session.geometry(id)))
-        {
+        let frame = self
+            .canvas_frame_fresh
+            .then_some(self.last_resolved.as_slice());
+        match primary.as_deref().map(|id| {
+            let geometry = frame
+                .and_then(|resolved| session.geometry_from_frame(id, resolved))
+                .map_or_else(|| session.geometry(id), Ok);
+            (session.element(id), geometry)
+        }) {
             Some((Ok(element), Ok(g))) => {
                 dm.set_has_selection(true);
                 dm.set_element_id(ss(element.get("id").map(py_str).unwrap_or_default()));
@@ -2369,6 +2376,13 @@ impl App {
 
     fn after_edit(&mut self) {
         self.refresh_navigator();
+        self.after_geometry_edit();
+    }
+
+    /// After an edit that only moved or resized elements: the Navigator shows
+    /// ids, types, groups and the hidden/locked/selected marks, none of which a
+    /// geometry edit changes, so its models are not rebuilt.
+    fn after_geometry_edit(&mut self) {
         self.refresh_canvas();
         self.refresh_inspector_after_canvas();
         self.refresh_state_schema();
@@ -2496,7 +2510,7 @@ impl App {
 
     fn note_rows(&mut self) -> Vec<NoteItem> {
         if self.session.is_some()
-            && !(self.canvas_evidence_fresh && self.frame_evidence.is_some())
+            && !(self.canvas_frame_fresh && self.frame_evidence.is_some())
             && let Some(evidence) = self.compute_frame_evidence()
         {
             self.frame_evidence = Some(evidence);
@@ -2858,7 +2872,7 @@ impl App {
                 }
                 self.refresh_navigator();
                 self.refresh_canvas();
-                self.refresh_inspector();
+                self.refresh_inspector_after_canvas();
             }
             "move" => {
                 let Some(drag) = self.drag.as_mut() else {
@@ -2886,7 +2900,7 @@ impl App {
                 }
                 // Fast drag preview: canvas + overlays only; validation runs on release.
                 self.refresh_canvas();
-                self.refresh_inspector();
+                self.refresh_inspector_after_canvas();
             }
             "up" => {
                 if let Some(drag) = self.drag.take() {
@@ -2936,7 +2950,7 @@ impl App {
                 self.error(&e);
             }
         }
-        self.after_edit();
+        self.after_geometry_edit();
     }
 
     pub fn geometry_edited(&mut self, field: &str, value: i32) {
@@ -2950,7 +2964,7 @@ impl App {
         if let Some(Err(e)) = result {
             self.error(&e);
         }
-        self.after_edit();
+        self.after_geometry_edit();
     }
 
     pub fn state_edited(&mut self, name: &str, value: &str) {
@@ -4932,10 +4946,10 @@ mod tests {
             ..Evidence::default()
         };
         app.frame_evidence = Some(sentinel.clone());
-        app.canvas_evidence_fresh = true;
+        app.canvas_frame_fresh = true;
         app.note_rows();
         assert_eq!(app.frame_evidence.as_ref().unwrap().sha256, "canvas");
-        app.canvas_evidence_fresh = false;
+        app.canvas_frame_fresh = false;
         app.note_rows();
         assert_eq!(app.frame_evidence.as_ref().unwrap().sha256.len(), 64);
         let _ = std::fs::remove_dir_all(&root);
