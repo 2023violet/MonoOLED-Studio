@@ -1,6 +1,16 @@
 # Changelog
 
+## 2.4.2 - 2026-11-09
+
+The first published release of the 2.4.1 changes below; the product code is identical to the v2.4.1 tag.
+
+### Build
+
+- The Linux x64 package is built on Ubuntu 24.04 again. GitHub's `ubuntu-latest` moved to 26.04 (glibc 2.43) after 2.4.0, so the v2.4.1 build required `libc6 (>= 2.43)` and could not be installed on Ubuntu 24.04; the release's install test refused it. The 2.4.2 `.deb` installs on Ubuntu 24.04 as 2.4.0's did.
+
 ## 2.4.1 - 2026-11-09
+
+This version was tagged (`v2.4.1`) but never published as a release: its Linux x64 package failed the install test (see 2.4.2). Its changes first shipped in 2.4.2.
 
 A patch release: Designer edit performance on large scenes and small correctness fixes from the 2.4.0 reviews. No file format, CLI output, Automation API or export behaviour changes.
 

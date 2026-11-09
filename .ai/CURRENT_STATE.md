@@ -5,8 +5,8 @@
 ## Project
 
 - Project: MonoOLED Studio
-- Product version: 2.4.1 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
-- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance. Released (tagged): 2.2.0/2.2.1 (TASK-004 to TASK-007; the 2.0.4, 2.0.5 and 2.1.0 changelog versions were never tagged and first shipped in v2.2.0), 2.3.0 (TASK-008, TASK-009), 2.4.0 (TASK-010 to TASK-017: a second line of work that branched at 2.0.3 and never shipped on its own, integrated onto 2.3.0 by TASK-014, plus its verification, the refresh-regression fix and the review-pack banner; the user delegated the decisions and the release on 2026-11-02, ADR-007), 2.4.1 (TASK-018, TASK-019: Designer edit hot path and review follow-ups; released on the user's instruction of 2026-11-09).
+- Product version: 2.4.2 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
+- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance. Released (tagged): 2.2.0/2.2.1 (TASK-004 to TASK-007; the 2.0.4, 2.0.5 and 2.1.0 changelog versions were never tagged and first shipped in v2.2.0), 2.3.0 (TASK-008, TASK-009), 2.4.0 (TASK-010 to TASK-017: a second line of work that branched at 2.0.3 and never shipped on its own, integrated onto 2.3.0 by TASK-014, plus its verification, the refresh-regression fix and the review-pack banner; the user delegated the decisions and the release on 2026-11-02, ADR-007), 2.4.2 (TASK-018, TASK-019: Designer edit hot path and review follow-ups; released on the user's instruction of 2026-11-09. The v2.4.1 tag carries the same product code but was never published: its Linux x64 package was built on ubuntu-latest, which had moved to 26.04, and failed the ubuntu:24.04 install test; `package.yml` now pins ubuntu-24.04).
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
