@@ -161,3 +161,63 @@ fn undo_follows_the_element_id_when_the_list_moved_underneath() {
     assert_eq!(ids, ["c", "a", "z"]);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn a_coalesced_drag_follows_the_element_id_when_the_list_moves_mid_drag() {
+    fn insert_front(session: &mut EditorSession, id: &str) {
+        if let Some(Value::Array(list)) = session.doc.data.get_mut("elements") {
+            list.insert(
+                0,
+                json!({"id": id, "type": "placeholder", "x": 0, "y": 20, "w": 4, "h": 4}),
+            );
+        }
+    }
+    fn ids(session: &EditorSession) -> Vec<String> {
+        elements(session)
+            .iter()
+            .map(|e| e["id"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    let new_session = session;
+    // A multi-select drag: the list shifts between two coalesced batches.
+    let (mut session, root) = new_session("mid-drag-multi");
+    let pair = ["a".to_string(), "b".to_string()];
+    assert!(session.batch_move(&pair, 1, 0, true).unwrap());
+    insert_front(&mut session, "c");
+    assert!(session.batch_move(&pair, 1, 0, true).unwrap());
+    session.end_coalesced_edit();
+    assert!(session.undo(), "the drag is one step");
+    assert_eq!(ids(&session), ["c", "a", "b", "z"]);
+    assert_eq!(
+        elements(&session)[1]["x"],
+        json!(0),
+        "a is back at its start"
+    );
+    assert_eq!(
+        elements(&session)[2]["x"],
+        json!(10),
+        "b is back at its start"
+    );
+    assert!(session.redo());
+    assert_eq!(ids(&session), ["c", "a", "b", "z"], "redo loses nothing");
+    assert_eq!(elements(&session)[1]["x"], json!(2));
+    assert_eq!(elements(&session)[2]["x"], json!(12));
+    let _ = std::fs::remove_dir_all(&root);
+
+    // A single-element drag: one element must not get two entries.
+    let (mut session, root) = new_session("mid-drag-single");
+    assert!(session.set_geometry("b", &[("x", 20)], true).unwrap());
+    insert_front(&mut session, "c");
+    assert!(session.set_geometry("b", &[("x", 30)], true).unwrap());
+    session.end_coalesced_edit();
+    assert!(session.undo());
+    assert_eq!(
+        elements(&session)[2]["x"],
+        json!(10),
+        "undo reaches the start"
+    );
+    assert!(session.redo());
+    assert_eq!(elements(&session)[2]["x"], json!(30));
+    let _ = std::fs::remove_dir_all(&root);
+}

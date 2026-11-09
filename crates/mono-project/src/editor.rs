@@ -643,9 +643,16 @@ impl EditorSession {
         if coalesced {
             if let Some(Command::Patch { changes, .. }) = self.undo.last_mut() {
                 // The step keeps each element's first `before` and newest `after`.
+                // Entries are matched by id, not index: the list can move between
+                // two batches of one drag (an open Automation transaction), and
+                // the entry then takes the element's current index.
                 for (index, before, after) in patch {
-                    match changes.iter_mut().find(|(i, ..)| *i == index) {
-                        Some(entry) => entry.2 = after,
+                    let id = before.get("id");
+                    match changes.iter_mut().find(|(_, b, _)| b.get("id") == id) {
+                        Some(entry) => {
+                            entry.0 = index;
+                            entry.2 = after;
+                        }
                         None => changes.push((index, before, after)),
                     }
                 }
@@ -725,7 +732,13 @@ impl EditorSession {
             }
             Command::Patch { changes, .. } => {
                 if let Some(Value::Array(elements)) = self.doc.data.get_mut("elements") {
-                    for (index, before, after) in changes {
+                    // Undo walks the entries backwards, the order they were made in reverse.
+                    let ordered: Box<dyn Iterator<Item = _>> = if forward {
+                        Box::new(changes.iter())
+                    } else {
+                        Box::new(changes.iter().rev())
+                    };
+                    for (index, before, after) in ordered {
                         let id = before.get("id");
                         // The recorded index is a hint: a change made without an
                         // undo step (an open Automation transaction) can shift the
