@@ -196,6 +196,8 @@ This release bundles the 2.0.4 trust fixes, the 2.0.5 project loop and the 2.1.0
 
 ## 2.1.0 - 2026-10-25
 
+This version was never tagged or published as a release; its changes first shipped in the tagged 2.2.0.
+
 ### Added
 
 - One command registry (`apps/mono-desktop/src/commands.rs`) now drives the menus, the command palette, configurable shortcuts and fixed chords. The palette covers 25+ actions, shows each command's current shortcut, and filters out commands whose context is unavailable. Adding a command touches one list plus its dispatch branch.
@@ -212,6 +214,8 @@ This release bundles the 2.0.4 trust fixes, the 2.0.5 project loop and the 2.1.0
 
 ## 2.0.5 - 2026-10-24
 
+This version was never tagged or published as a release; its changes first shipped in the tagged 2.2.0.
+
 ### Added
 
 - The welcome page lists recent projects (newest first, at most eight, no duplicates). Missing projects disappear from the list, and clicking an entry opens it with the usual unsaved-changes check. `startup.last_project` and its reopen setting are unchanged.
@@ -224,6 +228,8 @@ This release bundles the 2.0.4 trust fixes, the 2.0.5 project loop and the 2.1.0
 - Asset-origin documents lock their size: canvas resize, 90°/270° rotation and cropping are disabled, while 180° rotation, flips and inverts still work. The top button reads “Save Asset”.
 
 ## 2.0.4 - 2026-10-24
+
+This version was never tagged or published as a release; its changes first shipped in the tagged 2.2.0.
 
 ### Fixed
 
