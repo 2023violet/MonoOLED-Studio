@@ -45,11 +45,12 @@ pub struct Finding {
 }
 
 /// Every finding code the validator can emit (localized labels live in the UI).
-pub const FINDING_CODES: [&str; 23] = [
+pub const FINDING_CODES: [&str; 24] = [
     "NON_INTEGER_COORDINATE",
     "INVALID_SIZE",
     "OUT_OF_BOUNDS",
     "ASSET_NOT_FOUND",
+    "ASSET_PATH_ESCAPE",
     "NON_BINARY_ASSET",
     "ASSET_SIZE_MISMATCH",
     "INVALID_CANVAS_SIZE",
@@ -1918,6 +1919,36 @@ pub fn build_handoff_package(
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    /// Every code this file passes to `Finding::new` must be listed, or it has
+    /// no localized label and no place in the docs that enumerate the list.
+    #[test]
+    fn every_emitted_finding_code_is_listed() {
+        let source = include_str!("export.rs");
+        let mut emitted = std::collections::BTreeSet::new();
+        for call in source.split("Finding::new(").skip(1) {
+            // The first two string literals are the severity and the code.
+            let mut literals = call.split('"').skip(1).step_by(2);
+            let (Some(severity), Some(code)) = (literals.next(), literals.next()) else {
+                continue;
+            };
+            if ["BLOCKER", "WARNING"].contains(&severity) {
+                emitted.insert(code.to_string());
+            }
+        }
+        assert!(
+            emitted.len() > 20,
+            "the scan lost the call sites: {emitted:?}"
+        );
+        let missing: Vec<&String> = emitted
+            .iter()
+            .filter(|code| !FINDING_CODES.contains(&code.as_str()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "emitted but not in FINDING_CODES: {missing:?}"
+        );
+    }
 
     fn contract() -> Value {
         json!({
