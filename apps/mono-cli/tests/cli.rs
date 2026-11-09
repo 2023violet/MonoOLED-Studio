@@ -319,7 +319,7 @@ fn a_blocking_review_pack_says_so_in_text_and_json() {
     let frames = stdout
         .lines()
         .find(|line| line.starts_with("NOT A DELIVERABLE: "))
-        .unwrap_or_else(|| panic!("no NOT A DELIVERABLE line in: {stdout}"));
+        .expect("the text summary must carry a NOT A DELIVERABLE line");
     assert_eq!(
         frames,
         "NOT A DELIVERABLE: 1 of 2 frames have blocking findings"
