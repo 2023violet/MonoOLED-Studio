@@ -4,6 +4,7 @@
 //! function. File access goes through [`Resources`], implemented by
 //! `mono-project`, so the core stays free of IO.
 
+use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf, Prefix};
 use std::sync::Arc;
 
@@ -217,13 +218,45 @@ struct Ctx<'a, R: Resources> {
     resources: &'a mut R,
     cache: IndexMap<String, Arc<BitmapAsset>>,
     used_files: Vec<PathBuf>,
+    /// One lookup per distinct file per render. `Resources` may read and hash
+    /// a file on every call (the desktop session does), and a digits string or
+    /// several labels on one font asked again per character or element. The
+    /// memo ends with the render, so the next frame still sees disk changes.
+    bitmaps: HashMap<PathBuf, Arc<BitmapAsset>>,
+    fonts: HashMap<PathBuf, Arc<ModeFont>>,
+    packs: HashMap<PathBuf, Arc<FontPack>>,
 }
 
 impl<R: Resources> Ctx<'_, R> {
     fn bitmap(&mut self, path: &Path) -> CoreResult<Arc<BitmapAsset>> {
-        let asset = self.resources.bitmap(path)?;
+        let asset = match self.bitmaps.get(path) {
+            Some(asset) => asset.clone(),
+            None => {
+                let asset = self.resources.bitmap(path)?;
+                self.bitmaps.insert(path.to_path_buf(), asset.clone());
+                asset
+            }
+        };
         self.cache.insert(asset.path.clone(), asset.clone());
         Ok(asset)
+    }
+
+    fn mode_font(&mut self, path: &Path) -> CoreResult<Arc<ModeFont>> {
+        if let Some(font) = self.fonts.get(path) {
+            return Ok(font.clone());
+        }
+        let font = self.resources.mode_font(path)?;
+        self.fonts.insert(path.to_path_buf(), font.clone());
+        Ok(font)
+    }
+
+    fn font_pack(&mut self, root: &Path) -> CoreResult<Arc<FontPack>> {
+        if let Some(pack) = self.packs.get(root) {
+            return Ok(pack.clone());
+        }
+        let pack = self.resources.font_pack(root)?;
+        self.packs.insert(root.to_path_buf(), pack.clone());
+        Ok(pack)
     }
 }
 
@@ -350,7 +383,7 @@ fn render_text<R: Resources>(
 ) -> CoreResult<Value> {
     let text = subst(&py_str(field(element, "text")?), ctx.state, false)?.to_uppercase();
     let header = resolve_member(ctx.root, &py_str(field(element, "font_header")?))?;
-    let font = ctx.resources.mode_font(&header)?;
+    let font = ctx.mode_font(&header)?;
     ctx.used_files.push(header.clone());
     let cell_w = int_or(element, "cell_w", 5)?;
     let cell_h = int_or(element, "cell_h", 7)?;
@@ -415,7 +448,7 @@ fn render_bitmap_text<R: Resources>(
         false,
     )?;
     let pack_root = resolve_member(ctx.root, &py_str(field(element, "font_pack")?))?;
-    let pack = ctx.resources.font_pack(&pack_root)?;
+    let pack = ctx.font_pack(&pack_root)?;
     let (x0, y) = (int_or(element, "x", 0)?, int_or(element, "y", 0)?);
     let mut x = x0;
     let mut assets = Vec::new();
@@ -494,6 +527,9 @@ pub fn render_scene<R: Resources>(
         resources,
         cache: IndexMap::new(),
         used_files: Vec::new(),
+        bitmaps: HashMap::new(),
+        fonts: HashMap::new(),
+        packs: HashMap::new(),
     };
     let mut resolved = Vec::new();
     let empty = Vec::new();
