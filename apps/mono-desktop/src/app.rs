@@ -4983,8 +4983,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// Note rows render the frame themselves unless the canvas stored it in the
-    /// same refresh; then they reuse it instead of rendering the scene again.
     #[test]
     fn review_pack_status_names_blocking_frames() {
         let mut summary = mono_project::review_pack::ReviewPackSummary {
@@ -5041,6 +5039,8 @@ mod tests {
         assert!(some.contains("1 px (25.00%)"), "{some}");
     }
 
+    /// Note rows render the frame themselves unless the canvas stored it in the
+    /// same refresh; then they reuse it instead of rendering the scene again.
     #[test]
     fn note_rows_reuse_the_canvas_frame_only_right_after_it() {
         let (mut app, root) = project_app("note-reuse");

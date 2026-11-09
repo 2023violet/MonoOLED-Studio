@@ -150,8 +150,9 @@ enum Command {
         after: Vec<Value>,
     },
     /// Element values by list index. A geometry edit changes a few elements of
-    /// a long list, so it records only those instead of two copies of the list;
-    /// the undo stack is linear, so the indices still hold when it is applied.
+    /// a long list, so it records only those instead of two copies of the list.
+    /// The index is checked against the element id when applied and the element
+    /// is looked up by id if the list moved; a vanished element is skipped.
     Patch {
         label: String,
         changes: Vec<(usize, Value, Value)>,
@@ -478,8 +479,6 @@ impl EditorSession {
         Self::geometry_of(&element, &doc.data, &doc.root, state, resources)
     }
 
-    /// Geometry from an element value alone, for walks that already hold the
-    /// list: no id lookup, so a scene-wide pass stays linear.
     /// The Inspector's geometry from a frame the session just rendered, without
     /// rendering again: `resolved` is that frame's resolved elements. The rect is
     /// `overlay_rect`'s, which follows `geometry`'s priority; `None` when the frame
@@ -503,6 +502,8 @@ impl EditorSession {
         })
     }
 
+    /// Geometry from an element value alone, for walks that already hold the
+    /// list: no id lookup, so a scene-wide pass stays linear.
     fn geometry_of(
         element: &Map<String, Value>,
         data: &Map<String, Value>,
@@ -725,8 +726,17 @@ impl EditorSession {
             Command::Patch { changes, .. } => {
                 if let Some(Value::Array(elements)) = self.doc.data.get_mut("elements") {
                     for (index, before, after) in changes {
-                        if let Some(slot) = elements.get_mut(*index) {
-                            *slot = if forward { after } else { before }.clone();
+                        let id = before.get("id");
+                        // The recorded index is a hint: a change made without an
+                        // undo step (an open Automation transaction) can shift the
+                        // list, so the slot must still hold this element's id.
+                        let slot = if elements.get(*index).map(|e| e.get("id")) == Some(id) {
+                            Some(*index)
+                        } else {
+                            elements.iter().position(|e| e.get("id") == id)
+                        };
+                        if let Some(slot) = slot {
+                            elements[slot] = if forward { after } else { before }.clone();
                         }
                     }
                 }

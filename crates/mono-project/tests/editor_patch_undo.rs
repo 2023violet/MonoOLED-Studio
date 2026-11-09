@@ -114,3 +114,50 @@ fn frame_geometry_equals_inspector_geometry_on_the_fixture() {
     // A frame that does not line up with the scene is never used.
     assert_eq!(session.geometry_from_frame("battery", &resolved[1..]), None);
 }
+
+#[test]
+fn undo_follows_the_element_id_when_the_list_moved_underneath() {
+    // An open Automation transaction changes the list without recording a step
+    // (`changed()` records only outside a transaction). A geometry edit recorded
+    // meanwhile must still restore its own element, never the one that now sits
+    // at its old index.
+    let (mut session, root) = session("shifted");
+    assert!(session.set_geometry("b", &[("x", 30)], false).unwrap());
+    if let Some(Value::Array(list)) = session.doc.data.get_mut("elements") {
+        list.insert(
+            0,
+            json!({"id": "c", "type": "placeholder", "x": 0, "y": 20, "w": 4, "h": 4}),
+        );
+    }
+    assert!(session.undo());
+    let ids: Vec<String> = elements(&session)
+        .iter()
+        .map(|e| e["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        ids,
+        ["c", "a", "b", "z"],
+        "no element is lost or duplicated"
+    );
+    assert_eq!(
+        elements(&session)[2]["x"],
+        json!(10),
+        "b is back where it was"
+    );
+    assert!(session.redo());
+    assert_eq!(elements(&session)[2]["x"], json!(30));
+    assert_eq!(elements(&session)[1]["x"], json!(0), "a is untouched");
+
+    // An element that is gone is left alone instead of overwriting a neighbour.
+    assert!(session.undo());
+    if let Some(Value::Array(list)) = session.doc.data.get_mut("elements") {
+        list.retain(|e| e["id"] != json!("b"));
+    }
+    assert!(session.redo());
+    let ids: Vec<String> = elements(&session)
+        .iter()
+        .map(|e| e["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids, ["c", "a", "z"]);
+    let _ = std::fs::remove_dir_all(&root);
+}
