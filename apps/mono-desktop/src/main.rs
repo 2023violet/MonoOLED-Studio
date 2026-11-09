@@ -444,6 +444,9 @@ fn handle_action(app: &Rc<RefCell<App>>, ui: &MainWindow, action: &str) {
                     text: text.as_str().into(),
                 });
         }
+        "dump:mem" => {
+            println!("SELFCHECK mem {}", app.borrow().memory_counts());
+        }
         "dump:dirty" => {
             let a = app.borrow();
             let dirty = a.session.as_ref().is_some_and(|s| s.is_dirty());

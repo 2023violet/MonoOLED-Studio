@@ -306,6 +306,11 @@ impl EditorSession {
         !self.undo.is_empty()
     }
 
+    /// Undo and redo step counts (the desktop `dump:mem` self-check).
+    pub fn history_len(&self) -> (usize, usize) {
+        (self.undo.len(), self.redo.len())
+    }
+
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }

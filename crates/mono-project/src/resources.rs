@@ -76,6 +76,13 @@ impl DiskResources {
     }
 }
 
+impl DiskResources {
+    /// Cached bitmaps, mode fonts and font packs (the desktop `dump:mem` self-check).
+    pub fn entries(&self) -> (usize, usize, usize) {
+        (self.bitmaps.len(), self.fonts.len(), self.packs.len())
+    }
+}
+
 impl Resources for DiskResources {
     fn bitmap(&mut self, path: &Path) -> CoreResult<Arc<BitmapAsset>> {
         if self.frozen {

@@ -703,6 +703,35 @@ impl App {
         self.refresh_app();
     }
 
+    /// Lengths of everything the app keeps between frames, for `dump:mem`: if
+    /// idle memory moves while these stay put, the difference is the renderer,
+    /// the driver or the allocator, not state the app holds.
+    pub fn memory_counts(&self) -> String {
+        let (undo, redo) = self.session.as_ref().map_or((0, 0), |s| s.history_len());
+        let (bitmaps, fonts, packs) = self
+            .session
+            .as_ref()
+            .map_or((0, 0, 0), |s| s.resources.entries());
+        let (pixel_undo, pixel_redo) = self.pixel.doc.history_len();
+        let elements = self
+            .session
+            .as_ref()
+            .and_then(|s| s.scene().get("elements").and_then(Value::as_array))
+            .map_or(0, Vec::len);
+        format!(
+            "elements={elements} undo={undo} redo={redo} pixel_undo={pixel_undo} \
+             pixel_redo={pixel_redo} cache_bitmaps={bitmaps} cache_fonts={fonts} \
+             cache_packs={packs} last_resolved={} findings={} log={} profiler={} \
+             gallery_cards={} baseline_px={}",
+            self.last_resolved.len(),
+            self.findings.len(),
+            self.log.len(),
+            self.profiler.full.len() + self.profiler.drag.len(),
+            self.gallery_cards.len(),
+            self.baseline_pixels.len(),
+        )
+    }
+
     /// The save button acts on the current workspace's document.
     pub fn can_save(&self) -> bool {
         match self.workspace {

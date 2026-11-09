@@ -93,6 +93,11 @@ impl PixelDocument {
         self.pixels.chunks(self.width).map(<[u8]>::to_vec).collect()
     }
 
+    /// Undo and redo snapshot counts (the `dump:mem` self-check).
+    pub fn history_len(&self) -> (usize, usize) {
+        (self.undo.len(), self.redo.len())
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
