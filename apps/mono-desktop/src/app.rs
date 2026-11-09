@@ -988,13 +988,7 @@ impl App {
                     ],
                 )));
                 // Pixel diff against the last loaded/saved frame.
-                let changed = mono_core::diff::changed_count(fb.pixels(), &self.baseline_pixels);
-                let total = fb.pixels().len().max(1);
-                dm.set_diff_summary(ss(format!(
-                    "{} {changed} px ({:.2}%)",
-                    tr(&lang, "diff.changed"),
-                    changed as f64 * 100.0 / total as f64
-                )));
+                dm.set_diff_summary(ss(diff_summary(&lang, fb.pixels(), &self.baseline_pixels)));
                 let current = session
                     .scene()
                     .get("elements")
@@ -4258,6 +4252,21 @@ fn element_diff(before: &[Value], after: &[Value]) -> (Vec<String>, Vec<String>,
     (added, removed, modified)
 }
 
+/// The Designer drawer's pixel-diff line against the loaded or saved frame.
+fn diff_summary(lang: &str, pixels: &[u8], baseline: &[u8]) -> String {
+    // An empty baseline means the scene did not render when it was opened.
+    if baseline.is_empty() {
+        return tr(lang, "diff.no_baseline");
+    }
+    let changed = mono_core::diff::changed_count(pixels, baseline);
+    let total = pixels.len().max(1);
+    format!(
+        "{} {changed} px ({:.2}%)",
+        tr(lang, "diff.changed"),
+        changed as f64 * 100.0 / total as f64
+    )
+}
+
 /// "Render failed: <reason>", as the status bar, the Review panel and the
 /// gallery card word a refused render.
 fn render_failed(lang: &str, message: &str) -> String {
@@ -4967,6 +4976,23 @@ mod tests {
 
     /// Note rows render the frame themselves unless the canvas stored it in the
     /// same refresh; then they reuse it instead of rendering the scene again.
+    /// Without a baseline (the scene did not render when it was opened) there
+    /// is nothing to compare with, so the drawer must not report every pixel
+    /// as changed.
+    #[test]
+    fn diff_summary_says_when_there_is_no_baseline() {
+        let pixels = [1u8, 0, 1, 0];
+        let none = diff_summary("en_US", &pixels, &[]);
+        assert_eq!(none, tr("en_US", "diff.no_baseline"));
+        assert!(!none.contains('%'), "{none}");
+        assert_eq!(
+            diff_summary("zh_CN", &pixels, &[]),
+            tr("zh_CN", "diff.no_baseline")
+        );
+        let some = diff_summary("en_US", &pixels, &[1, 0, 0, 0]);
+        assert!(some.contains("1 px (25.00%)"), "{some}");
+    }
+
     #[test]
     fn note_rows_reuse_the_canvas_frame_only_right_after_it() {
         let (mut app, root) = project_app("note-reuse");
