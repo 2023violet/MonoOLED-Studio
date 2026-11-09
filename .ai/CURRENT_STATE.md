@@ -5,8 +5,8 @@
 ## Project
 
 - Project: MonoOLED Studio
-- Product version: 2.4.0 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
-- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance. Released (tagged): 2.2.0/2.2.1 (TASK-004 to TASK-007; the 2.0.4, 2.0.5 and 2.1.0 changelog versions were never tagged and first shipped in v2.2.0), 2.3.0 (TASK-008, TASK-009), 2.4.0 (TASK-010 to TASK-017: a second line of work that branched at 2.0.3 and never shipped on its own, integrated onto 2.3.0 by TASK-014, plus its verification, the refresh-regression fix and the review-pack banner; the user delegated the decisions and the release on 2026-11-02, ADR-007).
+- Product version: 2.4.1 (Rust; Python 1.x source at the v1-final tag; version truth is `[workspace.package] version` in `Cargo.toml`)
+- Current phase: Rust Rewrite G6 complete; the 2.x line is in maintenance. Released (tagged): 2.2.0/2.2.1 (TASK-004 to TASK-007; the 2.0.4, 2.0.5 and 2.1.0 changelog versions were never tagged and first shipped in v2.2.0), 2.3.0 (TASK-008, TASK-009), 2.4.0 (TASK-010 to TASK-017: a second line of work that branched at 2.0.3 and never shipped on its own, integrated onto 2.3.0 by TASK-014, plus its verification, the refresh-regression fix and the review-pack banner; the user delegated the decisions and the release on 2026-11-02, ADR-007), 2.4.1 (TASK-018, TASK-019: Designer edit hot path and review follow-ups; released on the user's instruction of 2026-11-09).
 - Rewrite spec: docs/rewrite/2026-10-19-rust-rewrite-design.md
 - Rewrite plan: docs/rewrite/2026-10-19-g0-plan.md
 - Current gate evidence: docs/rewrite/G6_EVIDENCE.md (G4/G5 reviewed); plan: docs/rewrite/G6_CUTOVER_PLAN.md
@@ -35,7 +35,7 @@
 - TASK-017 status: DONE, review PASS 2026-11-02 (ADR-007 D1: a review pack with blocking findings is written with a static "Not a deliverable" banner; the same review covered TASK-014's three-platform CI rework)
 - Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-006, TASK-007, TASK-009, TASK-010, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); PASS (TASK-011, TASK-014, TASK-015, TASK-016 after rework where noted). PASS WITH MINOR NOTES (TASK-018, TASK-019; 2026-11-09). TASK-006/007 were reviewed after release (2026-11-02).
 - Active task: none. Follow-ups: the Review panel still shows 100% without a baseline and the frame-geometry coverage gaps (TASK-018 Review Status), plus the lists at the end of `.ai/tasks/TASK-014.md` and in `.ai/tasks/TASK-017.md` Review Status.
-- Next workflow action: three-platform CI for TASK-018/019 and, on an explicit instruction, a 2.4.1 patch release (the review found no compatibility change). Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
+- Next workflow action: choose among the follow-ups (TASK-018 Review Status, the TASK-014 and TASK-017 lists, the G4 §4 budgets, a Slint upgrade that would retire the transitive-advisory exceptions). Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
 
 ## Current workstream
 

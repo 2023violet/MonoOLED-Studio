@@ -1,12 +1,24 @@
 # Changelog
 
-## Unreleased
+## 2.4.1 - 2026-11-09
+
+A patch release: Designer edit performance on large scenes and small correctness fixes from the 2.4.0 reviews. No file format, CLI output, Automation API or export behaviour changes.
 
 ### Performance
 
 - A Designer edit no longer reads and hashes the same file again for every character or label. A render used to look a digit glyph up once per character, and a font header or font pack once per element; each lookup read the file and hashed it (and a font pack hashed every glyph in it). A render now looks each file up once, and the next render still re-reads it, so a file changed by another program still shows on the next frame. Rendered output is unchanged.
 - Editing X/Y/W/H in the Inspector or nudging with the arrow keys no longer re-renders `digits` and `text` elements on a scratch canvas, no longer copies the whole element list into the undo history (undo records only the elements that changed), and no longer rebuilds the Navigator.
-- Measured on the same machine on the same day (release, 3 runs; `docs/rewrite/G4_EVIDENCE.md` §4 "2026-11-08"): the worst edit handler drops from 15.0–20.5 ms to 4.5–5.9 ms on a 50-digit scene, and from 14.3–16.5 ms to 8.0–9.0 ms on a 1005-element scene. Both now meet the 16 ms budget in these runs. On the 1005-element scene, idle memory after the benchmark falls from about 196 MB to about 91–97 MB. The `curing_lite` fixture is unchanged at about 77–80 MB, close to its 80 MB budget; the new `dump:mem` self-check shows that the app itself holds almost nothing at that point.
+- Measured on the same machine on the same day (release, 3 runs; `docs/rewrite/G4_EVIDENCE.md` §4 "2026-11-08"): the worst edit handler drops from 15.0–20.5 ms to 4.5–5.9 ms on a 50-digit scene, and from 14.3–16.5 ms to 8.0–9.0 ms on a 1005-element scene. Both now meet the 16 ms budget in these runs. On the 1005-element scene, idle memory after the benchmark falls from about 196 MB to about 91–97 MB. The `curing_lite` fixture is unchanged at about 77–83 MB across runs, before and after, around its 80 MB budget; the new `dump:mem` self-check shows that the app itself holds almost nothing at that point.
+
+### Fixed
+
+- The Designer drawer says there is no baseline instead of "Changed … (100.00%)" when the scene did not render when it was opened.
+- The `ASSET_PATH_ESCAPE` finding (a scene member outside the project root) now has a label in the findings list, in English and Chinese, instead of its raw code.
+- Changelog: 2.0.4, 2.0.5 and 2.1.0 are now marked as never tagged; their changes first shipped in 2.2.0.
+
+### Dependencies
+
+- `cargo deny` accepts RUSTSEC-2026-0441 (`pin-utils` is unmaintained; not a vulnerability). It arrives only through Slint 1.18.1 and no Slint release drops it yet.
 
 ## 2.4.0 - 2026-11-02
 
