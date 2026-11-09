@@ -109,7 +109,7 @@ All results come from commands actually run on Windows 10, on `claude/perf-task-
 - `python -m pytest tools/tests -q`: 36 passed, 1 skipped.
 - `python tools/CHECK_GUI_TRUST.py --exe target/release/monooled-studio.exe` on a release build of the TASK-019 product code, with `APPDATA` / `LOCALAPPDATA` / `XDG_CONFIG_HOME` in a temporary directory: 17 of 17 PASS.
 - `git diff origin/main -- fixtures/golden test_assets`: empty.
-- **`cargo deny check`: advisories FAILED** on RUSTSEC-2026-0441 (`pin-utils` unmaintained, via Slint 1.18.1). This is the same upstream advisory recorded in TASK-018. `Cargo.lock` is unchanged from `origin/main`. Accepting it is the user's dependency-policy decision.
+- **`cargo deny check`: advisories FAILED** on RUSTSEC-2026-0441 (`pin-utils` unmaintained, via Slint 1.18.1). This is the same upstream advisory recorded in TASK-018. `Cargo.lock` is unchanged from `origin/main`. Accepting it was the user's dependency-policy decision. On 2026-11-08 the user approved accepting it; `deny.toml` now ignores RUSTSEC-2026-0441 with that rationale, and `cargo deny check` reports "advisories ok, bans ok, licenses ok, sources ok".
 
 ### Not verified
 

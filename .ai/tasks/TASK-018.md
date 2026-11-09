@@ -147,7 +147,7 @@ The base and the change were measured on the same machine on the same day: `pyth
 - **`cargo deny check`: advisories FAILED.**
   - The cause is RUSTSEC-2026-0441 (`pin-utils` unmaintained, upstream archived 2026-10-01). It arrives only via Slint 1.18.1 (`spin_on` under `i-slint-renderer-skia`, `slint-build`, `slint-macros`), and no safe upgrade exists.
   - `Cargo.lock` is identical to `origin/main`, so `main` fails this gate too. It is not caused by this TASK.
-  - `deny.toml` already ignores four unmaintained transitive advisories under the same rationale. Adding this one is a dependency-policy decision left to the user.
+  - `deny.toml` already ignores four unmaintained transitive advisories under the same rationale. Adding this one was a dependency-policy decision left to the user. On 2026-11-08 the user approved accepting it; `deny.toml` now ignores RUSTSEC-2026-0441 with that rationale, and `cargo deny check` reports "advisories ok, bans ok, licenses ok, sources ok".
 
 ### Not verified
 

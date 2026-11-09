@@ -16,6 +16,9 @@ ignore = [
   { id = "RUSTSEC-2026-0370", reason = "unmaintained (merged into zbus 6), not a vulnerability; transitive via pinned Slint/rfd" },
   { id = "RUSTSEC-2026-0371", reason = "unmaintained (merged into zbus 6), not a vulnerability; transitive via pinned Slint/rfd" },
   { id = "RUSTSEC-2026-0372", reason = "unmaintained (merged into zbus 6), not a vulnerability; transitive via pinned Slint/rfd" },
+  # pin-utils is flagged unmaintained. It arrives via Slint 1.18.1 (spin_on);
+  # no Slint release drops it yet. Revisit when Slint is upgraded.
+  { id = "RUSTSEC-2026-0441", reason = "unmaintained, not a vulnerability; transitive via pinned Slint 1.18.1 (spin_on)" },
 ]
 
 [licenses]
