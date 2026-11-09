@@ -1,6 +1,6 @@
 # TASK-018 — Designer Edit Hot Path
 
-Status: APPROVED
+Status: VERIFY
 Review Status: PENDING (no independent review yet)
 
 ## Goal
@@ -95,4 +95,61 @@ A read-only exploration, confirmed in the code, found four sources of avoidable 
 
 ## Result
 
-(pending)
+All results come from commands actually run on Windows 10, on `claude/perf-task-018`, which branches from `origin/main` 22fda94 (2.4.0).
+
+### Failure evidence
+
+`crates/mono-core/tests/render_resource_lookups.rs`, written before any change, failed on the base:
+
+- digits: `1.png` was looked up 8 times and `2.png` twice for 10 glyphs;
+- text: a shared header was looked up twice.
+
+### Changes, by commit
+
+1. `61a6801`: `Ctx` memoises `bitmap`, `mode_font` and `font_pack` by path for one render. `every_render_looks_its_files_up_again` pins that the next render looks the files up again.
+2. `c95f3c5`:
+   - `editable_of` replaces the scratch render in `geometry_changes`;
+   - `batch_set_geometry` changes elements in place and records `Command::Patch`;
+   - `geometry_from_frame` is added.
+   - Tests: `crates/mono-project/tests/editor_patch_undo.rs`, including frame geometry equal to `geometry()` for every fixture element (a zoned element, a digits element, an `image_seq` and images).
+3. `ce27a34`:
+   - the Inspector uses the fresh frame's geometry, including the two drag paths;
+   - Inspector X/Y/W/H edits and arrow nudges skip the Navigator;
+   - the Navigator no longer clones the element list.
+4. A later commit adds the `dump:mem` self-check, with `history_len` / `entries` accessors.
+
+### Measurement
+
+The base and the change were measured on the same machine on the same day: `python tools/RUN_DESKTOP_BENCH.py --exe <copy> --runs 3` on the fixture and on `BENCH_DESIGNER_PROJECT.py --elements 1000` and `--elements 0 --digits 50`.
+
+| Scene | Metric | Base | After |
+|---|---|---|---|
+| 50 digits | `max_handler` | 15.0–20.5 ms | 4.54–5.89 ms |
+| 50 digits | render | 11.1–11.6 ms | 3.17–3.60 ms |
+| 1005 elements | `max_handler` | 14.3–16.5 ms | 7.95–9.02 ms |
+| 1005 elements | undo transaction | 2.97–4.41 ms | 0.01 ms |
+| 1005 elements | idle memory | 196 MB | 91–97 MB |
+
+- Fixture memory, measured alternately: base 74.5–80.1 MB, after 77.0–79.2 MB (unchanged within noise, close to the 80 MB budget).
+- `dump:mem` on the fixture at idle: 5 elements, 4 cached bitmaps, 1 font, empty histories.
+- The software-renderer comparison could not be completed: `RUN_DESKTOP_BENCH.py` with `SLINT_BACKEND=winit-software` never finished ("bench did not finish").
+- `mono bench` ×3 on each side: no change apart from one disk outlier on each side.
+- The full tables are in `docs/rewrite/G4_EVIDENCE.md` §4 "2026-11-08" and in `CHANGELOG.md` `Unreleased`.
+
+### Gates
+
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: clean.
+- `cargo test --workspace --locked --no-fail-fast`: 30 groups, 322 passed, 0 failed. The golden corpus and Automation replay tests are unchanged and pass.
+- `python -m pytest tools/tests -q`: 36 passed, 1 skipped (re-run after the docs edit).
+- `python tools/CHECK_GUI_TRUST.py --exe target/release/monooled-studio.exe` with `APPDATA` / `LOCALAPPDATA` / `XDG_CONFIG_HOME` in a temporary directory: 17 of 17 PASS.
+- `git diff origin/main -- fixtures/golden test_assets`: empty.
+- **`cargo deny check`: advisories FAILED.**
+  - The cause is RUSTSEC-2026-0441 (`pin-utils` unmaintained, upstream archived 2026-10-01). It arrives only via Slint 1.18.1 (`spin_on` under `i-slint-renderer-skia`, `slint-build`, `slint-macros`), and no safe upgrade exists.
+  - `Cargo.lock` is identical to `origin/main`, so `main` fails this gate too. It is not caused by this TASK.
+  - `deny.toml` already ignores four unmaintained transitive advisories under the same rationale. Adding this one is a dependency-policy decision left to the user.
+
+### Not verified
+
+- macOS and Linux (they need three-platform CI, which needs a push).
+- The software-renderer memory comparison, as above.

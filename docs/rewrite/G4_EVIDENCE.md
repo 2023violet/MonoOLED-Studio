@@ -189,6 +189,42 @@
 
 预算结论不变：夹具达标；1005 元素与 50 digits 的 `max_handler` 仍高于 16 ms，与整合前一样未达标（剩余下限见 TASK-012 小节）。空闲私有内存：夹具 74.2–76.4 MB（≤ 80 MB），生成场景只报告。上一小节列出的其他未达标项（笔画、冷启动、证据包导出、取模 p95 的一次超标）不在本轮范围内。
 
+### 2026-11-08 Designer 编辑热路径（TASK-018）
+
+本轮以 2.4.0（`origin/main` 22fda94）为基线，在同一台机器、同一天、用同一测法比较改动前后（release，`RUN_DESKTOP_BENCH.py --runs 3`；生成场景由 `BENCH_DESIGNER_PROJECT.py --elements 1000` 与 `--elements 0 --digits 50` 生成）。这台机器当天比 11-02 快（基线上 50 digits 的单次渲染是 11.1–11.6 ms，11-02 测得 15–16 ms），所以只和同一天的基线比较。
+
+改了什么：
+
+1. **每次渲染每个文件只查一次**（`crates/mono-core/src/render.rs` `Ctx`）。`render_digits` 原来每个字符都向 `Resources` 要一次字形；`text` / `bitmap_text` 每个元素都要一次字头或字库包。桌面会话的 `DiskResources` 每次查找都要读文件并算 SHA-256（`bitmap_text` 还要对整个字库包做指纹）。现在一次渲染内按路径记住结果，渲染结束即丢弃，所以下一帧仍会重新读取并校验每个文件，`resources.rs` 的内容哈希保证不变（用户 2026-11-08 选择"只在单次渲染内缓存"）。`used_assets`、`used_files`、`resolved` 的内容和顺序不变；黄金语料与回放测试照常通过。失败证据：`render_resource_lookups.rs` 改动前失败（两个 digits 元素共 10 个字形、2 个文件，查找次数 8 + 2；两个 text 元素查同一字头 2 次）。
+2. **几何编辑不再做草稿渲染**（`crates/mono-project/src/editor.rs`）。`geometry_changes` 只需要 `editable` 标志，而这个标志只取决于元素和 zone 声明了哪些键；原来却为 digits/text 元素渲染一个单元素草稿场景，现在改用 `editable_of`。Inspector 在 `refresh_canvas` 刚渲染之后，直接用这一帧解析出的矩形（`geometry_from_frame`，经 `overlay_rect`，与 `geometry()` 的优先级相同；对不上时回退到 `geometry()`）。`frame_geometry_equals_inspector_geometry_on_the_fixture` 逐元素固定两者相等。
+3. **撤销按元素记录**：`batch_set_geometry` 原来复制三份整个元素数组并做一次深比较，现在原地修改目标元素，撤销步骤只记录这些元素的前后值（`Command::Patch`）。合并拖拽时保留每个元素最早的前值和最新的后值。`editor_patch_undo.rs` 覆盖撤销/重做恢复完整数组、无变化不记步骤、与其他命令交错时的步骤边界。
+4. **Navigator**：Inspector 的 X/Y/W/H 编辑和方向键微移不再重建 Navigator（它只显示 id、类型、分组和隐藏/锁定/选中标记）；`refresh_navigator` 也不再克隆整个元素数组。两条拖拽路径的 Inspector 刷新同样复用这一帧。
+
+| 工作负载 | 指标 | 基线（2.4.0） | 改动后 |
+|---|---|---|---|
+| 55 元素（50 digits） | max_handler（预算 ≤ 16 ms） | 15.0–20.5 ms ❌ | 4.54–5.89 ms ✅ |
+| 55 元素（50 digits） | panel_render | 11.1–11.6 ms | 3.17–3.60 ms |
+| 55 元素（50 digits） | panel_geometry_edit | 11.5–14.3 ms | 3.50–3.58 ms |
+| 55 元素（50 digits） | panel_state_edit | 10.8–11.2 ms | 3.31–4.01 ms |
+| 55 元素（50 digits） | panel_refresh_all | 11.1–11.4 ms | 3.60–3.78 ms |
+| 55 元素（50 digits） | designer_edit p95 | 24.2–29.5 ms | 16.1–21.2 ms |
+| 1005 元素 | max_handler（预算 ≤ 16 ms） | 14.3–16.5 ms ❌ | 7.95–9.02 ms ✅ |
+| 1005 元素 | panel_geometry_edit | 10.0–11.5 ms | 5.78–6.88 ms |
+| 1005 元素 | panel_set_geometry（撤销事务） | 2.97–4.41 ms | 0.01 ms |
+| 1005 元素 | panel_navigator | 1.21–1.35 ms | 0.45–0.46 ms |
+| 1005 元素 | designer_edit p95 | 31.9–33.4 ms | 24.6–25.7 ms |
+| 1005 元素 | 空闲私有内存（只报告） | 196.4–197.1 MB | 91.2–96.8 MB |
+| `curing_lite` 夹具 | max_handler | 1.46–2.08 ms | 1.40–2.15 ms |
+| `curing_lite` 夹具 | 空闲私有内存（≤ 80 MB） | 74.5–78.0 MB；复测 79.5–80.1 MB | 78.6–78.9 MB；复测 77.0–79.2 MB |
+
+结论：
+
+- **UI 线程单次阻塞 ≤ 16 ms**：本轮测量中，两个生成场景都首次达标，夹具不变。这只说明基准发出的编辑路径；单独改变选择时的 Inspector 刷新（`panel_inspector_ms`，50 digits 2.92–2.93 ms）仍会自己渲染一次。`designer_edit_p95_ms` 含合成器节拍等待，仍高于 16 ms，它不是该预算的定义。
+- **1005 元素的空闲内存减半**：撤销历史原来每次编辑保存两份完整元素数组。
+- **夹具空闲内存**：同一天交替测量，基线 74.5–80.1 MB，改动后 77.0–79.2 MB，两者区间重叠。本轮不改变内存，夹具贴近 80 MB 的预算，基线复测中有一次 80.1 MB 超出。新增的 `dump:mem` 自检显示，夹具空闲时应用自身只持有 5 个元素、4 个缓存位图、1 个字头和空的撤销历史，所以这部分内存来自渲染器、驱动或分配器（MEASURED：计数；HYPOTHESIS：归属）。计划中用软件渲染器（`SLINT_BACKEND=winit-software`）做的对照没有完成：在该后端下基准一直不结束，可能是因为它等待的帧通知始终不来。
+- `mono bench`（各 3 次）不受影响：取模 p95 1.06–1.57 ms，固件导出约 275 ms，证据包约 1.41 s（两边各有一次磁盘离群值：993 ms、2443 ms）。
+- 笔画、冷启动与证据包预算不在本轮范围内，结论不变。
+
 ## 5. 记录在案的偏差
 
 1. **字模生成（Pixel Studio → 字模生成）在没有字体文件时使用内置 5×7 字形**；V1 使用 DejaVuSans 或 Pillow 默认字体。属于 D6 的语义等价范围。

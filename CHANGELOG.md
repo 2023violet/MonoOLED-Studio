@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- A Designer edit no longer reads and hashes the same file again for every character or label. A render used to look a digit glyph up once per character, and a font header or font pack once per element; each lookup read the file and hashed it (and a font pack hashed every glyph in it). A render now looks each file up once, and the next render still re-reads it, so a file changed by another program still shows on the next frame. Rendered output is unchanged.
+- Editing X/Y/W/H in the Inspector or nudging with the arrow keys no longer re-renders `digits` and `text` elements on a scratch canvas, no longer copies the whole element list into the undo history (undo records only the elements that changed), and no longer rebuilds the Navigator.
+- Measured on the same machine on the same day (release, 3 runs; `docs/rewrite/G4_EVIDENCE.md` §4 "2026-11-08"): the worst edit handler drops from 15.0–20.5 ms to 4.5–5.9 ms on a 50-digit scene, and from 14.3–16.5 ms to 8.0–9.0 ms on a 1005-element scene. Both now meet the 16 ms budget in these runs. On the 1005-element scene, idle memory after the benchmark falls from about 196 MB to about 91–97 MB. The `curing_lite` fixture is unchanged at about 77–80 MB, close to its 80 MB budget; the new `dump:mem` self-check shows that the app itself holds almost nothing at that point.
+
 ## 2.4.0 - 2026-11-02
 
 This release is the 2026-10-30 to 2026-11-02 work (truthful controls, the export gate, Designer performance, project-root containment, a review pack that marks blocking findings). It was developed on a line that branched at 2.0.3, never shipped, and is integrated onto 2.3.0. Where both lines fixed the same defect, one implementation was kept; those items are listed under **Integration** instead of being announced twice.
