@@ -1,7 +1,7 @@
 # TASK-019 — Correctness Follow-ups from the 2.4.0 Reviews
 
-Status: VERIFY
-Review Status: PENDING (no independent review yet)
+Status: DONE
+Review Status: PASS WITH MINOR NOTES (independent review 2026-11-09)
 
 ## Goal
 
@@ -77,7 +77,7 @@ The five gates, `CHECK_GUI_TRUST.py` on a release build with temporary configura
 
 ## Deliverables
 
-- Commits on `claude/perf-task-018` after TASK-018 (not pushed).
+- Commits for TASK-019, after TASK-018 (branch facts live in Git).
 - This record and `.ai/CURRENT_STATE.md`.
 
 ## Result
@@ -114,3 +114,14 @@ All results come from commands actually run on Windows 10, on `claude/perf-task-
 ### Not verified
 
 macOS and Linux (three-platform CI needs a push).
+
+## Review Status
+
+**PASS WITH MINOR NOTES** (independent review 2026-11-09, together with TASK-018; gates as recorded there).
+
+- `every_emitted_finding_code_is_listed` really extracts the codes from `Finding::new` calls; the reviewer's own scan found 30 call sites and 23 distinct codes, all listed, and no other emission site in the workspace. `FINDING_CODES` feeds UI labels only.
+- The palette test is not tautological: all 36 palette actions sit in real dispatcher arm positions. (Nit) It accepts a quoted literal anywhere in a dispatcher body, so a literal outside a match arm would also satisfy it.
+- `diff.no_baseline` exists in en and zh; the dead-binding and i18n scans pass. (Follow-up, shared with TASK-018 M3) the Review panel's summary line still shows 100% without a baseline.
+- The CHANGELOG note about 2.0.4, 2.0.5 and 2.1.0 matches `git tag`.
+- All four TASK-017 follow-up gaps are now covered; none remains.
+- `deny.toml`: `cargo tree -i pin-utils` shows it only via `spin_on` under Slint 1.18.1; the advisory is informational "unmaintained"; only RUSTSEC-2026-0441 was added and `Cargo.lock` is unchanged.

@@ -1,7 +1,7 @@
 # TASK-018 — Designer Edit Hot Path
 
-Status: VERIFY
-Review Status: PENDING (no independent review yet)
+Status: VERIFY (review rework M1 awaits a confirmation review)
+Review Status: PASS WITH MINOR NOTES (independent review 2026-11-09); M1 fixed after the review
 
 ## Goal
 
@@ -90,7 +90,7 @@ A read-only exploration, confirmed in the code, found four sources of avoidable 
 
 ## Deliverables
 
-- Commits on `claude/perf-task-018` (not pushed).
+- Commits for TASK-018 (branch facts live in Git).
 - This record, `.ai/CURRENT_STATE.md`, G4 §4 and `CHANGELOG.md`.
 
 ## Result
@@ -153,3 +153,20 @@ The base and the change were measured on the same machine on the same day: `pyth
 
 - macOS and Linux (they need three-platform CI, which needs a push).
 - The software-renderer memory comparison, as above.
+
+## Review Status
+
+**PASS WITH MINOR NOTES** (independent review 2026-11-09, fresh context, read-only on source).
+
+- Gates re-run by the reviewer: fmt and clippy clean; tests 327 passed, 0 failed; pytest 36 passed, 1 skipped; `cargo deny check` ok; golden diff empty; `CHECK_GUI_TRUST.py` 17 of 17 PASS with temporary configuration directories.
+- Benchmarks reproduced on release builds of base and change, alternated, `RUN_DESKTOP_BENCH.py --runs 3`: 50 digits `max_handler` 13.96–16.83 → 4.73–6.13 ms; 1005 elements `max_handler` 11.47–17.45 → 7.98–10.24 ms; 1005 elements idle memory 189–202 → 92–99 MB; 50 digits idle memory 82–87 → 71–74 MB. The fixture's idle memory exceeded 80 MB on both sides in several runs (pre-existing, not caused by this TASK).
+- Compatibility: no file-format, `Cargo.lock`, CLI-output, golden or Automation API 1.3.0 change; patch-release safe.
+
+Findings:
+
+- (Minor, M1) `Command::Patch` restored elements by list index without checking the id. A change made without an undo step (an open Automation transaction: `changed()` records nothing inside one) can shift the list; undo then wrote the element into a neighbour's slot, duplicating one id and losing another. **Fixed after the review:** failure evidence `undo_follows_the_element_id_when_the_list_moved_underneath` (`crates/mono-project/tests/editor_patch_undo.rs`) failed with `["c", "b", "b", "z"]`; `apply` now checks the recorded index against the element id, looks the element up by id when the list moved, and skips a vanished element. Gates after the fix: fmt and clippy clean, tests 328 passed, 0 failed, pytest 36 passed and 1 skipped, deny ok, golden diff empty. A confirmation review of the fix is pending.
+- (Minor, M2, accepted) An Inspector X/Y/W/H edit on an element that cannot render (for example a missing font header) used to be refused by the scratch render and now succeeds; `geometry()` still reports the render error, and `batch_move`, align, distribute, snap and Automation are unchanged. Accepted as the better behaviour; no test pins it yet.
+- (Minor, M3, follow-up) The Review panel's summary line still reports 100% changed when there is no baseline; this TASK and TASK-019 fixed only the drawer.
+- (Minor, M4, follow-up) Coverage: the frame-geometry equality test meets no unzoned text without a full rect, no `bitmap_text` and no hidden element (the reviewer's probe found the code correct for them), and no desktop test pins that `refresh_inspector` uses the frame only when `canvas_frame_fresh` is set.
+- (Nit) Two doc comments sat on the wrong functions (`app.rs` note-row test, `editor.rs` `geometry_of`). Fixed with M1. The Deliverables line held push state; reworded.
+- (Nit) `dump:mem` ships in release builds like the other `dump:*` self-check commands: it only prints counts and cannot write.

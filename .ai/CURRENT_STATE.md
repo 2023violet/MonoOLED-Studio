@@ -19,7 +19,7 @@
 - TASK-003 status: DONE
 - TASK-004 status: DONE (2.0.4 trust fixes T1–T8 plus review rework; all CI gates green)
 - TASK-005 status: DONE (2.0.5; T9 recent projects, T10 asset-to-Pixel, T11 atomic write-back; review PASS WITH MINOR NOTES)
-- TASK-006 status: DONE (T12–T17 professional workflow, first shipped in v2.2.0; post-release independent review PASS 2026-11-02 with three Minor findings routed to a proposed follow-up fix task)
+- TASK-006 status: DONE (T12–T17 professional workflow, first shipped in v2.2.0; post-release independent review PASS 2026-11-02 with three Minor findings, fixed by TASK-019)
 - TASK-007 status: DONE (2.2.0; T18–T21 terminology, help/tooltips, new-project wizard, docs and version truth; post-release independent review PASS 2026-11-02)
 - TASK-008 status: DONE (CLI `--json`; independent review PASS WITH MINOR NOTES; folded into 2.3.0, not released separately)
 - TASK-009 status: DONE (2.3.0 T22–T28; independent re-review PASS after gallery invalidation, note refresh, sidecar protection and documentation corrections)
@@ -30,13 +30,12 @@
 - TASK-014 status: DONE, confirmation review PASS 2026-11-02 after three reworks (integration of TASK-010 to TASK-013 onto 2.3.0; see `.ai/tasks/TASK-014.md`)
 - TASK-016 status: DONE, review PASS 2026-11-02 (large-scene refresh regression from the 2.3.0 integration: Review rebuilt only while visible with an indexed diff, note rows reuse the canvas frame; refresh back to pre-integration figures)
 - TASK-015 status: DONE, review PASS 2026-11-02 (closes TASK-014's verification gaps: escaping members in the gallery and Review panel, six Inspector tabs in the GUI trust check, performance re-measured on the integrated tree, dead-binding scan over the 2.3.0 globals)
-- TASK-018 status: VERIFY (Designer edit hot path: one resource lookup per file per render, no scratch renders or whole-list undo copies on geometry edits; both generated scenes now under the 16 ms handler budget; RUSTSEC-2026-0441 (`pin-utils`, via Slint) accepted in `deny.toml` with user approval, so `cargo deny` passes)
-- TASK-019 status: VERIFY (correctness follow-ups from the 2.4.0 reviews: ASSET_PATH_ESCAPE listed and labelled, a palette test that checks real dispatch, the drawer says when there is no baseline, untagged versions noted, the TASK-017 test gaps covered)
+- TASK-018 status: VERIFY, independent review PASS WITH MINOR NOTES 2026-11-09; review finding M1 (geometry undo restored by index, not id) fixed afterwards and awaiting a confirmation review (Designer edit hot path: one resource lookup per file per render, no scratch renders or whole-list undo copies on geometry edits; both generated scenes under the 16 ms handler budget, reproduced by the reviewer; RUSTSEC-2026-0441 accepted in `deny.toml` with user approval)
+- TASK-019 status: DONE, review PASS WITH MINOR NOTES 2026-11-09 (correctness follow-ups from the 2.4.0 reviews: ASSET_PATH_ESCAPE listed and labelled, a palette test that checks real dispatch, the drawer says when there is no baseline, untagged versions noted, the TASK-017 test gaps covered)
 - TASK-017 status: DONE, review PASS 2026-11-02 (ADR-007 D1: a review pack with blocking findings is written with a static "Not a deliverable" banner; the same review covered TASK-014's three-platform CI rework)
-- Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-006, TASK-007, TASK-009, TASK-010, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); PASS (TASK-011, TASK-014, TASK-015, TASK-016 after rework where noted). TASK-006/007 were reviewed after release (2026-11-02).
-- Proposed follow-up fix task (not yet numbered or approved), from the TASK-006/007 review: add `ASSET_PATH_ESCAPE` to `FINDING_CODES` with en/zh labels plus a test that every emitted finding code is listed; replace the tautological `palette_actions_are_dispatchable`; make the Designer drawer say there is no baseline instead of 100%; note in `CHANGELOG.md` that 2.0.4/2.0.5/2.1.0 were never tagged.
-- Active task: none in progress; TASK-018 and TASK-019 await independent review. Follow-ups are listed at the end of `.ai/tasks/TASK-014.md` and in `.ai/tasks/TASK-017.md` Review Status.
-- Next workflow action: choose among the follow-ups (TASK-014 and TASK-017 lists, the proposed TASK-006/007 fix task, the G4 §4 performance budgets). Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
+- Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-006, TASK-007, TASK-009, TASK-010, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); PASS (TASK-011, TASK-014, TASK-015, TASK-016 after rework where noted). PASS WITH MINOR NOTES (TASK-018, TASK-019; 2026-11-09). TASK-006/007 were reviewed after release (2026-11-02).
+- Active task: TASK-018 awaits a confirmation review of its M1 fix. Follow-ups: the Review panel still shows 100% without a baseline and the frame-geometry coverage gaps (TASK-018 Review Status), plus the lists at the end of `.ai/tasks/TASK-014.md` and in `.ai/tasks/TASK-017.md` Review Status.
+- Next workflow action: after the TASK-018 confirmation review, three-platform CI and, on an explicit instruction, a 2.4.1 patch release (the review found no compatibility change). Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
 
 ## Current workstream
 
