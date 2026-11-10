@@ -1182,16 +1182,8 @@ impl App {
         rm.set_current_w(width as i32);
         rm.set_current_h(height as i32);
         rm.set_has_baseline(has_baseline);
-        // Without a baseline there is nothing to diff against: every lit pixel
-        // would count as changed, so the panel reports no change area at all.
-        let (changed, bbox) = if has_baseline {
-            (
-                mono_core::diff::changed_count(pixels, &self.baseline_pixels),
-                mono_core::diff::changed_bbox(pixels, &self.baseline_pixels, width, height),
-            )
-        } else {
-            (0, None)
-        };
+        let (changed, bbox, summary) =
+            review_diff(&lang, pixels, &self.baseline_pixels, width, height);
         rm.set_changed(changed as i32);
         match bbox {
             Some(b) => {
@@ -1207,12 +1199,7 @@ impl App {
                 rm.set_bbox_h(0);
             }
         }
-        rm.set_summary(ss(review_summary(
-            &lang,
-            has_baseline,
-            changed,
-            pixels.len(),
-        )));
+        rm.set_summary(ss(summary));
         let detail = if !has_baseline {
             self.t("review.empty")
         } else if (bw, bh) != (width, height) {
@@ -4265,12 +4252,26 @@ fn review_pack_status(
     )
 }
 
-/// The Review panel's summary line. Without a baseline it says so, as the
-/// drawer does, instead of counting every lit pixel as changed.
-fn review_summary(lang: &str, has_baseline: bool, changed: usize, total: usize) -> String {
-    if !has_baseline {
-        return tr(lang, "diff.no_baseline");
+/// The Review panel's changed-pixel count, change box and summary line against
+/// `baseline`. An empty baseline (the scene did not render) has nothing to diff
+/// against: every lit pixel would count as changed, so the panel reports no
+/// change at all and says there is no baseline, as the drawer does.
+fn review_diff(
+    lang: &str,
+    pixels: &[u8],
+    baseline: &[u8],
+    width: usize,
+    height: usize,
+) -> (usize, Option<mono_core::diff::DiffBox>, String) {
+    if baseline.is_empty() {
+        return (0, None, tr(lang, "diff.no_baseline"));
     }
+    let changed = mono_core::diff::changed_count(pixels, baseline);
+    let bbox = mono_core::diff::changed_bbox(pixels, baseline, width, height);
+    (changed, bbox, review_summary(lang, changed, pixels.len()))
+}
+
+fn review_summary(lang: &str, changed: usize, total: usize) -> String {
     trf(
         lang,
         "review.summary",
@@ -4286,7 +4287,7 @@ fn review_summary(lang: &str, has_baseline: bool, changed: usize, total: usize) 
 
 /// The Designer drawer's pixel-diff line against the loaded or saved frame.
 fn diff_summary(lang: &str, pixels: &[u8], baseline: &[u8]) -> String {
-    // An empty baseline means the scene did not render when it was opened.
+    // An empty baseline means the scene did not render when the baseline was taken.
     if baseline.is_empty() {
         return tr(lang, "diff.no_baseline");
     }
@@ -5045,21 +5046,28 @@ mod tests {
         );
     }
 
-    /// Without a baseline (the scene did not render when it was opened) there
-    /// is nothing to compare with, so the drawer must not report every pixel
-    /// as changed.
+    /// The Review panel, like the drawer, must not count every lit pixel as
+    /// changed when there is no baseline.
     #[test]
-    fn review_summary_says_when_there_is_no_baseline() {
+    fn review_diff_says_when_there_is_no_baseline() {
+        let lit = [1u8, 1, 1, 1];
         for lang in ["en_US", "zh_CN"] {
-            assert_eq!(
-                review_summary(lang, false, 4, 4),
-                tr(lang, "diff.no_baseline")
-            );
+            let (changed, bbox, summary) = review_diff(lang, &lit, &[], 2, 2);
+            assert_eq!((changed, bbox), (0, None));
+            assert_eq!(summary, tr(lang, "diff.no_baseline"));
         }
-        assert_eq!(review_summary("en_US", true, 1, 4), "1 px changed (25.00%)");
-        assert_eq!(review_summary("en_US", true, 0, 0), "0 px changed (0.00%)");
+        let (changed, bbox, summary) = review_diff("en_US", &lit, &[1, 0, 1, 1], 2, 2);
+        assert_eq!(changed, 1);
+        assert!(bbox.is_some());
+        assert_eq!(summary, "1 px changed (25.00%)");
+        let (changed, bbox, summary) = review_diff("en_US", &lit, &lit, 2, 2);
+        assert_eq!((changed, bbox), (0, None));
+        assert_eq!(summary, "0 px changed (0.00%)");
     }
 
+    /// Without a baseline (the scene did not render when it was taken) there
+    /// is nothing to compare with, so the drawer must not report every pixel
+    /// as changed.
     #[test]
     fn diff_summary_says_when_there_is_no_baseline() {
         let pixels = [1u8, 0, 1, 0];

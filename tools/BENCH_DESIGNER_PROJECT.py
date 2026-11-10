@@ -4,7 +4,8 @@ Designer edit benchmark.
 `bench.rs`'s designer phase edits the open project, and the committed fixture has
 five elements — too small to show an O(n) versus O(n²) difference. This copies
 `test_assets/projects/curing_lite` into a temp directory, appends N `placeholder`
-elements (optionally K `digits` elements, whose glyph lookups dominate a render) to one screen's scene, makes that screen active, and prints the project
+elements (optionally K `digits` elements, which make glyph-heavy renders) to one
+screen's scene, makes that screen active, and prints the project
 path for `RUN_DESKTOP_BENCH.py --project`.
 
 Nothing under `test_assets/` is written; the copy is disposable.
