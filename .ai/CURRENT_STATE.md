@@ -35,7 +35,7 @@
 - TASK-020 status: VERIFY, awaiting independent review (audit fixes requested 2026-11-10: Review panel without a baseline, an unused dependency, stale docs and ignore entries)
 - TASK-017 status: DONE, review PASS 2026-11-02 (ADR-007 D1: a review pack with blocking findings is written with a static "Not a deliverable" banner; the same review covered TASK-014's three-platform CI rework)
 - Independent Review: PASS (TASK-003, TASK-004, TASK-005, TASK-006, TASK-007, TASK-009, TASK-010, TASK-012, TASK-013); PASS WITH MINOR NOTES (TASK-008); PASS (TASK-011, TASK-014, TASK-015, TASK-016 after rework where noted). PASS WITH MINOR NOTES (TASK-018, TASK-019; 2026-11-09). TASK-006/007 were reviewed after release (2026-11-02).
-- Active task: TASK-020 awaits independent review. Follow-ups: the Review panel still shows 100% without a baseline and the frame-geometry coverage gaps (TASK-018 Review Status), plus the lists at the end of `.ai/tasks/TASK-014.md` and in `.ai/tasks/TASK-017.md` Review Status.
+- Active task: TASK-020 awaits independent review. Follow-ups: the frame-geometry coverage gaps (TASK-018 Review Status; its M3 is fixed by TASK-020), plus the lists at the end of `.ai/tasks/TASK-014.md` and in `.ai/tasks/TASK-017.md` Review Status.
 - Next workflow action: choose among the follow-ups (TASK-018 Review Status, the TASK-014 and TASK-017 lists, the G4 §4 budgets, a Slint upgrade that would retire the transitive-advisory exceptions). Tagging, pushing and publishing need an explicit instruction (`.ai/README.md` Operating rules). Release facts belong to GitHub and `docs/rewrite/G6_EVIDENCE.md`, not this file.
 
 ## Current workstream
