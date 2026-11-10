@@ -1,7 +1,7 @@
 # TASK-020 — Project Audit Fixes (2026-11-10)
 
-Status: VERIFY
-Review Status: PENDING (no independent review yet)
+Status: DONE
+Review Status: PASS WITH MINOR NOTES (independent review 2026-11-10); every note fixed afterwards
 
 ## Goal
 
@@ -15,7 +15,7 @@ Only changes whose correctness can be shown by a test, a build or a direct file 
 
 All results come from commands run on Windows 10 on branch `fix/audit-2026-11-10`, based on `main` 999a214 (2.4.2).
 
-1. **Review panel without a baseline** (TASK-018 review M3): the summary line counted every lit pixel as changed ("100%") when the scene did not render at open. `review_summary` now says `diff.no_baseline`, as the drawer does, and the changed count and box are zero. Test: `review_summary_says_when_there_is_no_baseline`.
+1. **Review panel without a baseline** (TASK-018 review M3): the summary line counted every lit pixel as changed ("100%") when the scene did not render at open. `review_diff` now returns a zero count, no change box and `diff.no_baseline`, as the drawer does. Test: `review_diff_says_when_there_is_no_baseline`.
 2. **Unused dependency**: `mono-automation` declared `sha2` but hashes through `mono_project::resources::hex_digest`. Removed; `Cargo.lock` loses one line, no package changes.
 3. **Stale or missing documentation**:
    - `README.md`: "2.3.0 不模拟…" is now version-neutral; the documentation table lists `docs/REVIEW_PACK.md`.
@@ -37,3 +37,18 @@ All results come from commands run on Windows 10 on branch `fix/audit-2026-11-10
 ### Not fixed (listed for the user)
 
 Behaviour or policy changes that need a decision, and checks that need CI or a person; see the audit report in the session that produced this TASK.
+
+## Review Status
+
+**PASS WITH MINOR NOTES** (independent review 2026-11-10, fresh context, read-only). The reviewer re-ran all gates (fmt and clippy clean; tests 330 passed, 0 failed; pytest 36 passed, 1 skipped; deny ok; golden diff empty) and confirmed each claim: the zeroed count and box are read only inside the `has-baseline` branch of `review.slint`; `sha2` has no use anywhere in `mono-automation`; neither `spike/` nor `src/` exists or is produced; `f5e2653` fixed the refused rename and `a_refused_rename_keeps_the_page_open` pins it. No compatibility change.
+
+Notes, all fixed afterwards:
+
+- (Minor) `docs/README.md` claimed G6 evidence records every 2.x release; 2.2.0 and 2.2.1 are not there. Reworded.
+- (Minor) The new test covered only the summary helper, not the call site's flag or the zeroed count and box. The whole decision now lives in `review_diff`, which the call site uses directly, and the test checks all three results.
+- (Nit) A doc comment had moved onto the new test; moved back to the drawer test.
+- (Nit) The bench docstring made an unmeasured claim on an unwrapped line; reworded and wrapped.
+- (Nit) The `CHECK_GUI_TRUST.py` description left five checks out; it now lists them all.
+- (Note, pre-existing) `diff.no_baseline` said the scene "did not render when it was opened", but the baseline is also taken on save (`App::save`). The en and zh texts now say "opened or last saved".
+
+Gates after the fixes: fmt and clippy clean; tests 330 passed, 0 failed; pytest 36 passed, 1 skipped; deny ok; golden diff empty.
