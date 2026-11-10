@@ -138,10 +138,11 @@ B3 执行记录（MEASURED）：
   - `main` 由 `22fda94` 快进到该提交；annotated tag `v2.4.1` 指向它。同一提交的 `Rust` run `42600070538` 全部通过。
   - tag 触发的 `Release (Rust V2)` run `42601258340` 失败，没有创建草稿：`ubuntu-latest` 在 2.4.0 之后从 24.04 换成了 26.04（glibc 2.43），Linux x64 的 `.deb` 因此声明 `libc6 (>= 2.43)`，在干净的 `ubuntu:24.04` 容器里安装测试被拒。其余四个平台打包成功。
   - 按“不移动 tag”的规则，`v2.4.1` 保留原样、不发布；修复以 2.4.2 发布。
-- **v2.4.2**（用户 2026-11-09 指示以 2.4.2 发布；草稿已创建，由维护者检查后手动发布）：
+- **v2.4.2**（用户 2026-11-09 指示以 2.4.2 发布；2026-11-10 用户指示代为发布，15:44 UTC 发布，设为 Latest）：
   - 产品代码与 `v2.4.1` 相同；只增加 `package.yml` 把 Linux x64 打包固定在 `ubuntu-24.04`（提交 `c180548`），以及版本号与 CHANGELOG。
   - 提交 `98aded4`；`main` 由 `965527f` 快进到该提交。annotated tag `v2.4.2` 指向它。
   - 修复后在分支上手动跑的 `Package (Rust V2)` run `42603953614` 五个平台全部通过。同一提交的 `Rust` run `42640875187` 全部通过；`Release (Rust V2)` 演练 run `42640934338` 全部通过。
   - tag 触发的 `Release (Rust V2)` run `42642946885` 全部通过：版本校验、五个平台打包与安装测试、草稿创建。安装测试中 amd64 `.deb` 显示 `Depends: libc6 (>= 2.39)`。
   - 五个平台包与 `SHA256SUMS` 下载后 `sha256sum -c` 全部一致。Windows zip 解压后，`monooled-studio --version` 输出 `monooled-studio 2.4.2`，`mono version` 输出 `mono 2.4.2`。
+  - 发布后 API 显示 draft=false、prerelease=false、6 个附件，`releases/latest` 重定向到 `v2.4.2`；发布后重新下载五个平台包，`sha256sum -c SHA256SUMS` 全部一致。
   - 未验证：macOS 与 Linux 只有 CI 和安装测试，没有真人使用。GUI trust 17/17 在独立评审时于 release 构建上跑过（TASK-018 评审，`7966e9e`）；此后只改了撤销记录逻辑和 CI 配置，未改 `.slint`。
