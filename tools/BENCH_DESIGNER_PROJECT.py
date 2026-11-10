@@ -4,8 +4,7 @@ Designer edit benchmark.
 `bench.rs`'s designer phase edits the open project, and the committed fixture has
 five elements — too small to show an O(n) versus O(n²) difference. This copies
 `test_assets/projects/curing_lite` into a temp directory, appends N `placeholder`
-elements (optionally K `digits` elements, which take the scratch-render geometry
-path) to one screen's scene, makes that screen active, and prints the project
+elements (optionally K `digits` elements, whose glyph lookups dominate a render) to one screen's scene, makes that screen active, and prints the project
 path for `RUN_DESKTOP_BENCH.py --project`.
 
 Nothing under `test_assets/` is written; the copy is disposable.
@@ -42,7 +41,7 @@ def screen_with_elements(project: dict, root: Path) -> dict:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--elements', type=int, default=1000, help='placeholder elements to add')
-    parser.add_argument('--digits', type=int, default=0, help='digit elements to add (slow geometry path)')
+    parser.add_argument('--digits', type=int, default=0, help='digit elements to add (glyph-heavy renders)')
     parser.add_argument('--out', type=Path, default=None, help='target directory (default: a temp dir)')
     args = parser.parse_args(argv)
     if args.elements < 0 or args.digits < 0:

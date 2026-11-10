@@ -36,7 +36,6 @@ MonoOLED-Studio.zip
 # Local agent tool state and generated evidence
 .claude/
 .zcode/
-src/reports/
 
 # Review sidecar quarantine (review/review.json itself is committable)
 review/quarantine/
@@ -47,8 +46,4 @@ review/quarantine/
 # Rust build output
 /target/
 
-# G2 spikes build into their own target directories
-/spike/*/target/
-/spike/*/Cargo.lock
-/spike/tauri/gen/
 dist-rust/

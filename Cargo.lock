@@ -2687,7 +2687,6 @@ dependencies = [
  "mono-font",
  "mono-project",
  "serde_json",
- "sha2",
  "zip",
 ]
 

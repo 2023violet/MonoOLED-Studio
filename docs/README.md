@@ -8,7 +8,6 @@ Current documentation for MonoOLED Studio:
 - `OUTPUT_WORKBENCH.md` — raster, encoding, formatting, and portable profile contract.
 - `AUTOMATION_API_V1.md` — local Automation API contract.
 - `REVIEW_PACK.md` — offline review pack: contents, determinism, contract comparison, scope.
-
 - `DESIGN_SYSTEM.md` — UI design system.
 - `BUILD.md` — toolchain, CI checks, performance measurements, packaging and the release process.
 - `ENGINEERING_HISTORY.md` — consolidated pre-1.0 hardening history (Python 1.x line).
@@ -16,9 +15,9 @@ Current documentation for MonoOLED Studio:
 - `rewrite/2026-10-19-g0-plan.md` — G0 implementation plan: ADR-005, TASK-003 closure, V1 golden corpus, rust branch archive.
 - `rewrite/G0_RUST_BRANCH_HARVEST.md` — what the rewrite kept from the `rust` validation branch.
 - `rewrite/G0_EVIDENCE.md` — G0 evidence: golden corpus statistics, deviations, verification.
-- `rewrite/G2_EVIDENCE.md` — G2 UI framework spike: Slint vs Tauri measurements and the Slint decision.
 - `rewrite/G1_EVIDENCE.md` — G1 evidence: Rust core parity results, deviations, agent review and rework.
+- `rewrite/G2_EVIDENCE.md` — G2 UI framework spike: Slint vs Tauri measurements and the Slint decision.
 - `rewrite/G4_EVIDENCE.md` — G4 evidence: desktop app sub-gates, Automation API replay, performance budgets, deviations.
 - `rewrite/G5_EVIDENCE.md` — G5 evidence: three-platform release candidates, install tests, V1 performance comparison.
 - `rewrite/G6_CUTOVER_PLAN.md` — G6 plan: v1-final tag, V1 removal and the 2.x release line; each irreversible step needs user confirmation.
-- `rewrite/G6_EVIDENCE.md` — G6 evidence: deletion dry runs, parity gap found before removal, release workflow dry run.
+- `rewrite/G6_EVIDENCE.md` — G6 evidence: deletion dry runs, parity gap found before removal, release workflow dry run, and the record of every 2.x release.

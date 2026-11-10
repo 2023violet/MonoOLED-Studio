@@ -125,7 +125,7 @@ mono validate --project path/to/project.oled.json --json
 
 - 输出目标是单色 1-bit 位图，不是通用的彩色图片编辑器。不支持 GIF。
 - 内置取模模板是确定性的编码预设。它们是否匹配你的硬件，仍需要用已知正确的数组和实际屏幕来验证。
-- 2.3.0 不模拟按键或硬件事件、电机/蜂鸣/BLE/电源指示灯：状态来自显式预设与时间线，界面中写明了这一"模拟器边界"。
+- 当前版本不模拟按键或硬件事件、电机/蜂鸣/BLE/电源指示灯：状态来自显式预设与时间线，界面中写明了这一"模拟器边界"。
 - 本产品只有一个渲染器，评审包与评审工作区都不声称"第二实现逐字节对拍"（L2）；它们比对的是同一渲染器的 SHA-256 与导出契约。
 - 2.0 的已知限制（未达标的性能预算、未签名的 macOS 应用等）见 [CHANGELOG](CHANGELOG.md)。
 
@@ -138,6 +138,7 @@ mono validate --project path/to/project.oled.json --json
 | [取模与输出工作台](docs/OUTPUT_WORKBENCH.md) | 取模公式、位序、极性、补位、索引和项目配置 |
 | [Automation API](docs/AUTOMATION_API_V1.md) | JSON-RPC 2.0 方法、数据契约和可靠性约束 |
 | [Scene Schema](docs/SCENE_SCHEMA.md) | 场景文件格式 |
+| [评审包](docs/REVIEW_PACK.md) | 离线评审包的内容、确定性、契约比对与“不可交付”标记 |
 | [构建与发布](docs/BUILD.md) | 从源码构建、测试、打包与发布 |
 | [设计系统](docs/DESIGN_SYSTEM.md) | 界面设计令牌与组件约束 |
 

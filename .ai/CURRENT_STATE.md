@@ -24,7 +24,7 @@
 - TASK-008 status: DONE (CLI `--json`; independent review PASS WITH MINOR NOTES; folded into 2.3.0, not released separately)
 - TASK-009 status: DONE (2.3.0 T22–T28; independent re-review PASS after gallery invalidation, note refresh, sidecar protection and documentation corrections)
 - TASK-010 status: DONE (experience audit closeout, formerly TASK-004 on the unshipped line; three review slices, final independent review PASS 2026-11-02 on the integrated code)
-- TASK-011 status: DONE, confirmation review PASS 2026-11-02 (truthful controls, exposed engine, formerly TASK-005 on the unshipped line; final review 2026-11-02: a refused page rename drops the Designer session, `guard.rs:255`; fix scope in the TASK)
+- TASK-011 status: DONE, confirmation review PASS 2026-11-02 (truthful controls, exposed engine, formerly TASK-005 on the unshipped line; final review 2026-11-02 found that a refused page rename dropped the Designer session; fixed in `f5e2653` during TASK-014: a refused rename reopens the still-active page)
 - TASK-012 status: DONE (Designer edit-path performance, formerly TASK-006; scoped review PASS 2026-11-01)
 - TASK-013 status: DONE (stress findings: gate short-circuit, bounded export memory, member containment, formerly TASK-007; confirmation review PASS 2026-11-02)
 - TASK-014 status: DONE, confirmation review PASS 2026-11-02 after three reworks (integration of TASK-010 to TASK-013 onto 2.3.0; see `.ai/tasks/TASK-014.md`)
